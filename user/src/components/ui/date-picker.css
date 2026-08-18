@@ -1,0 +1,249 @@
+/* ========== Input field ========== */
+.rc-picker {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  border-radius: 5px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--body-text);
+  transition: all 0.2s ease-in-out;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .rc-picker {
+    padding: 0 8px;
+  }
+  .rc-picker-input > input {
+    font-size: 16px !important;
+  }
+}
+
+.rc-picker:hover {
+  border-color: var(--color-primary-400);
+}
+
+
+.rc-picker-focused {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.rc-picker-input>input {
+  border: none;
+  outline: none;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-family-base);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.rc-picker-input {
+  display: flex;
+  align-items: center;
+}
+
+.rc-picker-clear {
+  color: var(--text-soft);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  padding: 4px;
+  font-size: 20px;
+}
+
+.rc-picker-cell-in-view {
+  color: var(--body-text);
+}
+
+.rc-picker-clear:hover {
+  opacity: 1;
+}
+
+.rc-picker-active-bar {
+  background-color: var(--color-primary) !important;
+}
+
+.rc-picker-dropdown .rc-picker-range-arrow {
+  display: none;
+}
+
+/* Calendar icon */
+.rc-picker-suffix {
+  color: var(--text-soft);
+  opacity: 0.7;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.rc-picker:hover .rc-picker-suffix {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+/* Placeholder */
+.rc-picker-input>input::placeholder {
+  color: var(--text-soft);
+  opacity: 0.5;
+}
+
+/* ========== Popup calendar panel ========== */
+.rc-picker-dropdown {
+  box-shadow: none;
+  z-index: 100;
+}
+
+.rc-picker-panel-container {
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--text-soft) 15%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: var(--surface);
+  padding: 0;
+  border: 1px solid var(--border);
+}
+
+.rc-picker-panel {
+  background-color: transparent;
+  border-radius: 0;
+  overflow: hidden;
+  color: var(--body-text);
+  border: 0;
+  border-left: 1px solid var(--border);
+}
+
+@media (max-width: 600px) {
+  .rc-picker-panels {
+    flex-direction: column !important;
+  }
+  .rc-picker-panel {
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .rc-picker-panel:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* Header */
+.rc-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--surface-soft);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  color: var(--body-text);
+}
+
+.rc-picker-header button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: 14px;
+  transition: color 0.15s;
+}
+
+.rc-picker-header button:hover {
+  color: var(--color-primary);
+}
+
+
+/* Days grid */
+.rc-picker-cell-inner {
+    height: 30px;
+    line-height: 30px;
+    margin: 3px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    @media (max-width: 768px) {
+      height: 25px;
+      line-height: 25px;
+    }
+  }
+.rc-picker-date-panel {
+  .rc-picker-cell-inner {
+    width: 30px;
+  }
+}
+
+.rc-picker-cell-inner:hover {
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+}
+
+.rc-picker-cell-selected .rc-picker-cell-inner {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.rc-picker-cell-today .rc-picker-cell-inner {
+  border: 1px solid var(--color-primary);
+}
+
+/* Disabled state */
+.rc-picker-cell-disabled .rc-picker-cell-inner {
+  color: color-mix(in srgb, var(--text-soft) 40%, var(--surface));
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Range selection */
+.rc-picker-cell-range-start .rc-picker-cell-inner,
+.rc-picker-cell-range-end .rc-picker-cell-inner {
+  background-color: var(--color-primary);
+  color: #fff;
+}
+
+.rc-picker-cell-in-range .rc-picker-cell-inner {
+  background-color: var(--color-primary-100);
+  color: var(--body-text);
+}
+
+.rc-picker-footer,
+.rc-picker-picker-footer {
+  background-color: var(--color-primary);
+  text-align: center;
+  color: #fff;
+}
+
+.rc-picker-clear {
+  top: 50%;
+  transform: translateY(-50%);
+}
+.rc-picker-content {
+  width: 260px;
+  @media (max-width: 320px) {
+    width: 240px;
+  }
+}
+
+.finance-filter-date-range {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text-soft) 10%, transparent);
+  padding-right: 32px;
+}
+
+.finance-filter-date-range .rc-picker-input > input {
+  font-size: 13px;
+}
+
+.finance-filter-date-range .rc-picker-range-separator {
+  color: var(--text-soft);
+  opacity: 0.85;
+}
+
+.finance-filter-date-range .rc-picker-clear {
+  top: 50% !important;
+  transform: translateY(-50%);
+  inset-inline-end: 10px;
+  font-size: 16px;
+}

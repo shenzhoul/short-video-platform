@@ -1,0 +1,25 @@
+.carousel :global(.slick-slider),
+.carousel :global(.slick-list),
+.carousel :global(.slick-track),
+.carousel :global(.slick-slide),
+.carousel :global(.slick-slide > div) {
+  height: 100%;
+}
+
+.carousel :global(.slick-list) {
+  overflow: hidden;
+}
+
+.carousel :global(.slick-slide) {
+  outline: none;
+}
+
+.carousel :global(.slick-slide > div) {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel :global(.slick-track) {
+    transition-duration: 0ms !important;
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "baseUrl": "./",
+    "paths": {
+      "@layouts/*": [
+        "./src/layouts/*"
+      ],
+      "@layout/*": [
+        "./src/layout/*"
+      ],
+      "@components/*": [
+        "./src/components/*"
+      ],
+      "@constants/*": [
+        "./src/constants/*"
+      ],
+      "@lib/*": [
+        "./src/lib/*"
+      ],
+      "@redux/*": [
+        "./src/redux/*"
+      ],
+      "@services/*": [
+        "./src/services/*"
+      ],
+      "@hooks/*": [
+        "./src/hooks/*"
+      ],
+      "@providers/*": [
+        "./src/providers/*"
+      ],
+      "src/*": [
+        "./src/*"
+      ]
+    },
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "strictNullChecks": true
+  },
+  "exclude": [
+    "node_modules"
+  ],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "./src/**/*",
+    "next-env.d.ts",
+    "dist/.next/types/**/*.ts",
+    "dist/.next/dev/types/**/*.ts",
+    "dist\\.next\\dev/types/**/*.ts",
+    "dist\\.next\\dev/types/**/*.ts"
+  ]
+}

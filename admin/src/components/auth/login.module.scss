@@ -1,0 +1,23 @@
+.login-box {
+  display: flex;
+  min-height: calc(100dvh - 52px);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+
+  .login-form {
+    background-color: var(--color-box);
+    width: 450px;
+    margin: auto;
+    padding-top: 30px;
+
+    .logo {
+      height: 50px;
+      display: block;
+      margin: auto;
+      width: auto;
+      max-width: none;
+      margin-bottom: 20px;
+    }
+  }
+}

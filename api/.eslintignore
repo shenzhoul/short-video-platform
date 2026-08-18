@@ -1,0 +1,7 @@
+# Ignore all files ending with .test.js
+*.test.ts
+
+*.spec.ts
+
+# Ignore files in a specific test directory
+__test__/**/*

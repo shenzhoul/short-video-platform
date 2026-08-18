@@ -1,0 +1,290 @@
+.sider {
+  background: var(--color-box);
+  transition: width 0.2s;
+  padding: 8px 10px;
+  height: 100lvh;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 0 5px 1px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 100;
+
+  &.collapsed {
+    width: 60px;
+    padding: 8px 6px;
+
+    @media (max-width: 1024px) {
+      display: block;
+      width: 250px;
+      padding: 8px 10px;
+    }
+  }
+}
+
+.menuItem {
+  width: 100%;
+  position: relative;
+  margin-bottom: 5px;
+}
+
+.menuTitle {
+  color: var(--color-main);
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-radius: 50px;
+
+  a {
+    color: inherit;
+    display: flex;
+    align-items: center;
+    flex: 1;
+    gap: 5px;
+    min-width: 0;
+
+    :global(.anticon) {
+      font-size: 18px;
+    }
+
+    &:hover {
+      color: var(--color-primary-400);
+    }
+  }
+
+  &:hover {
+    background: var(--color-grey);
+  }
+}
+
+.icon {
+  margin-right: 12px;
+  font-size: 18px;
+}
+
+.label {
+  flex: 1;
+
+  :global(.label-collapsed) {
+    display: none;
+
+    @media (max-width: 1024px) {
+      display: block;
+    }
+  }
+}
+
+.arrow {
+  color: var(--text-color);
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.submenuActive {
+  background-color: var(--color-grey);
+  border-radius: 10px 10px 0 0;
+}
+
+.collapsed .submenuActive {
+  border-radius: 50%;
+}
+
+.collapsed .subMenu {
+  display: none;
+}
+
+.subMenu {
+  background: var(--color-grey);
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+
+  a {
+    color: var(--text-color);
+
+    &:hover {
+      color: var(--color-primary-400)
+    }
+  }
+
+
+}
+
+.collapsedSubMenuPortal {
+  min-width: 200px;
+  background: var(--color-box);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  padding: 10px 0;
+}
+
+.subMenuItem {
+  padding: 8px 15px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  a {
+    color: var(--text-color);
+
+    &:hover {
+      color: var(--color-primary-400)
+    }
+  }
+}
+
+.active {
+  background: var(--color-primary-400) !important;
+  color: #fff !important;
+
+  a {
+    color: #fff !important;
+  }
+}
+
+.logo {
+  text-align: center;
+  padding: 10px 0;
+
+  img {
+    width: 160px;
+  }
+}
+
+.collapsed .logo {
+  padding: 8px 0 14px;
+
+  a {
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  img {
+    max-width: 32px;
+    max-height: 32px;
+    height: auto;
+  }
+}
+
+.menu-container {
+  overflow-y: auto;
+  flex: 1;
+  width: 100%;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    background-color: transparent;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 8px;
+  }
+
+  &::-webkit-scrollbar-button {
+    display: none;
+    height: 0;
+    width: 0;
+  }
+
+  &:hover {
+    &::-webkit-scrollbar-thumb {
+      background: #ccc;
+    }
+  }
+}
+
+.themeActions {
+  padding: 8px 10px 10px;
+}
+
+.themeToggle {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--color-box);
+  color: var(--color-main);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    background: var(--color-grey);
+  }
+}
+
+.collapsed .label {
+  flex: 0;
+}
+
+.collapsed .menuTitle {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  margin: 0 auto 5px;
+
+  a {
+    flex: 0 0 auto;
+    justify-content: center;
+    gap: 0;
+  }
+}
+
+.siderMenu {
+  width: 100%;
+}
+
+.themeIcon,
+.lightLabel {
+  display: none;
+}
+
+.moonIcon,
+.darkLabel {
+  display: inline-flex;
+}
+
+:global([data-theme='dark']) .themeToggle {
+
+  .sunIcon,
+  .lightLabel {
+    display: inline-flex;
+  }
+
+  .moonIcon,
+  .darkLabel {
+    display: none;
+  }
+}
+
+.collapsed .themeToggle {
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  margin: 0 auto;
+
+  .lightLabel,
+  .darkLabel {
+    display: none;
+  }
+}

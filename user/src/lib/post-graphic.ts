@@ -1,0 +1,1 @@
+export const GRAPHIC_SLIDE_DURATION_MS = 4000;

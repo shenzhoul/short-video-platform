@@ -1,0 +1,218 @@
+/* Date Picker Custom Styling */
+
+/* Override react-datepicker default styles */
+.date-picker-popper {
+  z-index: 50;
+}
+
+.date-picker-calendar {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  font-family: inherit;
+}
+
+/* Calendar header styling */
+.react-datepicker__header {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 1rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.react-datepicker__current-month-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Navigation buttons */
+.react-datepicker__navigation {
+  width: 2rem;
+  height: 2rem;
+  line-height: 2rem;
+}
+
+.react-datepicker__navigation:hover {
+  background: #e5e7eb;
+}
+
+.react-datepicker__navigation--previous,
+.react-datepicker__navigation--next {
+  top: 1rem;
+}
+
+/* Day of week header */
+.react-datepicker__day-names {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.react-datepicker__day-name {
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 0.75rem;
+  width: 2rem;
+  line-height: 2rem;
+}
+
+/* Days styling */
+.react-datepicker__week {
+  padding: 0.25rem 0;
+}
+
+.react-datepicker__day {
+  width: 2rem;
+  line-height: 2rem;
+  margin: 0;
+  color: #1f2937;
+  border-radius: 0.375rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.react-datepicker__day:hover:not(.react-datepicker__day--disabled) {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+/* Selected date */
+.react-datepicker__day--selected,
+.react-datepicker__day--in-range {
+  background: #3b82f6;
+  color: white;
+}
+
+.react-datepicker__day--range-start,
+.react-datepicker__day--range-end {
+  background: #3b82f6;
+  color: white;
+}
+
+.react-datepicker__day--in-selecting-range {
+  background: #dbeafe;
+  color: #0369a1;
+}
+
+/* Today styling */
+.react-datepicker__day--today {
+  font-weight: 600;
+}
+
+/* Disabled dates */
+.react-datepicker__day--disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+  background: #f9fafb;
+}
+
+.react-datepicker__day--outside-month {
+  color: #d1d5db;
+}
+
+/* Year/Month dropdown */
+.react-datepicker__year-dropdown,
+.react-datepicker__month-dropdown {
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 0.375rem;
+}
+
+.react-datepicker__year-option,
+.react-datepicker__month-option {
+  padding: 0.5rem 1rem;
+}
+
+.react-datepicker__year-option:hover,
+.react-datepicker__month-option:hover {
+  background: #e0f2fe;
+}
+
+.react-datepicker__year-option--selected,
+.react-datepicker__month-option--selected {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Time styling (if used) */
+.react-datepicker__time-container {
+  border-left: 1px solid #e5e7eb;
+}
+
+.react-datepicker__time {
+  background: #f9fafb;
+}
+
+.react-datepicker__time-list-item {
+  color: #1f2937;
+  padding: 0.5rem 1rem;
+  line-height: 2rem;
+}
+
+.react-datepicker__time-list-item:hover {
+  background: #e0f2fe;
+}
+
+.react-datepicker__time-list-item--selected {
+  background: #3b82f6;
+  color: white;
+}
+
+/* Input styling */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+/* Error state */
+.react-datepicker--error {
+  border-color: #ef4444;
+}
+
+.react-datepicker--error .react-datepicker__header {
+  background: #fee2e2;
+}
+
+/* Success state */
+.react-datepicker--success {
+  border-color: #10b981;
+}
+
+.react-datepicker--success .react-datepicker__header {
+  background: #ecfdf5;
+}
+
+/* Warning state */
+.react-datepicker--warning {
+  border-color: #f59e0b;
+}
+
+.react-datepicker--warning .react-datepicker__header {
+  background: #fefce8;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .react-datepicker {
+    width: 100%;
+  }
+
+  .react-datepicker__day {
+    width: 1.75rem;
+    line-height: 1.75rem;
+    font-size: 0.875rem;
+  }
+
+  .react-datepicker__day-name {
+    width: 1.75rem;
+    line-height: 1.75rem;
+    font-size: 0.75rem;
+  }
+
+  .react-datepicker__navigation {
+    width: 1.5rem;
+    height: 1.5rem;
+    line-height: 1.5rem;
+  }
+}

@@ -1,0 +1,72 @@
+.menu-action {
+  display: flex;
+  align-items: center;
+
+  .item-action {
+    font-size: 14px;
+    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    position: relative;
+
+    a {
+      color: var(--color-primary);
+    }
+
+    button {
+      border: 0;
+      background: none;
+      outline: none;
+      cursor: pointer;
+      color: var(--color-primary);
+      font-size: 15px;
+    }
+
+    :global(.anticon-delete),
+    :global(.anticon-stop) {
+      color: red;
+    }
+
+    :global(.anticon-eye),
+    :global(.anticon-edit) {
+      font-size: 17px;
+    }
+
+    :global(.anticon-check) {
+      color: green;
+    }
+
+    .label-action {
+      display: none;
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: var(--color-box);
+      padding: 5px 10px;
+      box-shadow: 0 0 5px 2px rgba($color: var(--text-color), $alpha: 0.1);
+      white-space: nowrap;
+      border-radius: 5px;
+      color: var(--text-color);
+      font-size: 13px;
+
+      @media (max-width: 768px) {
+        display: none !important;
+      }
+    }
+
+    &:last-child {
+      .label-action {
+        left: auto;
+        right: 0;
+        transform: none;
+      }
+    }
+
+    &:hover {
+      .label-action {
+        display: block;
+      }
+    }
+  }
+}

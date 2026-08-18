@@ -1,0 +1,50 @@
+{
+  "errors": {
+    "user_not_found": "User not found",
+    "invalid_login_credentials": "Your username/email or password is incorrect, please recheck.",
+    "base_model_not_initialized": "BaseUserModel is not initialized. Ensure the service constructor has been called.",
+    "no_database_connection": "MongoDB connection not established. Check your MONGO_URI configuration.",
+    "password_incorrect": "Password incorrect",
+    "email_not_verified": "Email not verified",
+    "cannot_authenticate": "Cannot authenticate",
+    "account_not_found": "Account not found",
+    "account_inactive": "Account is inactive",
+    "failed_to_generate_upload_url": "Failed to generate upload URL: {{reason}}",
+    "file_size_required_for_tus_uploads": "File size is required for TUS uploads",
+    "file_server_request_failed": "File server request failed: {{reason}}",
+    "files_missing_for_operation": "Cannot {{operation}} content: Some files do not exist or are not accessible",
+    "no_permission_to_use_files": "Cannot {{operation}} content: You don't have permission to use {{count}} file(s). You can only use files you uploaded or files uploaded by administrators.",
+    "document_verification_required_delete": "Document verification required to delete content",
+    "document_verification_required_create": "Document verification required to create content",
+    "document_verification_required_upload": "Document verification required to upload content",
+    "post_video_draft_not_found": "The unpublished video draft was not found.",
+    "post_video_draft_access_denied": "You do not have permission to access this unpublished video draft.",
+    "post_video_draft_already_attached": "This video is already attached to published content and cannot be discarded as a draft.",
+    "post_video_draft_discard_failed": "The unpublished video draft could not be completely removed. Please try again.",
+    "post_photo_draft_access_denied": "You do not have permission to access one or more unpublished photo drafts.",
+    "post_photo_draft_already_attached": "One or more photos are already attached to published content and cannot be discarded as drafts.",
+    "post_photo_draft_discard_failed": "The unpublished photo drafts could not be completely removed. Please try again.",
+    "parent_comment_not_found": "Parent comment not found",
+    "invalid_comment_reply_level": "Cannot reply to nested comments. Maximum nesting level is 1.",
+    "cannot_follow_yourself": "You cannot follow yourself"
+  },
+  "auth": {
+    "no_valid_token": "No valid token found",
+    "successfully_logged_out": "Successfully logged out",
+    "logout_failed_maybe_invalidated": "Logout failed, but session may still be invalidated",
+    "all_sessions_have_been_invalidated": "All sessions have been invalidated for security reasons",
+    "security_logout_failed_contact_support": "Security logout failed, please contact support",
+    "no_token_to_invalidate": "No token to invalidate",
+    "token_invalidated_successfully": "Token invalidated successfully"
+  },
+  "identity": {
+    "file": {
+      "not_found": "File not found"
+    },
+    "admin_permission": {
+      "only_superadmin_manage": "Only superadmin can manage admin permissions",
+      "cannot_modify_superadmin_permissions": "Cannot modify superadmin account permissions",
+      "admin_permissions_toggled": "Admin permissions {{action}} for user {{username}}"
+    }
+  }
+}
