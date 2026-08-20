@@ -41,7 +41,7 @@ export default function NotificationBell({ isLoggedIn }: IProps) {
         </span>
       )}
     >
-      {isLoggedIn ? <NotificationPanel onNavigate={() => setOpen(false)} /> : <LoggedInWarning />}
+      {isLoggedIn ? <NotificationPanel onNavigate={() => setOpen(false)} /> : <LoggedInWarning type="notification messages" />}
     </Dropdown>
   );
 }

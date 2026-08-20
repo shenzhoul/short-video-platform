@@ -48,6 +48,7 @@ Request routing, the `/api/v1` rewrite, and the socket proxy are documented in
 ```bash
 yarn dev              # dev server on 8081
 yarn build            # production build (output in dist/.next)
+# dev output goes to dist/.next-dev, so a build cannot disturb a running dev server
 yarn start            # serve the production build on 8081
 yarn lint             # eslint --fix over src/
 yarn test             # jest (jsdom + next/jest)

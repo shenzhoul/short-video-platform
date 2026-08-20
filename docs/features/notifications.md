@@ -12,6 +12,8 @@ tags: [notification, realtime, socket, reaction, comment, follow, mention]
 
 Authenticated users receive backend-created interaction notifications in the existing header panel. The bell shows one red unread indicator; opening the panel marks the whole inbox read.
 
+The message icon beside the bell carries its own, separate red indicator with its own counter. The two use identical markup deliberately — they mean the same thing to a reader — but neither affects the other, and messages are never marked read by opening the notification panel. See [Direct Messaging](./messaging.md).
+
 ## Active notification types
 
 | Type | Trigger | Recipient | Grouping | Opens |

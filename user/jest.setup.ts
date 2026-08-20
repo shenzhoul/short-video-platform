@@ -63,3 +63,11 @@ window.IntersectionObserver = window.IntersectionObserver || (class {
 
   takeRecords() { return []; }
 } as any);
+
+// jsdom provides the URL constructor but not the object-URL methods. Media
+// composers create a local preview while an attachment uploads; the assertions
+// are about the upload and send order, not about blob URLs.
+if (typeof URL.createObjectURL === 'undefined') {
+  URL.createObjectURL = (() => 'blob:jsdom-stub') as typeof URL.createObjectURL;
+  URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
+}

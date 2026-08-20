@@ -13,7 +13,9 @@ import {
   UserPostController,
   SearchController,
   SocialController,
-  NotificationController
+  NotificationController,
+  ConversationController,
+  MessageController
 } from './index';
 import { AdminAvatarController } from 'src/controllers/identity/user/admin-avatar.controller';
 import { ContentFileController } from 'src/controllers/content/content-file.controller';
@@ -50,5 +52,9 @@ export const appControllers = [
 
   // comment & community
   SocialController,
-  NotificationController
+  NotificationController,
+
+  // direct messages
+  ConversationController,
+  MessageController
 ]

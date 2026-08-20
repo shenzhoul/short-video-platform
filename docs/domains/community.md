@@ -48,6 +48,22 @@ See [Interaction Notifications](../features/notifications.md).
 
 Authenticated users can idempotently follow active creators. Creator follow state is populated into post/profile user DTOs and drives the one-way avatar `+` action, the followed-creator list, and `/following` feed. See [Creator Following](../features/following.md).
 
+Follow state also governs messaging permission. `FollowService.areMutuallyFollowing` and `getMutualFollowerIdSet` are read live on every send and on every conversation list — the follow relation is never copied onto a conversation, so an unfollow takes effect on the next message.
+
+## Direct messages
+
+Authenticated users exchange private one-to-one messages. Mutual followers message freely; everyone else goes through a message request — the initiator sends one message and waits, and the recipient's reply accepts it, after which both may message freely. Permission is evaluated per send from the live follow relation and enforced by atomic conditional updates on `Conversation.pendingSenderId` and `requestAccepted`. An unfollow resets an accepted request.
+
+Collections: `conversations` (pair identity via a unique `hashKey`, plus the preview and the request state), `conversation_participants` (per-user unread and read state), `messages` (`text`, `image`, `video`).
+
+API routes:
+
+- `GET /conversations`, `POST /conversations`, `GET /conversations/:id`, `PUT /conversations/:id/read`
+- `GET /messages/conversations/:conversationId`, `POST /messages/conversations/:conversationId`
+- `GET /messages/unread-count`, `PUT /messages/read-all`
+
+See [Direct Messaging](../features/messaging.md).
+
 ## Not implemented
 
-Direct messages, live chat, mutual friends, bookmarks, user blocking, content reports, and live-stream interaction are not part of the current community domain. Notification settings, muting, and mention-producing listeners are also not implemented.
+Live chat, group conversations, mutual friends, bookmarks, user blocking, content reports, and live-stream interaction are not part of the current community domain. Notification settings, muting, message deletion, and message moderation are also not implemented.

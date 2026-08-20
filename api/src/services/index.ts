@@ -38,6 +38,10 @@ export { CommentService } from './community/comment/comment.service';
 export { NotificationService } from './community/notification';
 export { ReactionService } from './community/reaction/reaction.service';
 export { FollowService } from './community/follow';
+export { ConversationService } from './community/message/conversation.service';
+export { ConversationParticipantService } from './community/message/conversation-participant.service';
+export { MessagePermissionService } from './community/message/message-permission.service';
+export { MessageService } from './community/message/message.service';
 export { CommunicationService } from './community/communication.service';
 export { ContentPermissionService } from './community/content-permission.service';
 

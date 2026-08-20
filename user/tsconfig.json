@@ -68,17 +68,16 @@
   },
   "exclude": [
     "node_modules",
-    "pages_bk"
+    "pages_bk",
+    "dist/.next/dev"
   ],
   "include": [
     "**/*.ts",
     "**/*.tsx",
     "./src/**/*",
-    "dist/.next/types/**/*.ts",
     "next-env.d.ts",
-    ".next/types/**/*.ts",
-    "dist/.next/dev/types/**/*.ts",
-    "dist\\.next\\dev/types/**/*.ts",
-    "dist\\.next\\dev/types/**/*.ts"
+    "dist/.next/types/**/*.ts",
+    "dist/.next-dev/dev/types/**/*.ts",
+    "dist/.next/dev/types/**/*.ts"
   ]
 }

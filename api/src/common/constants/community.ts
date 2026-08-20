@@ -307,3 +307,65 @@ export const POST_STATS_POLICY = {
  * counter. No reply weighting and no time decay in v1.
  */
 export const HOT_COMMENT_MIN_LIKES = 3;
+
+// ===== DIRECT MESSAGE CONSTANTS =====
+
+/**
+ * Message content types supported by the direct-message composer.
+ *
+ * Deliberately narrow. Audio, stickers and system messages exist in older
+ * codebases but nothing in this product produces them, and an enum value with
+ * no producer is a branch every renderer has to handle for no reason.
+ */
+export const MESSAGE_TYPES = {
+  TEXT: 'text',
+  IMAGE: 'image',
+  VIDEO: 'video'
+} as const;
+
+export const MESSAGE_TYPE_LIST = Object.values(MESSAGE_TYPES);
+
+export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
+
+/** Queue channel carrying message domain events for asynchronous fan-out. */
+export const MESSAGE_CHANNELS = {
+  MESSAGE: 'MESSAGE_CHANNELS.MESSAGE'
+} as const;
+
+/** Message domain events published on {@link MESSAGE_CHANNELS}. */
+export const MESSAGE_EVENTS = {
+  CREATED: 'message:created',
+  READ: 'message:read'
+} as const;
+
+/**
+ * Socket events pushed to a participant's own sockets.
+ *
+ * Every one of these is addressed to specific users, never broadcast: a direct
+ * message and its unread counters are private to the two people in the
+ * conversation.
+ */
+export const MESSAGE_SOCKET_EVENTS = {
+  /** A new message, delivered to both participants so multi-tab senders stay in sync. */
+  CREATED: 'message:created',
+  /** The recipient's view of a conversation changed: preview, order, unread, permission. */
+  CONVERSATION_UPDATED: 'conversation:updated',
+  /** Authoritative unread totals for the header indicator. */
+  UNREAD_UPDATED: 'message:unread-updated',
+  /** A conversation was read, so the reader's other tabs can clear it too. */
+  READ: 'message:read'
+} as const;
+
+/**
+ * Preview length stored on the conversation.
+ *
+ * Long enough to fill a list row at the workspace's width and short enough that
+ * the conversation list never pays for message bodies it will not show.
+ */
+export const MESSAGE_PREVIEW_LENGTH = 120;
+
+/** Upper bound on a single message's text, matching the schema's `maxlength`. */
+export const MESSAGE_TEXT_MAX_LENGTH = 5000;
+
+/** Attachments allowed on one message. */
+export const MESSAGE_MAX_ATTACHMENTS = 1;

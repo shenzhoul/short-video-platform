@@ -1753,7 +1753,209 @@ function UnpinSvg() {
     </svg>
   );
 }
+function LikePostSvg() {
+  return (
+    <svg
+      viewBox="0 0 22 22"
+      width="1em"
+      height="1em"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        cx={10}
+        cy={10}
+        r={10}
+        fill="url(#diggIconGradient)"
+      />
 
+      <g filter="url(#diggIconInnerShadow)">
+        <path
+          fill="#fff"
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M10.378 7.021a2.503 2.503 0 0 0-.42.574 2.424 2.424 0 0 0-.419-.575 1.97 1.97 0 0 0-1.436-.591c-1.377 0-2.512 1.108-2.512 2.743 0 1.815 1.524 3.615 3.857 5.135.178.12.375.228.51.228.133 0 .334-.108.513-.228 2.333-1.52 3.856-3.32 3.856-5.135 0-1.635-1.135-2.743-2.511-2.743a1.97 1.97 0 0 0-1.438.592z"
+        />
+      </g>
+
+      <defs>
+        <filter
+          id="diggIconInnerShadow"
+          x={5.591}
+          y={6.429}
+          width={8.736}
+          height={9.598}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
+          <feFlood floodOpacity={0} result="BackgroundImageFix" />
+
+          <feBlend
+            in="SourceGraphic"
+            in2="BackgroundImageFix"
+            result="shape"
+          />
+
+          <feColorMatrix
+            in="SourceAlpha"
+            values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"
+            result="hardAlpha"
+          />
+
+          <feOffset dy={1.492} />
+          <feGaussianBlur stdDeviation={2.238} />
+
+          <feComposite
+            in2="hardAlpha"
+            operator="arithmetic"
+            k2={-1}
+            k3={1}
+          />
+
+          <feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.34 0" />
+
+          <feBlend in2="shape" result="effect1InnerShadow" />
+        </filter>
+
+        <linearGradient
+          id="diggIconGradient"
+          x1={10}
+          y1={0}
+          x2={10}
+          y2={20}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFA189" />
+          <stop offset={1} stopColor="#FF1F5F" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+function CommentSvg() {
+  return (
+    <svg
+      viewBox="0 0 22 22"
+      width="1em"
+      height="1em"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        cx={10}
+        cy={10}
+        r={10}
+        fill="url(#commentIconGradient)"
+      />
+
+      <path
+        fill="#fff"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10 13.464c2.627 0 4.757-1.85 4.757-4.133 0-2.282-2.13-4.133-4.757-4.133s-4.757 1.85-4.757 4.133 2.13 4.133 4.757 4.133zm-2.4-3.312a.618.618 0 1 0 0-1.237.618.618 0 0 0 0 1.237zm3.018-.624a.619.619 0 1 1-1.237 0 .619.619 0 0 1 1.237 0zm1.782.618a.619.619 0 1 0 0-1.237.619.619 0 0 0 0 1.237z"
+      />
+
+      <path
+        fill="#fff"
+        d="M10.07 13.788v-.674l2.946-.599-2.138 1.667a.5.5 0 0 1-.807-.394z"
+      />
+
+      <defs>
+        <linearGradient
+          id="commentIconGradient"
+          x1={10}
+          y1={0}
+          x2={10}
+          y2={20}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#5FDAFF" />
+          <stop offset={1} stopColor="#076EFF" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+function TagSvg() {
+  return (
+    <svg
+      viewBox="0 0 22 22"
+      width="1em"
+      height="1em"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle
+        cx={10}
+        cy={10}
+        r={10}
+        fill="url(#atIconGradient)"
+      />
+
+      <path
+        fill="#fff"
+        d="M10.18 14.715c.346 0 1.016-.075 1.016-.075s.554-.062.498-.605c-.057-.543-.612-.43-.612-.43l-.098.011-.182.019-.166.014c-.13.01-.245.014-.341.014a4.405 4.405 0 0 1-1.525-.254 3.404 3.404 0 0 1-1.192-.729 3.273 3.273 0 0 1-.775-1.146 3.945 3.945 0 0 1-.275-1.509c0-.523.087-1.012.262-1.464a3.57 3.57 0 0 1 .737-1.178 3.368 3.368 0 0 1 1.147-.786 3.75 3.75 0 0 1 1.48-.285c.495 0 .952.067 1.37.202.42.136.78.336 1.083.602.304.267.54.596.712.99.17.392.256.842.256 1.349 0 .6-.11 1.077-.327 1.432-.218.355-.493.533-.826.533-.163 0-.272-.05-.327-.146a.72.72 0 0 1-.083-.362c0-.126.015-.261.044-.405.03-.144.054-.275.07-.393l.459-2.11c.047-.229-.058-.468-.456-.52-.397-.053-.63.175-.665.346l-.08.395h-.013c-.068-.194-.214-.359-.436-.494s-.495-.203-.82-.203a2.14 2.14 0 0 0-1.025.247 2.62 2.62 0 0 0-.794.653c-.222.27-.393.579-.513.925a3.204 3.204 0 0 0-.179 1.052c0 .609.158 1.103.474 1.483.316.38.765.57 1.345.57.385 0 .71-.09.974-.272.265-.181.461-.374.59-.577h.064c0 .246.102.448.307.609.205.16.478.24.82.24.328.002.653-.065.955-.196.303-.13.572-.327.807-.59.235-.26.423-.586.564-.975a3.93 3.93 0 0 0 .211-1.344c0-.684-.126-1.28-.378-1.787A3.711 3.711 0 0 0 13.325 6.3a4.365 4.365 0 0 0-1.454-.76 5.693 5.693 0 0 0-1.692-.254c-.674 0-1.309.12-1.902.361a4.915 4.915 0 0 0-1.557.995 4.662 4.662 0 0 0-1.05 1.496 4.553 4.553 0 0 0-.385 1.876c0 .684.117 1.316.352 1.895.235.578.566 1.075.993 1.489.427.414.942.737 1.544.97.602.232 1.27.348 2.005.348zm-.462-3.308a.775.775 0 0 1-.41-.095.796.796 0 0 1-.25-.24.857.857 0 0 1-.128-.318 1.762 1.762 0 0 1-.032-.323c0-.203.028-.414.083-.634.056-.22.137-.42.244-.602.1-.174.233-.326.39-.45a.855.855 0 0 1 .539-.177c.162 0 .299.034.41.101a.77.77 0 0 1 .262.26c.064.105.11.224.135.355.025.13.038.264.038.4 0 .168-.023.354-.07.557-.045.198-.12.388-.224.564-.1.17-.236.317-.397.43a1.002 1.002 0 0 1-.59.172z"
+      />
+
+      <defs>
+        <linearGradient
+          id="atIconGradient"
+          x1={10}
+          y1={0}
+          x2={11.339}
+          y2={19.91}
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop stopColor="#FFD771" />
+          <stop offset={1} stopColor="#FFAD10" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+export function TagIcon({
+  style,
+  rotate,
+  spin,
+  className
+}: IIcons) {
+  return (
+    <Icon
+      component={TagSvg}
+      className={className ? `${className} anticon-custom` : 'anticon-custom'}
+      {...{ style, rotate, spin }}
+    />
+  );
+}
+export function CommentIcon({
+  style,
+  rotate,
+  spin,
+  className
+}: IIcons) {
+  return (
+    <Icon
+      component={CommentSvg}
+      className={className ? `${className} anticon-custom` : 'anticon-custom'}
+      {...{ style, rotate, spin }}
+    />
+  );
+}
+export function LikePostIcon({
+  style,
+  rotate,
+  spin,
+  className
+}: IIcons) {
+  return (
+    <Icon
+      component={LikePostSvg}
+      className={className ? `${className} anticon-custom` : 'anticon-custom'}
+      {...{ style, rotate, spin }}
+    />
+  );
+}
 export function UnpinIcon({
   style,
   rotate,

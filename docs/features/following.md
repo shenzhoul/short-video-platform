@@ -47,3 +47,9 @@ Graphic previous/next controls stay inside the media stage, but the next control
 - `GET /posts/following` — cursor/offset-paginated active posts authored by followed creators.
 
 The reaction schema keeps the ordered following lookup index on `createdBy`, `objectType`, `action`, `createdAt`, and `_id`.
+
+## Effect on messaging
+
+Mutual follows — A follows B and B follows A — grant unrestricted direct messaging between the two. A non-mutual pair goes through a message request instead: the initiator sends one message and waits, and the recipient's reply accepts it, freeing both.
+
+This is read live rather than stored, so following or unfollowing changes send permission on the very next message: `FollowService.areMutuallyFollowing` for a single check and `getMutualFollowerIdSet` for a batched conversation list. Unfollowing a creator you were messaging freely returns that conversation to an unanswered request while preserving its history — `FollowService.unfollow` publishes a `deleted` follow event and the message domain resets that pair. See [Direct Messaging](./messaging.md).

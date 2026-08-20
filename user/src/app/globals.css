@@ -272,6 +272,66 @@ body {
   background: rgba(255, 255, 255, 0.42);
 }
 
+/**
+ * Scrollbar for the message surfaces.
+ *
+ * Separate from `.home-feed-scrollbar`, whose thumb is hardcoded white for the
+ * dark feed. The message workspace sits on the page surface in both themes, so
+ * its thumb is derived from the text colour instead and stays visible on a
+ * light background.
+ */
+.message-scrollbar {
+  scrollbar-color: var(--text-faint) transparent;
+  scrollbar-width: thin;
+}
+
+.message-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.message-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: var(--text-faint);
+}
+
+.message-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-disabled);
+}
+
+/**
+ * Height of the fixed application header.
+ *
+ * A token rather than a repeated literal because three things have to agree on
+ * it: the header's own height, the padding the content column uses to clear it,
+ * and the offset the message workspace starts at. The workspace sits *below*
+ * the header rather than over it, so a mismatch here would either cover the
+ * header actions or leave a gap above the panel.
+ */
+:root {
+  --app-header-height: 3.5rem;
+}
+
+/**
+ * Width the right-side message workspace removes from the page.
+ *
+ * Declared here with a zero default so every consumer can subtract it
+ * unconditionally: the shell content column and the post-detail overlay both
+ * read the same variable, and neither needs to know whether messages happen to
+ * be open. The provider sets it to a real width when the panel takes a column,
+ * and leaves it at zero when the panel overlays instead.
+ *
+ * The header deliberately does *not* subtract it: the workspace begins under
+ * the header, so the header keeps its full width and every action stays
+ * reachable while messages are open.
+ */
+:root {
+  --message-workspace-width: 0px;
+}
+
 .home-feed-card-media {
   padding-top: 56.25%;
 }

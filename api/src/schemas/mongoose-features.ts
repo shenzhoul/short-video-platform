@@ -12,6 +12,9 @@ import {
   PostMediaSchema, PostMedia,
   // Community schemas
   Comment, CommentSchema,
+  Conversation, ConversationSchema,
+  ConversationParticipant, ConversationParticipantSchema,
+  Message, MessageSchema,
   Notification, NotificationSchema,
   ReactionSchema, Reaction,
 } from './index';
@@ -66,6 +69,9 @@ export const mongooseFeatures = MongooseModule.forFeature([
 
   // Community schemas
   { name: Comment.name, schema: CommentSchema },
+  { name: Conversation.name, schema: ConversationSchema },
+  { name: ConversationParticipant.name, schema: ConversationParticipantSchema },
+  { name: Message.name, schema: MessageSchema },
   { name: Notification.name, schema: NotificationSchema },
   { name: Reaction.name, schema: ReactionSchema }
 ])

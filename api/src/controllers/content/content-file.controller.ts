@@ -324,6 +324,130 @@ export class ContentFileController {
     }
   }
 
+  /**
+   * Upload URL for a photo attached to a direct message.
+   *
+   * Deliberately separate from the post photo endpoint rather than reusing it.
+   * The post endpoint gates on creator document verification, which is right for
+   * published content and wrong for a private message — anyone able to hold a
+   * conversation must be able to send a picture in it. It also produces a blur
+   * placeholder, which a direct message has no use for: both participants may
+   * see the image in full, so there is nothing to obscure.
+   */
+  @Post('message/photo/upload')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UseGuards(AuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Get message photo upload URL',
+    description: 'Generate a secure upload URL for a photo sent in a direct message. Available to any authenticated user.'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        filename: { type: 'string', description: 'Original filename for the photo', example: 'photo.jpg' },
+        fileSize: { type: 'number', description: 'Size of the file in bytes (required for TUS uploads)', example: 2048576 }
+      },
+      required: ['filename']
+    }
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Upload URL generated successfully', type: DataResponse })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'User not authenticated' })
+  async getMessagePhotoUploadUrl(
+    @Body() body: { filename: string; fileSize?: number },
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<any>> {
+    try {
+      const uploadData = await this.fileServerService.generateImageUploadUrl({
+        filename: body.filename,
+        fileSize: body.fileSize,
+        type: 'message-photo',
+        acl: 'public-read',
+        processingOptions: {
+          generateThumbnail: true,
+          generateBlurImage: false,
+          quality: 85,
+          imageFormat: 'webp',
+          immediateProcess: true
+        },
+        metadata: {
+          category: 'message',
+          fileType: 'photo',
+          uploadedBy: user._id
+        },
+        createdBy: user.isAdmin ? 'admin' : user._id
+      });
+
+      return DataResponse.ok(uploadData);
+    } catch (error) {
+      throw new HttpException(
+        __t('errors.failed_to_generate_upload_url', { reason: error.message }),
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
+   * Upload URL for a video attached to a direct message.
+   *
+   * Processed in the background like any other video, so the composer shows the
+   * attachment as still processing rather than blocking the send.
+   */
+  @Post('message/video/upload')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UseGuards(AuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Get message video upload URL',
+    description: 'Generate a secure upload URL for a video sent in a direct message. Available to any authenticated user.'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        filename: { type: 'string', description: 'Original filename for the video', example: 'clip.mp4' },
+        fileSize: { type: 'number', description: 'Size of the file in bytes (required for TUS uploads)', example: 52428800 }
+      },
+      required: ['filename']
+    }
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Upload URL generated successfully', type: DataResponse })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'User not authenticated' })
+  async getMessageVideoUploadUrl(
+    @Body() body: { filename: string; fileSize?: number },
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<any>> {
+    try {
+      const uploadData = await this.fileServerService.generateVideoUploadUrl({
+        filename: body.filename,
+        fileSize: body.fileSize,
+        type: 'message-video',
+        acl: 'public-read',
+        processingOptions: {
+          generateThumbnail: true,
+          generateBlurImage: false,
+          immediateProcess: false
+        },
+        metadata: {
+          category: 'message',
+          fileType: 'video',
+          uploadedBy: user._id
+        },
+        createdBy: user.isAdmin ? 'admin' : user._id
+      });
+
+      return DataResponse.ok(uploadData);
+    } catch (error) {
+      throw new HttpException(
+        __t('errors.failed_to_generate_upload_url', { reason: error.message }),
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
   @Get('post/photo/drafts')
   @Roles('user', 'admin')
   @UseGuards(AuthGuard, RoleGuard)

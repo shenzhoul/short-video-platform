@@ -1,12 +1,15 @@
 import './globals.css';
 import 'react-toastify/dist/ReactToastify.css';
 
+import MessageWorkspace from '@components/message/message-workspace';
 import NotificationToaster from '@components/notification/notification-toast';
 import ServiceWorkerRegistration from '@components/service-worker-registration';
 import { SharedToastProvider } from '@douyin-clone/shared-toast';
 import { authOptions } from '@lib/auth-options';
 import { LeftMenuProvider } from '@providers/left-menu.provider';
 import { MainLayoutProvider } from '@providers/main-layout.provider';
+import { MessageProvider } from '@providers/message.provider';
+import { MessageWorkspaceProvider } from '@providers/message-workspace.provider';
 import { NotificationProvider } from '@providers/notification.provider';
 import { ProfileProvider } from '@providers/profile.provider';
 import ReactQueryProvider from '@providers/react-query.provider';
@@ -95,13 +98,22 @@ export default async function RootLayout({
               <ReactQueryProvider>
                 <ProfileProvider>
                   <NotificationProvider>
-                    <LeftMenuProvider>
-                      <MainLayoutProvider settings={providerSettings}>
-                        <div id="main-content">
-                          {children}
-                        </div>
-                      </MainLayoutProvider>
-                    </LeftMenuProvider>
+                    <MessageProvider>
+                      <MessageWorkspaceProvider>
+                        <LeftMenuProvider>
+                          <MainLayoutProvider settings={providerSettings}>
+                            <div id="main-content">
+                              {children}
+                            </div>
+                          </MainLayoutProvider>
+                        </LeftMenuProvider>
+                        {/* Mounted once, beside the page rather than inside it.
+                            This is what makes the header entry point and the
+                            post-detail entry point open the *same* workspace
+                            instead of each rendering their own. */}
+                        <MessageWorkspace />
+                      </MessageWorkspaceProvider>
+                    </MessageProvider>
                     {/* Inside the provider so it reads the same realtime queue
                         the panel and bell badge do. */}
                     <NotificationToaster />

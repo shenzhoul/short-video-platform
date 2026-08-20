@@ -59,6 +59,10 @@ import {
   NotificationService,
   ReactionService,
   FollowService,
+  ConversationService,
+  ConversationParticipantService,
+  MessagePermissionService,
+  MessageService,
   PostStatisticsService,
   CommunicationService,
   ContentPermissionService
@@ -83,6 +87,7 @@ import { PostRoomListener } from 'src/listeners/community/post-room.listener';
 import { CommentContentListener, PostDeletionListener, ReactionAssetsListener } from 'src/listeners/content';
 import { CreatorDeletePostListener } from 'src/listeners/content/post';
 import { ReactionCommentListener, ReplyCommentListener } from 'src/listeners/community/comment';
+import { MessageDeliveryListener, MessageFollowListener } from 'src/listeners/community/message';
 import {
   NotificationCommentListener,
   NotificationDeliveryListener,
@@ -142,6 +147,14 @@ export const appProviders = [
   // Reaction services
   ReactionService,
   FollowService,
+
+  // Direct message services and listeners
+  ConversationService,
+  ConversationParticipantService,
+  MessagePermissionService,
+  MessageService,
+  MessageDeliveryListener,
+  MessageFollowListener,
 
   // Notification services and listeners
   NotificationService,

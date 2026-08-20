@@ -3,6 +3,7 @@
 import { formatCompactCount } from '@components/content/post/home-feed-media';
 import CreatorProfileBio from '@components/creator/creator-profile-bio';
 import CreatorProfileFollowerFollowing, { FollowListTabKey } from '@components/creator/creator-profile-follower-following';
+import ProfileMessageButton from '@components/message/profile-message-button';
 import CoverUpload from '@components/shared/cover-upload';
 import HoverRevealPanel from '@components/ui/hover-reveal-panel';
 import SearchInput from '@components/ui/search-input';
@@ -186,103 +187,123 @@ export default function CreatorProfileHeader({
           }
         }}
       />
-      <div className='pointer-events-none relative z-60 -mt-40 max-w-380 w-full flex mx-auto mb-5.25'>
-        <div className='w-28 flex-none'>
-          <button
-            type="button"
-            className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
-            onClick={onOpenAvatarPreview}
-            aria-label="Preview avatar"
-          >
-            <img src={previewAvatar} className='rounded-full w-full h-full object-cover block relative border-none' />
-          </button>
-        </div>
-        <div className='min-h-30 flex-1 flex-wrap flex items-center content-center ml-8'>
-          <div className='flex relative w-full'>
-            <h1 className='m-0 text-xl leading-7 pointer-events-auto'>
-              <span className='block max-w-75 flex-none overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl font-medium leading-7'>
-                {previewName}
-              </span>
-            </h1>
-            {canEditProfile ? (
-              <span className='pointer-events-auto cursor-pointer py-0.5' onClick={onOpenEdit}>
-                <EditIcon className='text-2xl text-(--text-muted)' />
-              </span>
-            ) : null}
+      {/*
+        Only the hero *content* is constrained by the message workspace.
+
+        The cover above is deliberately left full-bleed, so its artwork still
+        runs to the edge of the viewport behind the header — cutting it at the
+        content boundary exposed a strip of page background in the top right.
+        This wrapper puts the avatar, creator info and actions back inside the
+        narrowed column so none of them can end up beneath the panel.
+      */}
+      <div className='w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
+        <div className='pointer-events-none relative z-60 -mt-40 max-w-380 w-full flex mx-auto mb-5.25'>
+          <div className='w-28 flex-none'>
+            <button
+              type="button"
+              className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
+              onClick={onOpenAvatarPreview}
+              aria-label="Preview avatar"
+            >
+              <img src={previewAvatar} className='rounded-full w-full h-full object-cover block relative border-none' />
+            </button>
           </div>
-          <div className='w-full mt-1 flex'>
-            <button
-              type="button"
-              className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
-              onClick={() => openFollowList('following')}
-            >
-              <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
-                Following
-              </div>
-              <div className='text-[16px] leading-6 text-(--text)'>
-                {formatCompactCount(followingCount)}
-              </div>
-            </button>
-            <button
-              type="button"
-              className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
-              onClick={() => openFollowList('follower')}
-            >
-              <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
-                Follower
-              </div>
-              <div className='text-[16px] leading-6 text-(--text)'>
-                {formatCompactCount(followerCount)}
-              </div>
-            </button>
-            <div className='flex items-center pointer-events-auto'>
-              <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted)'>
-                Received praise
-              </div>
-              <div className='text-[16px] leading-6 text-(--text)'>
-                {formatCompactCount(likeCount)}
+          <div className='min-h-30 flex-1 flex-wrap flex items-center content-center ml-8'>
+            <div className='flex relative w-full'>
+              <h1 className='m-0 text-xl leading-7 pointer-events-auto'>
+                <span className='block max-w-75 flex-none overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl font-medium leading-7'>
+                  {previewName}
+                </span>
+              </h1>
+              {canEditProfile ? (
+                <span className='pointer-events-auto cursor-pointer py-0.5' onClick={onOpenEdit}>
+                  <EditIcon className='text-2xl text-(--text-muted)' />
+                </span>
+            ) : null}
+            </div>
+            <div className='w-full mt-1 flex'>
+              <button
+                type="button"
+                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
+                onClick={() => openFollowList('following')}
+              >
+                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
+                  Following
+                </div>
+                <div className='text-[16px] leading-6 text-(--text)'>
+                  {formatCompactCount(followingCount)}
+                </div>
+              </button>
+              <button
+                type="button"
+                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
+                onClick={() => openFollowList('follower')}
+              >
+                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
+                  Follower
+                </div>
+                <div className='text-[16px] leading-6 text-(--text)'>
+                  {formatCompactCount(followerCount)}
+                </div>
+              </button>
+              <div className='flex items-center pointer-events-auto'>
+                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted)'>
+                  Received praise
+                </div>
+                <div className='text-[16px] leading-6 text-(--text)'>
+                  {formatCompactCount(likeCount)}
+                </div>
               </div>
             </div>
-          </div>
-          <p className='pointer-events-auto w-full h-5 flex items-center mt-3'>
-            <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
-              Douyin ID: {creator.username}
-            </span>
-            <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
-              IP location: Guangdong
-            </span>
-            <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
-              <MaleIcon className='text-xs mr-1' /> 28 years old
-            </span>
-            <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
-              Guangdong Â· Shenzhen
-            </span>
-          </p>
-          <CreatorProfileBio bio={previewBio} />
-          <CreatorProfileFollowerFollowing
-            open={openFollowModal}
-            onClose={() => setOpenFollowModal(false)}
-            activeTab={activeTab}
-            onActiveTabChange={setActiveTab}
-            userId={creator._id}
-            isOwnProfile={isOwnProfile}
-            followingTotal={followingCount}
-            followerTotal={followerCount}
-            onViewerFollowingDelta={(delta) => {
+            <p className='pointer-events-auto w-full h-5 flex items-center mt-3'>
+              <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
+                Douyin ID: {creator.username}
+              </span>
+              <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
+                IP location: Guangdong
+              </span>
+              <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
+                <MaleIcon className='text-xs mr-1' /> 28 years old
+              </span>
+              <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
+                Guangdong Â· Shenzhen
+              </span>
+            </p>
+            <CreatorProfileBio bio={previewBio} />
+            <CreatorProfileFollowerFollowing
+              open={openFollowModal}
+              onClose={() => setOpenFollowModal(false)}
+              activeTab={activeTab}
+              onActiveTabChange={setActiveTab}
+              userId={creator._id}
+              isOwnProfile={isOwnProfile}
+              followingTotal={followingCount}
+              followerTotal={followerCount}
+              onViewerFollowingDelta={(delta) => {
               // A follow/unfollow performed in the modal changes the viewer's own following total,
               // which is only what this header shows when the viewer owns this profile.
               if (!isOwnProfile) return;
               setFollowingCount(current => Math.max(0, current + delta));
             }}
-            onFollowerRemoved={() => setFollowerCount(current => Math.max(0, current - 1))}
-            onTotalsResolved={(tab, total) => {
+              onFollowerRemoved={() => setFollowerCount(current => Math.max(0, current - 1))}
+              onTotalsResolved={(tab, total) => {
               if (tab === 'following') setFollowingCount(total);
               else setFollowerCount(total);
             }}
-          />
-        </div>
-        <div className='pointer-events-auto max-w-117.5 flex-wrap content-between h-28 items-center flex absolute right-0 bottom-2'>
-          {(!currentUser || currentUser._id !== creator._id) && (
+            />
+          </div>
+          {/*
+          Capped to its own content rather than a fixed 470px.
+
+          The two rows this column is designed to hold — "Share homepage" above,
+          the action buttons below — need 486px for the current labels, so the
+          old fixed cap left the buttons hanging 16px past the profile column.
+          Harmless while nothing was over there; once the message workspace took
+          that space the Download action sat underneath it. `max-content` keeps
+          the column bounded without re-breaking if a label changes length.
+        */}
+          <div className='pointer-events-auto max-w-max flex-wrap content-between h-28 items-center flex absolute right-0 bottom-2'>
+            {(!currentUser || currentUser._id !== creator._id) && (
             <div className='w-full flex-row-reverse flex relative'>
               <HoverRevealPanel
                 panel={<MoreActionsPanel />}
@@ -306,24 +327,24 @@ export default function CreatorProfileHeader({
               </HoverRevealPanel>
             </div>
           )}
-          {canEditProfile ? (
-            <div className='w-full flex-row-reverse flex relative'>
-              <div className='ml-auto z-1 h-full inline-flex items-center justify-center'>
-                <HoverRevealPanel
-                  panel={<SaveLoginHelpPanel />}
-                  panelPositionClassName="right-[-180px] top-full pt-2"
-                >
-                  <div className='cursor-pointer w-4 h-4'>
-                    <HelpCircleIcon className='text-[16px]' />
-                  </div>
-                </HoverRevealPanel>
-                <div className='w-19 h-5.5 spacing tracking-[0.6px] ml-2 mr-2 text-xs leading-5 text-(--text-soft)'>Save login</div>
-                <ToggleSwitch aria-label="Save login" />
+            {canEditProfile ? (
+              <div className='w-full flex-row-reverse flex relative'>
+                <div className='ml-auto z-1 h-full inline-flex items-center justify-center'>
+                  <HoverRevealPanel
+                    panel={<SaveLoginHelpPanel />}
+                    panelPositionClassName="right-[-180px] top-full pt-2"
+                  >
+                    <div className='cursor-pointer w-4 h-4'>
+                      <HelpCircleIcon className='text-[16px]' />
+                    </div>
+                  </HoverRevealPanel>
+                  <div className='w-19 h-5.5 spacing tracking-[0.6px] ml-2 mr-2 text-xs leading-5 text-(--text-soft)'>Save login</div>
+                  <ToggleSwitch aria-label="Save login" />
+                </div>
               </div>
-            </div>
           ) : null}
-          <div className='flex ml-auto'>
-            {(!currentUser || currentUser._id !== creator._id) && (
+            <div className='flex ml-auto'>
+              {(!currentUser || currentUser._id !== creator._id) && (
               <div className='flex'>
                 <button
                   type="button"
@@ -341,26 +362,26 @@ export default function CreatorProfileHeader({
                     {followState.isFollowed ? 'Following' : 'Follow'}
                   </span>
                 </button>
-                <button className='rounded-xl min-w-22 h-8.25 m-o mr-2 bg-(--field-bg) text-(--text-soft) text-[14px] font-medium leading-5.5 cursor-pointer inline-flex py-1.5 px-4 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap hover:bg-[rgba(242,242,244,.12)]'>
-                  <span className='flex items-center'>
-                    Message
-                  </span>
-                </button>
+                <ProfileMessageButton
+                  creatorId={creator._id?.toString()}
+                  className='rounded-xl min-w-22 h-8.25 m-o mr-2 bg-(--field-bg) text-(--text-soft) text-[14px] font-medium leading-5.5 cursor-pointer inline-flex py-1.5 px-4 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap hover:bg-[rgba(242,242,244,.12)] disabled:cursor-wait disabled:opacity-60'
+                />
               </div>
             )}
-            {currentUser ? (
-              <div className='h-8.25 rounded-4xl m-o ml-2 transition-all duration-300 ease-in-out overflow-hidden'>
-                <div className='bg-(--field-bg) text-(--text-soft) rounded-xl justify-between flex-row items-center text-[13px] flex overflow-hidden'>
-                  <div className='py-1.5 pr-0 pl-3 w-45 whitespace-nowrap flex justify-center'>
-                    Download the PC client
+              {currentUser ? (
+                <div className='h-8.25 rounded-4xl m-o ml-2 transition-all duration-300 ease-in-out overflow-hidden'>
+                  <div className='bg-(--field-bg) text-(--text-soft) rounded-xl justify-between flex-row items-center text-[13px] flex overflow-hidden'>
+                    <div className='py-1.5 pr-0 pl-3 w-45 whitespace-nowrap flex justify-center'>
+                      Download the PC client
+                    </div>
+                    <a className='bg-(--glass-bg) text-(--text-strong) font-bold py-1.5 px-3 h-full cursor-pointer whitespace-nowrap items-center flex transition-all duration-300 ease-in-out hover:bg-[rgba(255,44,85,1)]'>
+                      <DownloadIcon className='text-sm pr-0.5' />
+                      <span>Download</span>
+                    </a>
                   </div>
-                  <a className='bg-(--glass-bg) text-(--text-strong) font-bold py-1.5 px-3 h-full cursor-pointer whitespace-nowrap items-center flex transition-all duration-300 ease-in-out hover:bg-[rgba(255,44,85,1)]'>
-                    <DownloadIcon className='text-sm pr-0.5' />
-                    <span>Download</span>
-                  </a>
                 </div>
-              </div>
             ) : null}
+            </div>
           </div>
         </div>
       </div>

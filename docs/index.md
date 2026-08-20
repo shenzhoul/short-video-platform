@@ -25,6 +25,7 @@ tags: [index, documentation]
 | [features/following.md](./features/following.md) | One-way creator following and Following feed |
 | [features/comments-and-reactions.md](./features/comments-and-reactions.md) | Comments, replies, and likes |
 | [features/notifications.md](./features/notifications.md) | Interaction notifications and realtime delivery |
+| [features/messaging.md](./features/messaging.md) | Direct messaging, follow-based permission and the message workspace |
 | [features/sharing.md](./features/sharing.md) | Share panel, recorded shares, and the share counter |
 | [features/file-uploads-and-processing.md](./features/file-uploads-and-processing.md) | Direct/TUS uploads and processing |
 | [features/admin-operations.md](./features/admin-operations.md) | Current admin capabilities |

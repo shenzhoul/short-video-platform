@@ -113,17 +113,21 @@ export default function SearchResults({ query }: SearchResultsProps) {
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
+  // The `@container` marker has to sit on an ancestor of the queried element,
+  // not the element itself, so the grid is wrapped rather than annotated.
   const renderPostGrid = (items: IPost[]) => (
-    <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 xl:grid-cols-5">
-      {items.map(post => (
-        <HomeFeedCard
-          key={post._id}
-          post={post}
-          popupPipState={playback.popupPipState}
-          popupPlaylist={playback.popupPlaylist}
-          onOpenDetail={playback.openDetailPost}
-        />
-      ))}
+    <div className="@container">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-5 @min-[48rem]:grid-cols-3 @min-[88rem]:grid-cols-5">
+        {items.map(post => (
+          <HomeFeedCard
+            key={post._id}
+            post={post}
+            popupPipState={playback.popupPipState}
+            popupPlaylist={playback.popupPlaylist}
+            onOpenDetail={playback.openDetailPost}
+          />
+        ))}
+      </div>
     </div>
   );
 

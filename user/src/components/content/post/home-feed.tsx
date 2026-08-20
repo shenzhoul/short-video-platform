@@ -69,7 +69,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
     <div className="flex h-full min-h-0 w-full flex-col">
       <HomeFeedCategoryBar activeTopicKey={topicKey} onTopicChange={setTopicKey} />
 
-      <div id="home-feed-scroll" className="home-feed-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div id="home-feed-scroll" className="home-feed-scrollbar @container min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="px-4 pb-8">
           <InfiniteScroll
             dataLength={posts.length}
@@ -80,9 +80,31 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
             endMessage={<p style={{ textAlign: 'center' }} />}
             scrollThreshold={0.9}
           >
-            <div className="grid grid-cols-1 items-start gap-x-4 gap-y-5 pb-6 sm:grid-cols-2 xl:grid-cols-5">
+            {/*
+              Container queries, not viewport breakpoints.
+
+              `sm:`/`xl:` measure the window, which does not change when the
+              message workspace takes a column — the grid would keep five
+              columns and simply squash them. `@`-variants measure the scroller
+              instead, so the column count falls out of the width actually
+              available and cards rewrap when messages open exactly as they do
+              when the window itself is narrowed.
+
+              The thresholds are calibrated against the shell, not picked from
+              the default scale: the content column is the viewport minus the
+              160px navigation, and the workspace removes a further 360px. 88rem
+              sits between a 1920px viewport with messages closed (110rem) and
+              the same viewport with them open (87.5rem), which is what makes
+              that case fall from five columns to three.
+            */}
+            <div className="grid grid-cols-1 items-start gap-x-4 gap-y-5 pb-6 @min-[42rem]:grid-cols-2 @min-[64rem]:grid-cols-3 @min-[88rem]:grid-cols-5">
+              {/*
+                The featured post takes the whole row until there is room for
+                the reference's five-column arrangement, where it occupies three
+                columns and two rows with the smaller cards packed around it.
+              */}
               {posts[0] ? (
-                <div className="min-w-0 sm:col-span-2 xl:col-span-3 xl:row-span-2">
+                <div className="min-w-0 @min-[42rem]:col-span-2 @min-[64rem]:col-span-3 @min-[88rem]:col-span-3 @min-[88rem]:row-span-2">
                   <HomeFeedCard
                     post={posts[0]}
                     featured

@@ -10,6 +10,7 @@ import { UserDto } from 'src/dtos/identity/user';
 import { EntityNotFoundException, QueueMessageService } from 'src/kernel';
 import { SearchRequest } from 'src/kernel/common';
 import { EVENT } from 'src/kernel/constants';
+import { toObjectId } from 'src/kernel/helpers/string.helper';
 import { Reaction, ReactionDocument, User, UserDocument } from 'src/schemas';
 import { __t } from 'src/utils/translation';
 
@@ -100,9 +101,95 @@ export class FollowService {
           { $inc: { 'stats.followings': -1 } }
         )
       ]);
+
+      // Published only for a genuinely removed relation, mirroring `follow`.
+      // Messaging listens for this: a pair that stops being mutual must lose
+      // the freedom that came from the follow. Announced rather than called
+      // directly so this service keeps no dependency on the message domain.
+      await this.queueMessageService.publish(REACTION_CHANNELS.REACTION, {
+        eventName: EVENT.DELETED,
+        data: {
+          objectType: REACTION_TARGET_TYPES.CREATOR,
+          objectId: creatorId,
+          action: REACTION_TYPES.FOLLOW,
+          createdBy: followerId
+        }
+      });
     }
 
     return { isFollowed: false, removed };
+  }
+
+  /**
+   * Whether two users currently follow each other.
+   *
+   * Read live on every call rather than cached or denormalised onto anything:
+   * messaging permission depends on the follow state *now*, so a pair that
+   * unfollows must lose unrestricted messaging on their very next send, and a
+   * pair that becomes mutual must gain it immediately. A stored copy would need
+   * invalidation on both follow and unfollow, and `unfollow` publishes no event
+   * to invalidate from.
+   *
+   * One query, not two: both directions are fetched together and each `$or`
+   * branch is a full-prefix match on the unique reaction index, so this costs
+   * two index point-lookups and no scan.
+   */
+  async areMutuallyFollowing(userIdA: string | ObjectId, userIdB: string | ObjectId): Promise<boolean> {
+    if (userIdA.toString() === userIdB.toString()) return false;
+
+    const rows = await this.reactionModel.find({
+      objectType: REACTION_TARGET_TYPES.CREATOR,
+      action: REACTION_TYPES.FOLLOW,
+      $or: [
+        { createdBy: toObjectId(userIdA), objectId: toObjectId(userIdB) },
+        { createdBy: toObjectId(userIdB), objectId: toObjectId(userIdA) }
+      ]
+    }).select({ createdBy: 1 }).lean();
+
+    if (rows.length < 2) return false;
+    // Two rows are only proof of mutuality if they point in opposite
+    // directions. The unique index makes a same-direction duplicate
+    // impossible today, but the check costs nothing and keeps the guarantee
+    // local to this method rather than borrowed from another collection's
+    // constraint.
+    return new Set(rows.map(row => row.createdBy.toString())).size === 2;
+  }
+
+  /**
+   * Of `otherIds`, those who mutually follow `userId`.
+   *
+   * The batched form of {@link areMutuallyFollowing}, for rendering a whole
+   * conversation list: two queries total regardless of page size, instead of
+   * one pair of lookups per row.
+   */
+  async getMutualFollowerIdSet(
+    userId: string | ObjectId,
+    otherIds: Array<string | ObjectId>
+  ): Promise<Set<string>> {
+    if (!otherIds.length) return new Set<string>();
+
+    const ids = otherIds.map(id => toObjectId(id));
+    const [following, followers] = await Promise.all([
+      this.reactionModel.find({
+        createdBy: toObjectId(userId),
+        objectId: { $in: ids },
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW
+      }).select({ objectId: 1 }).lean(),
+      this.reactionModel.find({
+        createdBy: { $in: ids },
+        objectId: toObjectId(userId),
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW
+      }).select({ createdBy: 1 }).lean()
+    ]);
+
+    const followedByMe = new Set(following.map(row => row.objectId.toString()));
+    return new Set(
+      followers
+        .map(row => row.createdBy.toString())
+        .filter(id => followedByMe.has(id))
+    );
   }
 
   async getFollowingCreatorIds(userId: string | ObjectId): Promise<ObjectId[]> {

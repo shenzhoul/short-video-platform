@@ -164,9 +164,18 @@ export default function CreatorProfilePage({
   return (
     <>
       <div className='min-h-0 w-full flex flex-col flex-1'>
+        {/*
+          Given back the width the message workspace took from the page.
+
+          The shell narrows every page so feeds reflow, but on a profile only the
+          *content* should lose that width — the cover artwork has to keep running
+          to the edge of the viewport, exactly as it does with messages closed.
+          The hero content and the works column below re-apply the narrowing
+          themselves, so they still reflow.
+        */}
         <div
           ref={scrollContainerRef}
-          className='-mt-14 scrollbar-none overflow-auto flex-1'
+          className='-mt-14 scrollbar-none overflow-auto flex-1 w-[calc(100%+var(--message-workspace-width,0px))]'
           onScroll={handleScroll}
         >
           <div className='w-full max-w-none min-w-170.5 min-h-[calc(100vh-60px)] relative pt-14 mx-0 my-auto'>
@@ -184,7 +193,8 @@ export default function CreatorProfilePage({
               onPreviewCoverChange={setPreviewCover}
               onPreviewCoverBgColorChange={setPreviewCoverBgColor}
             />
-            <div className='bg-profile'>
+            {/* The works column is message-aware; the cover above it is not. */}
+            <div className='bg-profile w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
               <div className='max-w-380 mx-auto'>
                 <CreatorProfileWorksToolbar
                   canEditProfile={canEditProfile}

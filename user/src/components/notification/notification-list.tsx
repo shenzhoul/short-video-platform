@@ -77,7 +77,7 @@ export default function NotificationList({ onNavigate }: { onNavigate: () => voi
   }
 
   return (
-    <div className="divide-y divide-(--divider)">
+    <div>
       {notifications.map((notification) => (
         <NotificationItem
           key={notification._id}

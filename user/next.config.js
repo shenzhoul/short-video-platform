@@ -16,7 +16,20 @@ const nextConfig = {
   compress: true,
   // react 18 about strict mode https://reactjs.org/blog/2022/03/29/react-v18.html#new-strict-mode-behaviors
   reactStrictMode: false,
-  distDir: 'dist/.next',
+  /*
+    Dev and build must not share a directory.
+
+    `next build` rewrites the whole distDir, so running it while `yarn dev` is
+    up overwrites the dev server's routing state in place. The dev server keeps
+    serving, but route handlers start resolving to the not-found page: every
+    `/api/*` request answers 404 with HTML, and next-auth's client-side session
+    fetch then fails with CLIENT_FETCH_ERROR ("Unexpected token '<'") on every
+    page. It also churns `next-env.d.ts` between the two type paths.
+
+    The production path is unchanged, so `next start`, deployment and CI see
+    exactly the same output as before.
+  */
+  distDir: process.env.NODE_ENV === 'development' ? 'dist/.next-dev' : 'dist/.next',
   typescript: {
     // !! WARN !!
     // Dangerously allow production builds to successfully complete even if

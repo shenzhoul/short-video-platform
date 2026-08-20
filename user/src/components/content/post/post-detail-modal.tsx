@@ -1,5 +1,6 @@
 'use client';
 
+import PostDetailMessageButton from '@components/message/post-detail-message-button';
 import Carousel, {
   CarouselNavigationButton,
   CarouselTimelineControl
@@ -15,6 +16,7 @@ import { usePostViewTracking } from '@hooks/use-post-view-tracking';
 import { IPost } from '@interfaces/post';
 import { PopupPipVideo } from '@lib/popup-pip';
 import { GRAPHIC_SLIDE_DURATION_MS } from '@lib/post-graphic';
+import { useMessageWorkspace } from '@providers/message-workspace.provider';
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
 import { CopyIcon, PauseIcon, PlayIcon } from 'src/icons';
@@ -183,12 +185,21 @@ function GraphicPostDetail({
 
   return (
     <div
-      className="fixed inset-0 z-120 overflow-hidden bg-black text-white"
+      className="fixed inset-y-0 left-0 z-120 overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
       role="dialog"
       aria-modal="true"
       aria-label="Graphic post details"
       onWheel={handleWheel}
-      style={{ '--post-video-detail-panel-width': '28.5714%' } as CSSProperties}
+      /*
+       * Inset from the right by whatever the message workspace is taking,
+       * rather than `inset-0`. The two surfaces coexist: opening messages from
+       * here narrows the detail view instead of covering it or closing it. Same
+       * variable the shell's content column reads, so the two stay in step.
+       */
+      style={{
+        '--post-video-detail-panel-width': '28.5714%',
+        right: 'var(--message-workspace-width, 0px)'
+      } as CSSProperties}
     >
       <img
         src={activeImage?.url}
@@ -211,6 +222,23 @@ function GraphicPostDetail({
       <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-black/15 px-4 text-sm text-white/75 backdrop-blur-md md:flex">
         <span className="truncate">{description || `@${creatorName}`}</span>
         <span className="ml-auto text-white/55">Search</span>
+      </div>
+
+      {/*
+        Message action, kept clear of the detail panel.
+
+        `right` is offset by the panel's width whenever it is open, exactly as
+        the action rail is. Positioning from the overlay's right edge alone put
+        the button *underneath* the panel — the panel is `z-70`, this is `z-50` —
+        so it vanished the moment comments were open. The overlay itself already
+        ends where the message workspace begins, so this stays inside the visible
+        post-detail area in both states.
+      */}
+      <div
+        className="pointer-events-none absolute top-9 z-50 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
+        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + 1.5rem)` : '1.5rem' }}
+      >
+        <PostDetailMessageButton />
       </div>
 
       <main
@@ -442,7 +470,11 @@ function VideoPostDetail({
   }, [backOrCloseDetail]);
 
   return (
-    <div className="fixed inset-0 z-120 overflow-hidden bg-black text-white" onWheel={handleWheel}>
+    <div
+      onWheel={handleWheel}
+      style={{ right: 'var(--message-workspace-width, 0px)' }}
+      className="fixed inset-y-0 left-0 z-120 overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
+    >
       <button
         type="button"
         onClick={backOrCloseDetail}
@@ -455,6 +487,23 @@ function VideoPostDetail({
       <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-white/5 px-4 text-sm text-white/70 backdrop-blur-md md:flex">
         <span className="truncate">{description}</span>
         <span className="ml-auto text-white/50">Search</span>
+      </div>
+
+      {/*
+        Message action, kept clear of the detail panel.
+
+        `right` is offset by the panel's width whenever it is open, exactly as
+        the action rail is. Positioning from the overlay's right edge alone put
+        the button *underneath* the panel — the panel is `z-70`, this is `z-50` —
+        so it vanished the moment comments were open. The overlay itself already
+        ends where the message workspace begins, so this stays inside the visible
+        post-detail area in both states.
+      */}
+      <div
+        className="pointer-events-none absolute top-9 z-50 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
+        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + 1.5rem)` : '1.5rem' }}
+      >
+        <PostDetailMessageButton />
       </div>
 
       <PostVideoStage
@@ -501,8 +550,22 @@ function VideoPostDetail({
   );
 }
 
+/**
+ * Tells the message workspace it is sitting beside a fullscreen surface for as
+ * long as post detail is open.
+ *
+ * Declared by the surface rather than detected by the panel: post detail knows
+ * it covers the application header, and the panel would otherwise have to guess
+ * from the DOM.
+ */
+function useFullscreenMessagePlacement() {
+  const { claimFullscreenPlacement } = useMessageWorkspace();
+  useEffect(() => claimFullscreenPlacement(), [claimFullscreenPlacement]);
+}
+
 export default function PostDetailModal(props: PostDetailModalProps) {
   usePostViewTracking(props.post._id, props.onInteractionChange);
+  useFullscreenMessagePlacement();
 
   if (isGraphicPost(props.post)) {
     return (

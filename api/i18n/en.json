@@ -26,7 +26,11 @@
     "post_photo_draft_discard_failed": "The unpublished photo drafts could not be completely removed. Please try again.",
     "parent_comment_not_found": "Parent comment not found",
     "invalid_comment_reply_level": "Cannot reply to nested comments. Maximum nesting level is 1.",
-    "cannot_follow_yourself": "You cannot follow yourself"
+    "cannot_follow_yourself": "You cannot follow yourself",
+    "cannot_message_yourself": "You cannot start a conversation with yourself.",
+    "message_awaiting_reply": "You can send one message until they reply.",
+    "access_denied": "Access denied.",
+    "message_text_or_attachment_required": "Write a message or attach a photo or video."
   },
   "auth": {
     "no_valid_token": "No valid token found",

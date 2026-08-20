@@ -22,6 +22,7 @@ These documents describe shipped workflows. Domain documents remain the source o
 | Creator following | [following.md](./following.md) | Avatar follow action, Following rail and feed |
 | Comments and reactions | [comments-and-reactions.md](./comments-and-reactions.md) | Comments, replies, edit/delete, likes |
 | Interaction notifications | [notifications.md](./notifications.md) | Grouped like/comment/reply/follow notifications, realtime delivery, category filter, header panel |
+| Direct messaging | [messaging.md](./messaging.md) | Private one-to-one messages, follow-based send permission, right-side workspace and page reflow, `/messages` |
 | Post sharing | [sharing.md](./sharing.md) | Share panel, recorded shares, `totalShare` |
 | File uploads and processing | [file-uploads-and-processing.md](./file-uploads-and-processing.md) | Direct/TUS uploads, ownership, Sharp/FFmpeg |
 | Admin operations | [admin-operations.md](./admin-operations.md) | Users, admins, settings, logs |

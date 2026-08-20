@@ -19,7 +19,7 @@ export default function SidebarHelpMenu() {
       position="left"
       menuClassName="!fixed !bottom-[60px] !left-2 !top-auto !mt-0 !z-[9999] !border-none !bg-transparent !shadow-none"
     >
-      <div className="min-w-[204px] w-max rounded-xl bg-(--surface-raised) p-2 text-sm text-(--text-soft) shadow-2xl">
+      <div className="min-w-51 w-max rounded-xl bg-(--surface-raised) p-2 text-sm text-(--text-soft) shadow-2xl">
         {helpItems.map((item) => (
           <button
             key={item}

@@ -41,6 +41,7 @@ Load the matching repo skill before changing specialized areas:
 - Feed infinite scroll (home + creator posts): `.agents/skills/feed-infinite-scroll/SKILL.md`
 - One-way creator follows and the authenticated following feed: `.agents/skills/following-feed/SKILL.md`
 - Interaction notifications (like/comment/reply/share/follow), realtime delivery, and the header panel: `.agents/skills/notification-system/SKILL.md`
+- Private one-to-one messaging, follow-based send permission, and the right-side message workspace: `.agents/skills/direct-messaging/SKILL.md`
 - API auth guards, role-based access, and current user extraction: `.agents/skills/api-auth-guards/SKILL.md`
 - API pagination — SearchRequest, cursor/offset, PageableData: `.agents/skills/api-pagination/SKILL.md`
 - API payload and request class patterns: `.agents/skills/api-payload/SKILL.md`
