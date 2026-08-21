@@ -1,0 +1,3 @@
+interface:
+  display_name: "API Payload"
+  short_description: "Validated NestJS request payloads using class-validator and class-transformer"

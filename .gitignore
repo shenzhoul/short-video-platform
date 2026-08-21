@@ -91,11 +91,28 @@ age-key*.txt
 # Local/public-preparation artifacts
 artifacts/
 
+# Browser-automation artifacts. `output/screenshots/` is the single fixed
+# screenshot folder used by the webapp-testing and playwright skills.
+/output/
+
 # AI / local development metadata
-.agents/
+#
+# `.agents/` is TRACKED on purpose: the rules, checklists and skills are part of how this repo is
+# worked on, and they must survive a fresh clone.
+#
+# `.claude/` is a junction/symlink pointing at `.agents/` (see AGENTS.md). It must stay ignored —
+# tracking it would commit every agent file a second time under a different path.
 .claude/
 .code-review-graph/
 .cursor/
+
+# Python bytecode produced by running the bundled skill scripts.
+__pycache__/
+*.pyc
+
+# Issue tracker: unfixed defects, security suspicions and their reproduction steps.
+# Deliberately NOT published — this repository has a public remote.
+.agents/bug-tracker/
 # MCP server config: contains machine-specific absolute paths (interpreter, repo root).
 # Regenerate locally, see .agents/rules/shared.md.
 .mcp.json

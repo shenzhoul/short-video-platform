@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -ln \"class SearchRequest\")",
+      "Bash(npx jest *)",
+      "Bash(node -e \"console.log\\(new Date\\('2026-08-07T00:00:00Z'\\).getTime\\(\\)\\)\")",
+      "Bash(node -e \"require\\('./migrations/1786060800000-user-stats-total-likes.js'\\); console.log\\('migration loads OK'\\)\")",
+      "WebFetch(domain:chatgpt.com)",
+      "Bash(grep -rn \"extractTag\\\\|parseHashtag\\\\|#\\\\\\\\\\\\\\\\w\\\\|hashtag\" src/ --include=*.ts)",
+      "Bash(python3 -)"
+    ]
+  }
+}

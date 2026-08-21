@@ -1,0 +1,3 @@
+interface:
+  display_name: "API Pagination"
+  short_description: "SearchRequest, PageableData, PaginationGuard, and feed continuation patterns"

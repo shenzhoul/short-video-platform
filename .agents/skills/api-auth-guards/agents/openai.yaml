@@ -1,0 +1,3 @@
+interface:
+  display_name: "API Auth Guards"
+  short_description: "AuthGuard, LoadUser, RoleGuard, roles, and current-user patterns for Douyin Clone"

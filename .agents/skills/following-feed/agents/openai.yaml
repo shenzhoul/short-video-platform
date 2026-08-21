@@ -1,0 +1,4 @@
+interface:
+  display_name: "Following Feed"
+  short_description: "Maintain one-way creator follows and the following feed."
+  default_prompt: "Implement or update creator follow relationships and the authenticated following feed using the repository pattern."

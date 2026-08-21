@@ -1,0 +1,89 @@
+# Repository Instructions
+
+This is the stable entry point for agent guidance in Douyin Clone.
+
+## Read Order
+
+1. Read `.agents/project-structure.md`.
+2. Read `.agents/rules/shared.md`.
+3. For features, refactors, or structural changes, also read:
+   - `.agents/rules/maintenance.md`
+   - `.agents/checklists/feature-update.md`
+4. Read the rules for the touched app:
+   - `.agents/rules/api.md` for `api/` and `file-server/`
+   - `.agents/rules/user.md`
+   - `.agents/rules/admin.md`
+5. Read the local app guide when working in a subproject:
+   - `api/AGENTS.md`
+   - `user/AGENTS.md`
+   - `admin/AGENTS.md`
+   - `file-server/AGENTS.md`
+6. Read adjacent product documentation under `docs/`.
+7. Research the nearest implementation before adding a pattern.
+
+## Project Skills
+
+`.claude` is a local link to `.agents`, so `.claude/skills/` resolves to `.agents/skills/` and the
+harness loads these files directly. `.agents/` is the committed source of truth and the only place to
+edit. The link itself is not committed — see `.gitignore` for how to recreate it after cloning.
+
+Load only the skills relevant to the task:
+
+- API foundations:
+  - `.agents/skills/api-auth-guards/SKILL.md`
+  - `.agents/skills/api-exception-handling/SKILL.md`
+  - `.agents/skills/api-pagination/SKILL.md`
+  - `.agents/skills/api-payload/SKILL.md`
+- Data and runtime:
+  - `.agents/skills/mongo-migrations/SKILL.md`
+  - `.agents/skills/queue-message/SKILL.md`
+  - `.agents/skills/scheduled-jobs/SKILL.md`
+  - `.agents/skills/i18n-translation/SKILL.md`
+  - `.agents/skills/system-settings/SKILL.md`
+  - `.agents/skills/websocket-integration/SKILL.md`
+- Files and content:
+  - `.agents/skills/file-service-integration/SKILL.md`
+  - `.agents/skills/media-response-standardization/SKILL.md`
+  - `.agents/skills/feed-infinite-scroll/SKILL.md`
+  - `.agents/skills/following-feed/SKILL.md`
+  - `.agents/skills/notification-system/SKILL.md`
+  - `.agents/skills/direct-messaging/SKILL.md`
+  - `.agents/skills/post-sharing/SKILL.md`
+- Next.js:
+  - `.agents/skills/web-ssr/SKILL.md`
+  - `.agents/skills/web-seo/SKILL.md`
+  - `.agents/skills/vercel-react-best-practices/SKILL.md`
+  - `.agents/skills/vercel-composition-patterns/SKILL.md`
+- Delivery and maintenance:
+  - `.agents/skills/karpathy-guidelines/SKILL.md`
+  - `.agents/skills/continuous-improvement/SKILL.md`
+  - `.agents/skills/bug-tracking/SKILL.md`
+  - `.agents/skills/skill-creator/SKILL.md`
+
+General-purpose skills under `.agents/skills/` may be used when their trigger matches, but they do not define product behavior.
+
+## Repository Overview
+
+Douyin Clone currently contains:
+
+- `api/`: NestJS API using MongoDB, Redis, BullMQ, and Socket.IO.
+- `user/`: Next.js user and creator application using Tailwind CSS.
+- `admin/`: Next.js administration application using Ant Design.
+- `file-server/`: NestJS upload and media-processing service.
+- `docs/`: maintained architecture, feature, role, and operational documentation.
+
+Current product scope includes authentication, creator profiles, posts, feeds, comments, reactions, file processing, system settings, administration, logging, and online presence. It does not currently include payments, subscriptions, wallet transactions, live streaming, direct messaging, notifications, or geographic blocking.
+
+## Working Agreement
+
+- Use `.code-review-graph/` and the `code-review-graph` MCP tools for structural questions; use `rg` for literal text and file discovery. Tool names and query patterns are in `.agents/rules/shared.md`.
+- Keep business logic in services. Keep controllers, listeners, gateways, jobs, and pages focused on their adapter or presentation responsibility.
+- Use payload classes for controller input and DTOs as the API privacy boundary.
+- Keep migrations in `api/migrations/`.
+- Update related product docs in the same task and date changed docs with `YYYY-MM-DD`.
+- Update an existing skill when a reusable workflow changes; create a new skill only for a genuinely new, repeated, project-specific workflow.
+- Record verified out-of-scope issues under `.agents/bug-tracker/` using the `bug-tracking` skill.
+- Use the verification scripts exposed by the touched package:
+  - `api/`: `yarn test`, then `yarn build`
+  - `file-server/`: `yarn lint` and `yarn build`
+  - `user/` and `admin/`: targeted `yarn test`, then `yarn lint` and `yarn build`
