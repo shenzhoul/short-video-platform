@@ -2,6 +2,14 @@ import * as jwt from 'jsonwebtoken';
 import { parse } from "path";
 
 /**
+ * Purpose claim carried by direct-upload tokens.
+ *
+ * Shared between the issuer (`generateUploadToken`) and the verifier
+ * (`FileController.validateUploadToken`) so the two cannot drift apart.
+ */
+export const UPLOAD_TOKEN_PURPOSE = 'file-upload';
+
+/**
  * File Utilities Library
  *
  * A collection of utility functions for file operations including:
@@ -149,6 +157,11 @@ export function generateUploadToken(
     fileId,
     fileKey,
     acl,
+    // Explicit purpose claim. Every token this service signs uses the same JWT_SECRET, so what a
+    // token is allowed to do must be stated in the token and checked on use — not inferred from
+    // which fields happen to be present. `TusAuthService` uses `tokenType: 'tus-upload'` for the
+    // same reason.
+    purpose: UPLOAD_TOKEN_PURPOSE,
     exp: Math.floor(Date.now() / 1000) + 3600 // 1 hour expiration
   };
   return jwt.sign(payload, jwtSecret);

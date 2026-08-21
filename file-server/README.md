@@ -43,7 +43,7 @@ API only talks to the internal endpoints, authenticated with shared secrets.
 | --- | --- | --- | --- |
 | Public upload | `/files` | signed JWT issued by the API | `POST /files/upload` for direct uploads |
 | Resumable upload | `/tus-upload` | signed TUS JWT | TUS 1.0 create/patch/head/delete |
-| Internal | `/internal/files` | `AuthGuard`: `X-API-Key` matching `API_SECRET_KEY`, or `Authorization: Bearer <jwt>` signed with `JWT_SECRET` | upload links, lookup, references, ownership, batch delete, unused-file removal |
+| Internal | `/internal/files` | `InternalApiGuard`: `X-API-Key` = `API_SECRET_KEY` **and** `X-Internal-API-Key` = `INTERNAL_API_KEY`. Service credentials only — a bearer JWT is never accepted | upload links, lookup, references, ownership, batch delete, unused-file removal |
 | Static files | `/` | public | processed output served from `public/` |
 
 ## Capabilities
@@ -131,15 +131,23 @@ yarn add sharp --ignore-engines
 | `MONGO_URI` | File metadata database |
 | `LOGGER_MONGO_URI` | Log database shared with the API |
 | `REDIS_QUEUE_*` | Redis connection for BullMQ |
-| `JWT_SECRET` | Validates upload tokens; must match the API `FILE_SERVER_JWT_SECRET` |
-| `API_SECRET_KEY` | Authenticates API requests; must match the API `FILE_SERVER_API_KEY` |
-| `INTERNAL_API_KEY` | Sent by the API as `X-Internal-API-Key`; **no guard validates it here yet** — keep it matching the API value anyway |
+| `JWT_SECRET` | Signs and validates upload tokens and signed file URLs. Required — there is no fallback, and requests that need it fail without it. Must match the API `FILE_SERVER_JWT_SECRET` |
+| `API_SECRET_KEY` | First factor on internal routes, sent as `X-API-Key`; must match the API `FILE_SERVER_API_KEY` |
+| `INTERNAL_API_KEY` | Second factor on internal routes, sent as `X-Internal-API-Key`; must match the API `INTERNAL_API_KEY` |
 | `CORS_ORIGIN` | Comma-separated allowed origins; unset means `*` |
 
-`main.ts` warns at boot when `API_SECRET_KEY` or `INTERNAL_API_KEY` is missing. Only the first is
-actually enforced: `src/common/guards/auth.guard.ts` accepts an `X-API-Key` (or `Authorization:
-ApiKey ...`) equal to `API_SECRET_KEY`, or a `Bearer` JWT verified with `JWT_SECRET`, and rejects
-everything else with 401. `X-Internal-API-Key` is currently ignored.
+`main.ts` warns at boot when any of `API_SECRET_KEY`, `INTERNAL_API_KEY`, or `JWT_SECRET` is missing.
+
+`src/common/guards/internal-api.guard.ts` protects `/internal/files/*` and accepts **service
+credentials only**: `X-API-Key` (or `Authorization: ApiKey ...`) equal to `API_SECRET_KEY`, plus
+`X-Internal-API-Key` equal to `INTERNAL_API_KEY` whenever that value is configured here. Both are
+compared in constant time. A bearer JWT is never accepted.
+
+That last point matters and is easy to undo by accident. `JWT_SECRET` signs the short-lived upload
+tokens handed to browsers, so any check of the form "is this a valid JWT" would treat every
+uploading user's token as an internal credential. Keep client tokens and service credentials on
+separate checks; tokens also carry a `purpose` claim (`file-upload`, `tus-upload`, `signed-url`)
+that the consuming path verifies.
 
 Optional tuning (all have defaults in `src/config/`):
 

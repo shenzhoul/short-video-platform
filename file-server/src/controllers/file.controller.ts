@@ -27,6 +27,7 @@ import { IMulterUploadedFile } from "src/common/lib/file/multer/multer.utils";
 import { FILE_STATUS } from "src/common/constants/content";
 import { DataResponse, PublicFileUploadResponseDto } from "src/dtos";
 import { isImage, isVideo } from "src/lib/file-type";
+import { UPLOAD_TOKEN_PURPOSE } from "src/lib/file-utils";
 import { unlink } from 'fs/promises'
 
 /**
@@ -194,6 +195,13 @@ export class FileController {
     try {
       const secret = this.configService.auth.jwtSecret;
       const payload = jwt.verify(token, secret) as any;
+
+      // A valid signature only proves this service issued the token, not that it issued it for
+      // uploading. Every token here is signed with the same JWT_SECRET, so the purpose claim is
+      // what separates a direct-upload token from a TUS token or a signed-URL token.
+      if (payload.purpose !== UPLOAD_TOKEN_PURPOSE) {
+        throw new Error('Token was not issued for direct upload');
+      }
 
       if (!payload.fileId || !payload.fileKey) {
         throw new Error('Invalid token payload');

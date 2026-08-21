@@ -12,10 +12,26 @@ import { STORAGE_TYPES } from "src/common/constants/content";
 import { uniq } from "lodash";
 
 /**
- * JWT use for hash / check auth for file, we can random this value
- * TODO - move to env variable
+ * Secret used to sign signed-URL tokens for stored files.
+ *
+ * Resolved lazily and with no fallback. This used to be
+ * `process.env.JWT_SECRET || '<a literal key>'`, which meant that whenever `JWT_SECRET` was unset
+ * every signed URL was signed with a constant committed to a public repository — anyone could mint
+ * a URL for any stored file. Failing closed is the only safe behaviour for a signing key.
  */
-export const JWT_FILE_SECRET = process.env.JWT_SECRET || 'ClwCF8oSDST5PLMVtjKOed5wNouDJ8JP';
+export const SIGNED_URL_PURPOSE = 'signed-url';
+
+export function getFileSigningSecret(): string {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      'JWT_SECRET is not configured. It is required to sign file access URLs; refusing to sign with a default.'
+    );
+  }
+
+  return secret;
+}
 
 export interface IGetSignedUrlOptions {
   source?: string;
@@ -39,9 +55,12 @@ const encryptJwt = (options: IGetSignedUrlOptions) => {
     {
       fileId,
       filePath,
-      ip
+      ip,
+      // Purpose claim, matching `generateUploadToken`: a signature alone only proves this service
+      // issued the token, not what it may be used for.
+      purpose: SIGNED_URL_PURPOSE
     },
-    JWT_FILE_SECRET,
+    getFileSigningSecret(),
     { expiresIn }
   );
 };

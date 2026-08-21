@@ -38,7 +38,11 @@ async function bootstrap() {
   }
 
   if (!process.env.INTERNAL_API_KEY) {
-    bootstrapLogger.warn('INTERNAL_API_KEY is not configured; internal-only file-server routes may reject requests with 403.');
+    bootstrapLogger.warn('INTERNAL_API_KEY is not configured; the second factor on /internal/files routes is skipped and only API_SECRET_KEY is enforced.');
+  }
+
+  if (!process.env.JWT_SECRET) {
+    bootstrapLogger.warn('JWT_SECRET is not configured; upload tokens and signed file URLs cannot be issued and those requests will fail.');
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

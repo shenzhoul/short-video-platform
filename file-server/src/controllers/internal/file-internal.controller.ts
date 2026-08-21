@@ -13,7 +13,7 @@ import {
   Get
 } from '@nestjs/common';
 import { ObjectId } from 'mongodb';
-import { AuthGuard } from 'src/common/guards/auth.guard';
+import { InternalApiGuard } from 'src/common/guards/internal-api.guard';
 import {
   DataResponse,
   FileInfoResponseDto,
@@ -38,7 +38,7 @@ import { TusAuthService } from 'src/services/tus';
  * - Support for different file types (image, video, document)
  */
 @Controller('internal/files')
-@UseGuards(AuthGuard)
+@UseGuards(InternalApiGuard)
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class FileInternalController {
   constructor(

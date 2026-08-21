@@ -102,7 +102,7 @@ cp .env.example .env
 | `FILE_SERVER_BASE_URL` | File server base URL (default `http://localhost:8000`) |
 | `FILE_SERVER_API_KEY` | Sent as `X-API-Key`; must match the file server `API_SECRET_KEY` |
 | `FILE_SERVER_JWT_SECRET` | Loaded into config but not currently used by any API code path — the file server signs upload tokens itself with its own `JWT_SECRET`. Keep the two matching. |
-| `INTERNAL_API_KEY` | Sent as `X-Internal-API-Key`; no file-server guard validates it today |
+| `INTERNAL_API_KEY` | Sent as `X-Internal-API-Key`; the file server enforces it as the second factor on `/internal/files/*`, so it must match that service's `INTERNAL_API_KEY` |
 | `CORS_ORIGIN` | Comma-separated allowed origins; unset means `*` |
 
 Optional tuning: `MONGO_*` pool settings, `FILE_SERVER_TIMEOUT`, `LOG_LEVELS`.
