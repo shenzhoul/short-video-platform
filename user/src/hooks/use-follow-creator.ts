@@ -1,9 +1,9 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { useProfile } from '@providers/profile.provider';
 import { followCreator, unfollowCreator } from '@services/user.service';
 import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 
 const followedInSession = new Set<string>();
 const unfollowedInSession = new Set<string>();

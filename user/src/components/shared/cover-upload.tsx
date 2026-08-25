@@ -1,14 +1,22 @@
 import ImageCropModal from '@components/ui/image-crop-modal';
+import { toast } from '@douyin-clone/shared-toast';
 import { useFileUpload } from '@hooks/use-file-upload-server';
+import { acceptAttributeFor, COVER_UPLOAD_TYPE, describeRejectedUpload } from '@lib/upload-policy';
 import { updateCover } from '@services/creator.service';
 import {
   ChangeEvent, CSSProperties, MouseEvent, useEffect, useRef, useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 // won't allow heic, heif images - they cannot preview in non-Safari browsers
-const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif', 'image/tiff', 'image/tif'];
-const acceptTypes = '.jpg,.jpeg,.png,.webp,.avif,.tiff,.tif';
+/**
+ * What the picker advertises, from the cover policy.
+ *
+ * The hand-written list this replaces offered TIFF, which the image
+ * pipeline has never decoded — so the picker invited a file the server was
+ * always going to refuse. A hint either way: `accept` is bypassed by
+ * choosing "All files" and ignored outright on some platforms.
+ */
+const acceptTypes = acceptAttributeFor(COVER_UPLOAD_TYPE);
 
 interface LocalUploadResult {
   fileId: string;
@@ -21,7 +29,6 @@ interface LocalUploadResult {
 interface CoverUploadProps {
   previewUrl?: string;
   coverBgColor?: string;
-  limitSizeMB?: number;
   accept?: string;
   autoStart?: boolean;
   onStartUpload?: (file: File) => void;
@@ -55,7 +62,6 @@ interface CoverUploadProps {
 function CoverUpload({
   previewUrl = '',
   coverBgColor = 'hsl(313deg 26.38% 15%)',
-  limitSizeMB = 50,
   accept = acceptTypes,
   autoStart = true,
   onStartUpload = () => { },
@@ -81,17 +87,29 @@ function CoverUpload({
 
   const { state, uploadFile } = useFileUpload({
     endpoint: '/identity/files/creator/cover/upload',
+    // The durable type the API writes onto the record, so the picker holds the
+    // file to exactly the limits the upload will be judged by.
+    uploadType: COVER_UPLOAD_TYPE,
     uploadOptions: {},
     showSuccessMessage: false,
-    maxSizeMB: limitSizeMB,
-    allowedTypes,
     onUploadStart: (f) => {
       if (onStartUpload) onStartUpload(f);
     },
     onUploadSuccess: async (result) => {
+      // Same as the avatar: the API claims the file before repointing the
+      // profile and refuses (409) if it cannot, and this callback is not
+      // awaited — so an uncaught rejection would leave the old cover in place
+      // with no explanation.
+      let coverResponse;
+      try {
+        coverResponse = await updateCover(result.fileId);
+      } catch (error: any) {
+        toast.error(error?.message || error?.data?.message || 'Could not update your cover. Please try again.');
+        setIsLocalPreview(false);
+        setPreview(previewUrl || null);
+        return;
+      }
 
-      // call API to update immediately
-      const coverResponse = await updateCover(result.fileId);
       const updatedCover = coverResponse?.data || {};
       toast.success('Cover updated successfully');
       const nextCoverUrl = updatedCover.url || result.fileInfo?.url;
@@ -119,15 +137,21 @@ function CoverUpload({
     }
   }, [previewUrl, isLocalPreview]);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
     const selected = e.target.files?.[0];
     if (!selected) return;
 
-    if (selected.size > (limitSizeMB * 1024 * 1024)) {
-      toast.error(`File size exceeds ${limitSizeMB}MB limit.`);
+    // Judged against the cover policy rather than a per-caller number. What is
+    // uploaded is the cropped JPEG, so this is the early warning and the hook
+    // checks the crop again before sending.
+    const rejection = await describeRejectedUpload(selected, COVER_UPLOAD_TYPE);
+    if (rejection) {
+      toast.error(rejection);
+      // Cleared so picking the same file again re-fires `change`.
+      e.target.value = '';
       return;
     }
 

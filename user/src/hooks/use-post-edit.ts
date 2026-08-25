@@ -1,6 +1,7 @@
 'use client';
 
 import { getPostImages, getPostVideo } from '@components/content/post/home-feed-media';
+import { toast } from '@douyin-clone/shared-toast';
 import type { GraphicFileItem } from '@hooks/use-post-graphic-create';
 import type { IPost } from '@interfaces/post';
 import type { IUser } from '@interfaces/user';
@@ -15,7 +16,6 @@ import {
   useRef,
   useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 import type { PostCoverRatio } from './use-post-create';
 

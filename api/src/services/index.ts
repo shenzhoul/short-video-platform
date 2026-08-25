@@ -42,6 +42,10 @@ export { ConversationService } from './community/message/conversation.service';
 export { ConversationParticipantService } from './community/message/conversation-participant.service';
 export { MessagePermissionService } from './community/message/message-permission.service';
 export { MessageService } from './community/message/message.service';
+export { MessageSystemNoticeService } from './community/message/message-system-notice.service';
+export { UserRelationshipService } from './community/relationship/user-relationship.service';
+export { SharedPostService } from './community/message/shared-post.service';
+export { PostShareService } from './community/share/post-share.service';
 export { CommunicationService } from './community/communication.service';
 export { ContentPermissionService } from './community/content-permission.service';
 

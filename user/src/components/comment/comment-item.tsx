@@ -1,5 +1,7 @@
 'use client';
 
+import CommentImage from '@components/comment/comment-image';
+import { useCommentLiveStats } from '@components/comment/comment-live-stats';
 import CommentReplies from '@components/comment/comment-replies';
 import { LikeButton } from '@components/interactions';
 import { IComment } from '@interfaces/comment';
@@ -43,6 +45,17 @@ export function CommentItem({
   highlightedCommentId = null,
   postOwnerId = null
 }: IProps) {
+  /**
+   * Authoritative counters for this comment, when the server has reported any.
+   *
+   * Subscribed per id, so a like landing on a different comment does not
+   * re-render this row. Falls back to the values the row was fetched with until
+   * a snapshot arrives — `undefined` genuinely means "nothing reported", which
+   * is why a real zero can still be shown.
+   */
+  const liveStats = useCommentLiveStats(item._id);
+  const totalLike = liveStats?.likesCount ?? (item.totalLike || 0);
+  const totalReply = liveStats?.replyCount ?? (item.totalReply || 0);
   const allowReplies = canReply && level < 1;
   const isReply = level > 0;
 
@@ -75,11 +88,16 @@ export function CommentItem({
     <div
       // The anchor the deep-link scrolls to. Always present, so scrolling never
       // depends on the highlight still being active.
+      //
+      // Overlay tokens, not page tokens: comments render inside the Post Detail
+      // panel, which is dark in both themes. `--surface-soft` flips, so in light
+      // mode the highlight painted a near-white block behind the panel's white
+      // text and hid the very comment it was meant to point at.
       data-comment-id={item._id}
       className={`
         group relative flex w-full gap-3 py-1
         ${isReplying ? 'bg-[linear-gradient(270deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.06)_18.23%,rgba(255,255,255,0.06)_51.56%,rgba(255,255,255,0.06)_82.29%,rgba(255,255,255,0)_100%)]' : ''}
-        ${isHighlighted ? 'rounded-lg bg-(--surface-soft) ring-1 ring-(--border-faint) transition-colors duration-500' : ''}
+        ${isHighlighted ? 'rounded-lg bg-(--overlay-surface-hover) ring-1 ring-(--overlay-border-faint) transition-colors duration-500' : ''}
       `}
     >
       <Link href={profileHref} prefetch={false} className="mt-0.5 shrink-0">
@@ -128,9 +146,17 @@ export function CommentItem({
               ) : null}
             </div>
 
-            <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[14px] leading-5 text-white/92">
-              {item.content}
-            </p>
+            {/*
+              Omitted entirely on an image-only comment rather than rendered
+              empty. An empty paragraph still costs its line height and top
+              margin, which reads as a gap somebody left by accident.
+            */}
+            {item.content ? (
+              <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[14px] leading-5 text-white/92">
+                {item.content}
+              </p>
+            ) : null}
+            <CommentImage image={item.image} />
           </div>
         ) : (
           <>
@@ -167,9 +193,13 @@ export function CommentItem({
               ) : null}
             </div>
 
-            <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[15px] leading-5.5 text-white/92">
-              {item.content}
-            </p>
+            {/* Same reasoning as the reply layout above. */}
+            {item.content ? (
+              <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[15px] leading-5.5 text-white/92">
+                {item.content}
+              </p>
+            ) : null}
+            <CommentImage image={item.image} />
           </>
         )}
 
@@ -204,7 +234,7 @@ export function CommentItem({
               contentType="comment"
               contentId={item._id}
               initialIsLiked={!!item.isLiked}
-              initialTotalLikes={item.totalLike || 0}
+              initialTotalLikes={totalLike}
               disabled={!user?._id}
               unstyled
               tooltip={false}
@@ -217,19 +247,22 @@ export function CommentItem({
                   <HeartOutlineIcon className="text-xl" />
                 )
               }
-              renderCount={(totalLikes) => <span>{totalLikes || 0}</span>}
+              renderCount={(totalLikes) => (
+                <span data-testid={`comment-likes-${item._id}`}>{totalLikes || 0}</span>
+              )}
             />
           </div>
         </div>
 
-        {!isRepliesOpen && allowReplies && item.totalReply ? (
+        {!isRepliesOpen && allowReplies && totalReply ? (
           <button
             type="button"
+            data-testid={`comment-expand-replies-${item._id}`}
             onClick={onToggleReplies}
             className="mt-3 flex items-center gap-1 text-[13px] text-white/35 hover:text-white/60"
           >
             <span className="h-px w-6 bg-white/20" />
-            Expand {item.totalReply} replies
+            Expand {totalReply} replies
             <AiOutlineDown size={12} />
           </button>
         ) : null}

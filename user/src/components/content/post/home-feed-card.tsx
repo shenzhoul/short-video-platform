@@ -1,11 +1,11 @@
 'use client';
 
 import VideoPlayer from '@components/ui/video-player';
+import { toast } from '@douyin-clone/shared-toast';
 import { usePostVideoHoverPlayback } from '@hooks/use-post-video-hover-playback';
 import { IPost } from '@interfaces/post';
 import { videoDuration } from '@lib/duration';
 import { PopupPipState, PopupPipVideo } from '@lib/popup-pip';
-import { toast } from 'react-toastify';
 import { AddToWatchLaterIcon, HeartOutlineIcon, MuteIcon, PauseIcon, PiPIcon, PlayIcon, PlayOutlinedIcon, VolumeIcon } from 'src/icons';
 
 import HomeFeedCoverImage from './home-feed-cover-image';

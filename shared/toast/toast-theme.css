@@ -1,0 +1,51 @@
+/*
+ * Accessible colours for the toast levels.
+ *
+ * `react-toastify`'s "colored" theme puts white text on its brand palette, and
+ * every level of it falls short of WCAG AA (4.5:1) for normal text:
+ *
+ *     info     #3498db  3.15:1
+ *     success  #07bc0c  2.56:1
+ *     warning  #f1c40f  1.66:1   <- white on yellow
+ *     error    #e74c3c  3.82:1
+ *
+ * That went unnoticed for as long as it did because these toasts never actually
+ * rendered: every call site imported `react-toastify` directly and missed the
+ * shared container's `containerId`, so nothing reached the screen. Making them
+ * visible without fixing this would ship a warning toast at 1.66:1.
+ *
+ * Each hue is kept recognisable and only darkened enough to clear AA. Warning is
+ * the exception and keeps its yellow: no yellow dark enough for white text still
+ * reads as yellow, so the text goes dark instead, which is the conventional
+ * treatment anyway.
+ *
+ * These are the same in light and dark theme on purpose. The "colored" theme
+ * paints its own background rather than inheriting the page's, so a toast looks
+ * the same either way — and the contrast holds either way with it.
+ */
+
+:root {
+  --toastify-color-info: #1565c0; /* 5.75:1 on white */
+  --toastify-color-success: #1b7f22; /* 5.12:1 on white */
+  --toastify-color-warning: #f1c40f; /* 10.48:1 on #1a1a1a */
+  --toastify-color-error: #c0392b; /* 5.44:1 on white */
+
+  --toastify-text-color-info: #ffffff;
+  --toastify-text-color-success: #ffffff;
+  --toastify-text-color-warning: #1a1a1a;
+  --toastify-text-color-error: #ffffff;
+}
+
+/*
+ * The close button and progress bar inherit the toast's text colour, which is
+ * what keeps the warning toast's controls legible against its yellow.
+ */
+.Toastify__toast--warning .Toastify__close-button {
+  color: var(--toastify-text-color-warning);
+  opacity: 0.7;
+}
+
+.Toastify__toast--warning .Toastify__progress-bar {
+  background: var(--toastify-text-color-warning);
+  opacity: 0.35;
+}

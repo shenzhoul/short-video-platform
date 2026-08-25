@@ -1,4 +1,9 @@
 import {
+  allUploadLimitSettingKeys,
+  validateUploadLimitSetting
+} from '@douyin-clone/upload-policy';
+import {
+  BadRequestException,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -181,6 +186,14 @@ export class SettingService implements OnModuleInit, OnModuleDestroy {
     if (!setting) {
       throw new EntityNotFoundException();
     }
+
+    // Validated *before* anything is written, so a rejected value leaves the
+    // stored one exactly as it was. The admin form saves key by key, and a
+    // failure part-way through must not be able to leave a limit blank or
+    // nonsensical — the worst it can do is leave some keys updated and the rest
+    // unchanged, all of them still valid.
+    this.assertValidUploadLimit(key, data.value);
+
     const previousValue = setting.value;
     data.description && setting.set('description', data.description);
     data.name && setting.set('name', data.name);
@@ -192,6 +205,28 @@ export class SettingService implements OnModuleInit, OnModuleDestroy {
     await this.addSettingFileRef(setting, previousValue, data.value);
     await this.cleanupReplacedSettingFile(key, previousValue, data.value);
     return dto;
+  }
+
+  /**
+   * Refuse an upload limit that would not be a limit.
+   *
+   * Returns silently for every key this feature does not own, so it can sit on
+   * the one write path without the caller knowing which settings are upload
+   * limits. The rules and the wording both live in `@douyin-clone/upload-policy`
+   * — the same module the file server and the browser read — because a message
+   * telling an operator the ceiling is 100MB has to agree with the code that
+   * enforces 100MB.
+   *
+   * The proposed value is judged against the *other* stored limits as well, so a
+   * pixel budget that contradicts a width limit is caught even though neither
+   * value is wrong on its own.
+   */
+  private assertValidUploadLimit(key: string, value: any) {
+    const siblings = this.getPublicValueByKeys(allUploadLimitSettingKeys());
+    const problem = validateUploadLimitSetting(key, value, siblings);
+    if (problem) {
+      throw new BadRequestException(problem);
+    }
   }
 
   // Broadcasts a setting change to ALL running instances via Redis pub/sub.

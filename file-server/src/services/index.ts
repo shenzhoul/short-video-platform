@@ -11,6 +11,8 @@ export { DiskStorageService } from './file/disk-storage.service';
 // Enhanced file services
 export { FileManagerService } from './file/file-manager.service';
 export { FileMediaValidationService } from './file/file-media-validation.service';
+export { ImageContentValidationService } from './file/image-content-validation.service';
+export { VideoContentValidationService } from './file/video-content-validation.service';
 export { FileMetadataService } from './file/file-metadata.service';
 export { FileProcessingService } from './file/file-processing.service';
 export { FileValidationService } from './file/file-validation.service';

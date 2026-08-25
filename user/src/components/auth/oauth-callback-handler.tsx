@@ -18,12 +18,12 @@
 
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { DEFAULT_POST_LOGIN_REDIRECT_URL, normalizeInternalRedirectUrl } from '@lib/auth-redirect';
 import { handleOAuthCallback, initOAuth } from '@services/auth.service';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 
 interface OAuthCallbackHandlerProps {
   provider: string;

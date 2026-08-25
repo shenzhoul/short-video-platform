@@ -13,6 +13,11 @@
     "file_size_required_for_tus_uploads": "File size is required for TUS uploads",
     "file_server_request_failed": "File server request failed: {{reason}}",
     "files_missing_for_operation": "Cannot {{operation}} content: Some files do not exist or are not accessible",
+    "profile_image_not_found": "That image no longer exists. Please upload it again.",
+    "profile_image_wrong_type": "That file was not uploaded as this kind of profile image.",
+    "profile_image_not_owned": "You cannot use that image.",
+    "profile_image_not_ready": "That image is still being processed, or could not be processed. Please upload it again.",
+    "profile_image_not_attachable": "That image could not be attached to your profile. Please upload it again.",
     "no_permission_to_use_files": "Cannot {{operation}} content: You don't have permission to use {{count}} file(s). You can only use files you uploaded or files uploaded by administrators.",
     "document_verification_required_delete": "Document verification required to delete content",
     "document_verification_required_create": "Document verification required to create content",
@@ -22,6 +27,17 @@
     "post_video_draft_already_attached": "This video is already attached to published content and cannot be discarded as a draft.",
     "post_video_draft_discard_failed": "The unpublished video draft could not be completely removed. Please try again.",
     "post_photo_draft_access_denied": "You do not have permission to access one or more unpublished photo drafts.",
+    "comment_image_not_found": "That image is no longer available.",
+    "comment_image_access_denied": "You can only attach an image you uploaded yourself.",
+    "comment_image_invalid_type": "That file cannot be attached to a comment.",
+    "comment_image_invalid_format": "That file is not a supported image. Use a JPEG, PNG, WebP, GIF or AVIF picture.",
+    "comment_image_file_too_large": "That image is larger than 10MB. Please save it smaller and try again.",
+    "comment_image_dimensions_exceeded": "That image resolution is too large. Please use a smaller picture.",
+    "comment_image_not_ready": "That image is still being processed. Please try again in a moment.",
+    "comment_image_already_attached": "That image is already attached to a comment.",
+    "upload_type_unsupported": "That kind of upload is not supported.",
+    "upload_image_file_too_large": "That image is larger than {{limit}}. Please save it smaller and try again.",
+    "upload_video_file_too_large": "That video is larger than {{limit}}. Please export it smaller and try again.",
     "post_photo_draft_already_attached": "One or more photos are already attached to published content and cannot be discarded as drafts.",
     "post_photo_draft_discard_failed": "The unpublished photo drafts could not be completely removed. Please try again.",
     "parent_comment_not_found": "Parent comment not found",
@@ -30,7 +46,13 @@
     "cannot_message_yourself": "You cannot start a conversation with yourself.",
     "message_awaiting_reply": "You can send one message until they reply.",
     "access_denied": "Access denied.",
-    "message_text_or_attachment_required": "Write a message or attach a photo or video."
+    "message_text_or_attachment_required": "Write a message or attach a photo or video.",
+    "message_recipient_restricted": "You cannot send messages to this account.",
+    "message_user_blocked": "You cannot send messages to this account.",
+    "message_post_not_accessible": "This post cannot be shared with this person.",
+    "message_post_deleted": "This post is no longer available.",
+    "message_share_recipient_required": "Choose someone to share this post with.",
+    "message_share_duplicate": "This post has already been shared with this person."
   },
   "auth": {
     "no_valid_token": "No valid token found",
@@ -50,5 +72,8 @@
       "cannot_modify_superadmin_permissions": "Cannot modify superadmin account permissions",
       "admin_permissions_toggled": "Admin permissions {{action}} for user {{username}}"
     }
+  },
+  "messages": {
+    "mutual_follow_notice": "You follow each other. You can now start chatting."
   }
 }

@@ -19,6 +19,8 @@ Start with `../.agents/instructions`.
 - `src/services/file/`: file orchestration
 - `src/services/tus/`: resumable upload flows
 - `src/services/monitoring/`: monitoring hooks
+- `scripts/`: developer and CI tooling. **Not part of running the server** —
+  nothing imports it, and a fresh database never needs it.
 
 ## Skills
 
@@ -43,3 +45,10 @@ Supplement with vendored general-purpose skills when the task calls for them:
 - Follow the same DTO, payload, scheduling, and service-layer rules used by `api/` unless the file-server implementation clearly requires something different.
 - Add focused tests when introducing file-server test infrastructure; the current package has no test script.
 - Run `yarn lint` and `yarn build` before finishing file-server code changes.
+- After changing upload validation, upload policies or media processing, run
+  `yarn verify:policies` (needs a fresh `yarn build`, plus `ffmpeg`/`ffprobe` on
+  PATH for the video half). It drives the compiled services in `dist/` against
+  real Sharp and real FFmpeg fixtures, writes everything to an OS temp directory
+  it removes in a `finally`, touches no database, and exits non-zero on the first
+  failure. This is where the checks live that would otherwise be `.spec` files:
+  the package has no test runner, and a spec nothing executes is not coverage.

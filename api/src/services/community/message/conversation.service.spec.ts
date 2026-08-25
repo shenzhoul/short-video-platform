@@ -65,6 +65,12 @@ describe('ConversationService', () => {
       };
 
       const participantService = { ensureParticipants: jest.fn().mockResolvedValue(undefined) };
+      const relationshipService = {
+        getState: jest.fn().mockResolvedValue({
+          blockedByMe: false, blockedMe: false, restrictedByMe: false, restrictedMe: false
+        }),
+        getStateMap: jest.fn().mockResolvedValue(new Map())
+      };
 
       return {
         service: new ConversationService(
@@ -74,7 +80,8 @@ describe('ConversationService', () => {
           baseUserService as any,
           followService as any,
           permissionService as any,
-          participantService as any
+          participantService as any,
+          relationshipService as any
         ),
         conversationModel,
         userModel,
@@ -163,7 +170,8 @@ describe('ConversationService', () => {
       return {
         conversationModel,
         service: new ConversationService(
-          conversationModel as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any
+          conversationModel as any, {} as any, {} as any, {} as any, {} as any,
+          {} as any, {} as any, {} as any
         )
       };
     };

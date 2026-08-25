@@ -1,5 +1,5 @@
+import { toast } from '@douyin-clone/shared-toast';
 import { CREATOR_VIDEO_ACCEPT } from '@lib/creator-publish';
-import { toast } from 'react-toastify';
 import {
   VideoExtIcon,
   VideoQualityIcon,

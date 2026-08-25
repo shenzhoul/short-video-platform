@@ -112,7 +112,7 @@ export default function FollowingCreatorsRail({ creators, activeCreatorId, onSel
           </p>
         ) : null}
 
-        <div className="home-feed-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-2">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-2">
           <ul className="flex flex-col items-center">
             {filteredCreators.map(creator => {
               const creatorName = creator.name || creator.username;

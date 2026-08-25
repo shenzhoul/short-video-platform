@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiResponse,
   ApiSecurity,
@@ -27,13 +28,14 @@ import { MessageDto } from 'src/dtos/community/message';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { DataResponse } from 'src/kernel';
 import { PageableData } from 'src/kernel/common';
-import { MessageCreatePayload, MessageSearchPayload } from 'src/payloads/community/message';
+import { MessageCreatePayload, MessageSearchPayload, PostSharePayload } from 'src/payloads/community/message';
 import {
   ConversationParticipantService,
   MessageService,
   SendMessageResult
 } from 'src/services/community/message';
 import type { MessageUnreadTotals } from 'src/services/community/message';
+import { PostShareResult, PostShareService } from 'src/services/community/share';
 
 /** Messages inside a direct conversation, and inbox-level unread state. */
 @ApiTags('Message')
@@ -42,7 +44,8 @@ import type { MessageUnreadTotals } from 'src/services/community/message';
 export class MessageController {
   constructor(
     private readonly messageService: MessageService,
-    private readonly participantService: ConversationParticipantService
+    private readonly participantService: ConversationParticipantService,
+    private readonly postShareService: PostShareService
   ) {}
 
   @Get('/unread-count')
@@ -114,5 +117,29 @@ export class MessageController {
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<SendMessageResult>> {
     return DataResponse.ok(await this.messageService.send(conversationId, payload, user));
+  }
+
+  @Post('/share/post/:postId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({
+    summary: 'Share a post into a direct message',
+    description: 'Sends the post to one recipient as a message. The conversation is found or created here, so the client never names it. Permission is the same gate as any other message: mutual followers and accepted threads send freely, a share from a stranger is their one request message, and a sender already waiting on a reply is refused. The post is validated first, so a refused share never spends that one message, and the share counter moves only after the message exists. `totalShare` counts distinct sharers, so `shareCounted` reports whether this call moved it.'
+  })
+  @ApiParam({ name: 'postId', description: 'Post being shared', example: '507f1f77bcf86cd799439011' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Post shared' })
+  @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Blocked, restricted, awaiting a reply, or the pair may not exchange this post' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Post no longer exists' })
+  @ApiResponse({ status: HttpStatus.CONFLICT, description: 'The same share arrived twice in quick succession' })
+  async sharePost(
+    @Param('postId') postId: string,
+    @Body() payload: PostSharePayload,
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<PostShareResult>> {
+    return DataResponse.ok(
+      await this.postShareService.shareToMessage(postId, payload.recipientId, user)
+    );
   }
 }

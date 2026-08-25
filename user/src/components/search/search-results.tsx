@@ -153,7 +153,7 @@ export default function SearchResults({ query }: SearchResultsProps) {
       </nav>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 home-feed-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {tab === 'summary' ? (
             <>
               <TagChips tags={tags} />
@@ -215,7 +215,7 @@ export default function SearchResults({ query }: SearchResultsProps) {
         </div>
 
         {relatedSearches.length ? (
-          <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-(--border-soft) px-5 py-5 home-feed-scrollbar xl:block">
+          <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-(--border-soft) px-5 py-5 xl:block">
             <h2 className="mb-3 text-base font-semibold text-(--text-strong)">Related searches</h2>
             <div className="space-y-1">
               {relatedSearches.map(tag => (

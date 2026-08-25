@@ -14,6 +14,14 @@ export interface IComment {
   replyToName?: string;
   parentCommentId?: string;
   isReplyToReply?: boolean;
+  /** The single image this comment carries, when it has one. */
+  image?: {
+    id: string;
+    url: string;
+    width: number;
+    height: number;
+    mimeType: string;
+  };
 }
 export interface ICreateComment {
   objectId: string;
@@ -23,4 +31,6 @@ export interface ICreateComment {
   replyToName?: string;
   /** Users named with @ in the text. Re-verified server-side before storage. */
   mentionedUserIds?: string[];
+  /** An already-uploaded image to attach. Ownership is re-checked server-side. */
+  imageId?: string;
 }

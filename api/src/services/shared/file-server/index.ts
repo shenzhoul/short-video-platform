@@ -10,3 +10,4 @@
 
 // Service exports
 export { FileServerService } from './file-server.service';
+export { UploadPolicyService } from './upload-policy.service';

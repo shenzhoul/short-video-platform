@@ -101,3 +101,40 @@ per-mutation broadcast.
   render carrying the final value.
 - A live total must not reset the viewer's own `isLiked`. `LikeButton` keeps the
   two in separate effects for exactly this reason — see its comment.
+
+## Live follow counters
+
+A third coalescer, alongside the post and comment ones, drained by the same
+`PostStatsFlushJob` tick.
+
+| Event | Sent to | Payload |
+|---|---|---|
+| `user:follow_stats_updated` | **only the user it describes** | `{ eventId, userId, followersCount, followingCount, revision, updatedAt }` |
+
+- **Per-user, not per-room.** Delivered through `SocketUserService.emitToUsers`,
+  which reaches every socket that person has open. Follow counts are their own
+  figures; a profile room would send a frame to every stranger looking at them.
+- **Counted from the follow rows**, not from `User.stats`. The stored counters
+  are a cache only `follow`/`unfollow` maintain, so a write that bypassed the
+  service leaves them behind. `FollowService.countFollowRelations` is the same
+  definition the profile endpoint and the follower list use — which is what stops
+  the header and the modal disagreeing.
+- **Marked from `FollowStatsListener`**, which subscribes to the reaction channel
+  under its own topic and filters to `objectType: creator, action: follow`.
+  `FollowService` publishes only for a genuinely created or removed relation, so
+  a repeated follow, a lost unique-index race, or an unfollow of somebody who was
+  never followed all emit nothing.
+- **Both participants are marked**: one relation moves the follower's
+  `followingCount` and the creator's `followersCount`. Removing a follower is
+  routed through `unfollow`, so it needs no separate branch.
+- **Block and restrict emit nothing** — they store a flag and leave follow rows
+  alone, so neither changes a count.
+
+Client: `useFollowStats({ userId, initial })` reconciles three sources — the
+canonical HTTP response, live snapshots, and a resync after reconnect — all of
+which carry absolute totals. `applyDelta` exists for the one case a snapshot
+cannot cover: following somebody from *their* profile changes a number the viewer
+is watching but will never be sent, because it is not theirs.
+
+`GET /users/:id/follow-stats` is the resync endpoint. Deliberately two numbers
+rather than a profile refetch.

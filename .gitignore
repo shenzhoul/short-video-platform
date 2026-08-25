@@ -95,6 +95,11 @@ artifacts/
 # screenshot folder used by the webapp-testing and playwright skills.
 /output/
 
+# QA verification screenshots kept per task under a dated folder. Evidence for a
+# review, never repository content: a handful of PNGs per pass adds up fast, and
+# none of it is needed to build or run anything.
+/qa-screenshots/
+
 # AI / local development metadata
 #
 # `.agents/` is TRACKED on purpose: the rules, checklists and skills are part of how this repo is

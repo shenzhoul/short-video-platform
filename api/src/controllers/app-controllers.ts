@@ -15,7 +15,8 @@ import {
   SocialController,
   NotificationController,
   ConversationController,
-  MessageController
+  MessageController,
+  UserRelationshipController
 } from './index';
 import { AdminAvatarController } from 'src/controllers/identity/user/admin-avatar.controller';
 import { ContentFileController } from 'src/controllers/content/content-file.controller';
@@ -56,5 +57,8 @@ export const appControllers = [
 
   // direct messages
   ConversationController,
-  MessageController
+  MessageController,
+
+  // block / restrict
+  UserRelationshipController
 ]

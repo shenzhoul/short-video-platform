@@ -1,12 +1,10 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
+import { describeRejectedUpload, POST_VIDEO_UPLOAD_TYPE } from '@lib/upload-policy';
 import type { UploadProgress } from '@services/file-upload.service';
 import { uploadVideo } from '@services/post.service';
-import {
-  FILE_VALIDATION_PRESETS,
-  getUserFriendlyUploadErrorMessage,
-  validateFileSize
-} from '@utils/file-validation';
+import { getUserFriendlyUploadErrorMessage } from '@utils/file-validation';
 import {
   type ChangeEvent,
   useCallback,
@@ -14,7 +12,6 @@ import {
   useRef,
   useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 export interface PostVideoUploadState {
   fileName: string;
@@ -35,13 +32,6 @@ interface UsePostVideoUploadOptions {
   onUploadStateChange: (isUploading: boolean) => void;
   onPreviewUrlChange?: (previewUrl: string) => void;
 }
-
-const isAcceptedVideoFile = (file: File) => {
-  if (file.type.startsWith('video/')) return true;
-  const extension = file.name.toLowerCase().split('.').pop();
-  return extension === 'hevc'
-    || FILE_VALIDATION_PRESETS.VIDEO.allowedExtensions.includes(extension || '');
-};
 
 export function usePostVideoUpload({
   initialPreviewUrl,
@@ -75,13 +65,15 @@ export function usePostVideoUpload({
   }, [previewUrl]);
 
   const uploadSelectedFile = useCallback(async (file: File) => {
-    const sizeValidation = validateFileSize(file, FILE_VALIDATION_PRESETS.VIDEO.maxSizeMB);
-    if (!sizeValidation.isValid) {
-      toast.error(sizeValidation.error || 'The selected video is too large.');
-      return;
-    }
-    if (!isAcceptedVideoFile(file)) {
-      toast.error('Please select a supported video file.');
+    // Judged against the `post-video` policy — the same table the API and the
+    // file server read. The 2048MB `VIDEO` preset this replaces was a number no
+    // server ever agreed with: the file server's own ceiling was 500MB, so a
+    // 1GB upload transferred for as long as it took and was refused at the end.
+    // Duration and resolution are checked here too, from the container's header
+    // via `<video preload="metadata">`, which never decodes a frame.
+    const rejection = await describeRejectedUpload(file, POST_VIDEO_UPLOAD_TYPE);
+    if (rejection) {
+      toast.error(rejection);
       return;
     }
 

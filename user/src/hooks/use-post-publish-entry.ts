@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { showErrorMessage } from '@lib/utils';
 import { useProfile } from '@providers/profile.provider';
 import { discardPhotoDrafts, discardVideoDraft } from '@services/post.service';
@@ -23,7 +24,6 @@ import {
   useEffect,
   useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 export function usePostPublishEntry() {
   const router = useRouter();

@@ -22,6 +22,14 @@ export type SharedToastApi = {
   success: (message: ToastMessage, options?: ToastOptionsInput) => Id;
   error: (message: ToastMessage, options?: ToastOptionsInput) => Id;
   warning: (message: ToastMessage, options?: ToastOptionsInput) => Id;
+  /**
+   * Alias of {@link warning}, matching `react-toastify`'s own API.
+   *
+   * Carried deliberately so this package is a drop-in replacement for the
+   * library: a migration that has to rename calls as it goes is a migration
+   * that can silently change one.
+   */
+  warn: (message: ToastMessage, options?: ToastOptionsInput) => Id;
   info: (message: ToastMessage, options?: ToastOptionsInput) => Id;
   loading: (message: ToastMessage, options?: ToastOptionsInput) => Id;
   dismiss: (id?: Id) => void;

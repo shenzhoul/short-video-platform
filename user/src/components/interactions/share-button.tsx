@@ -6,6 +6,7 @@ import { ReactNode, useState } from 'react';
 import { AiOutlineShareAlt } from 'react-icons/ai';
 
 import SharePanel from './share-panel';
+import SharePopover from './share-popover';
 
 interface ShareButtonProps {
   /** The URL to share. If not provided, will use current page URL with postId */
@@ -30,6 +31,13 @@ interface ShareButtonProps {
   shareMessage?: string;
   /** Notifies the owner view so the share counter can move without a refetch. */
   onShared?: () => void;
+  /**
+   * Where the share popover sits relative to this button.
+   *
+   * Supplied by the surface, because only it knows which way there is room —
+   * a feed card near the right edge and the video rail need opposite sides.
+   */
+  panelPositionClassName?: string;
 }
 
 /**
@@ -57,7 +65,8 @@ export default function ShareButton({
   iconSize,
   shareTitle = 'Check this out',
   shareMessage,
-  onShared
+  onShared,
+  panelPositionClassName
 }: ShareButtonProps) {
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -114,16 +123,40 @@ export default function ShareButton({
 
   return (
     <>
-      <Button
-        onClick={() => setPanelOpen(true)}
-        disabled={disabled}
-        className={className}
-        title="Share"
-        variant={variant}
-        size={size}
-      >
-        {renderContent()}
-      </Button>
+      {/*
+        With a post id there are people to share it *with*, so the popover is
+        the primary surface. Without one — a profile, say — there is only a link,
+        and the existing panel still covers that.
+      */}
+      {postId ? (
+        <SharePopover
+          postId={postId}
+          shareUrl={getShareUrl()}
+          panelPositionClassName={panelPositionClassName}
+          onShared={onShared}
+        >
+          <Button
+            disabled={disabled}
+            className={className}
+            title="Share"
+            variant={variant}
+            size={size}
+          >
+            {renderContent()}
+          </Button>
+        </SharePopover>
+      ) : (
+        <Button
+          onClick={() => setPanelOpen(true)}
+          disabled={disabled}
+          className={className}
+          title="Share"
+          variant={variant}
+          size={size}
+        >
+          {renderContent()}
+        </Button>
+      )}
 
       {panelOpen ? (
         <SharePanel

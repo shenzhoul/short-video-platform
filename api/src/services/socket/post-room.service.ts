@@ -39,7 +39,21 @@ export class PostRoomService {
    * @returns whether the socket was admitted
    */
   public async join(socket: Socket, postId: string): Promise<boolean> {
-    if (!ObjectId.isValid(postId)) return false;
+    if (!await this.canView(postId)) return false;
+
+    await this.socketUserService.joinRoom(socket, POST_ROOM.name(postId));
+    return true;
+  }
+
+  /**
+   * Whether a socket may receive anything derived from this post.
+   *
+   * Public because the thread rooms need the *same* answer: a reply is only as
+   * private as the post holding it, and a second copy of this rule is how a
+   * thread quietly becomes a way around a post nobody may see.
+   */
+  public async canView(postId: string): Promise<boolean> {
+    if (!postId || !ObjectId.isValid(postId)) return false;
 
     // A deleted or missing post has no live state worth subscribing to, and
     // admitting one would leak the fact that the id exists at all.
@@ -51,11 +65,7 @@ export class PostRoomService {
 
     // The same permission seam the HTTP comment routes already use, so post
     // visibility has one definition rather than a socket-only copy of it.
-    const canView = await this.contentPermissionService.canView(postId);
-    if (!canView) return false;
-
-    await this.socketUserService.joinRoom(socket, POST_ROOM.name(postId));
-    return true;
+    return this.contentPermissionService.canView(postId);
   }
 
   /**

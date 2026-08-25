@@ -4,6 +4,8 @@ import type { IMessage, IMessageFile, IPendingMessage } from '@interfaces/messag
 import { MESSAGE_TYPE } from '@interfaces/message';
 import { FiAlertCircle, FiPlay } from 'react-icons/fi';
 
+import SharedPostCard from './shared-post-card';
+
 interface MessageBubbleProps {
   message: IMessage | IPendingMessage;
   outgoing: boolean;
@@ -12,6 +14,8 @@ interface MessageBubbleProps {
   pending?: IPendingMessage;
   onRetry?: () => void;
   onDismiss?: () => void;
+  /** Opens a shared post in the application's own post detail. */
+  onOpenPost?: (postId: string) => void;
 }
 
 /**
@@ -115,10 +119,16 @@ export default function MessageBubble({
   avatar,
   pending,
   onRetry,
-  onDismiss
+  onDismiss,
+  onOpenPost
 }: MessageBubbleProps) {
   const files = message.files || [];
-  const hasMedia = files.length > 0 && message.type !== MESSAGE_TYPE.TEXT;
+  const sharedPost = (message as IMessage).sharedPost;
+  const isSharedPost = message.type === MESSAGE_TYPE.POST;
+  // A shared post has no attachment of its own — its picture belongs to the post.
+  const hasMedia = files.length > 0
+    && message.type !== MESSAGE_TYPE.TEXT
+    && !isSharedPost;
   const failed = pending?.status === 'failed';
 
   return (
@@ -132,6 +142,10 @@ export default function MessageBubble({
       ) : null}
 
       <div className={`flex min-w-0 flex-col gap-1 ${BUBBLE_MAX_WIDTH} ${outgoing ? 'items-end' : 'items-start'}`}>
+        {isSharedPost && sharedPost ? (
+          <SharedPostCard sharedPost={sharedPost} onOpen={onOpenPost} />
+        ) : null}
+
         {hasMedia ? (
           <div className={pending?.status === 'uploading' ? 'opacity-90' : ''}>
             <MediaAttachment

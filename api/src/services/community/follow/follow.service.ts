@@ -134,6 +134,45 @@ export class FollowService {
    * branch is a full-prefix match on the unique reaction index, so this costs
    * two index point-lookups and no scan.
    */
+  /**
+   * Follower and following totals, counted from the follow records themselves.
+   *
+   * The canonical answer, and the same data the follower/following lists page
+   * over — so a profile header and the list it opens cannot disagree.
+   *
+   * `User.stats` carries denormalised copies of these numbers, kept up to date
+   * by `follow` and `unfollow`, and they are fine for sorting and for list rows.
+   * They are *not* used for a profile's own header: a counter maintained by
+   * increments drifts the moment anything writes a follow without going through
+   * this service, and when it does, the header says one thing while the list
+   * says another with no way for the reader to tell which is right.
+   *
+   * Both counts are indexed lookups —
+   * `idx_objectType_objectId_action_aggregation` for followers and
+   * `idx_createdBy_objectType_action_createdAt_following` for followings — so
+   * this is two counted index scans, not a collection scan.
+   */
+  async countFollowRelations(userId: string | ObjectId): Promise<{
+    followers: number;
+    followings: number;
+  }> {
+    const id = toObjectId(userId);
+    const [followers, followings] = await Promise.all([
+      this.reactionModel.countDocuments({
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW,
+        objectId: id
+      }),
+      this.reactionModel.countDocuments({
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW,
+        createdBy: id
+      })
+    ]);
+
+    return { followers, followings };
+  }
+
   async areMutuallyFollowing(userIdA: string | ObjectId, userIdB: string | ObjectId): Promise<boolean> {
     if (userIdA.toString() === userIdB.toString()) return false;
 

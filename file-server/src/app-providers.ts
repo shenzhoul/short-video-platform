@@ -9,6 +9,8 @@ import {
   DiskStorageService,
   FileManagerService,
   FileMediaValidationService,
+  ImageContentValidationService,
+  VideoContentValidationService,
   FileMetadataService,
   FileProcessListenerService,
   FileProcessingService,
@@ -35,6 +37,8 @@ export const appProviders = [
   // Enhanced file services
   FileManagerService,
   FileMediaValidationService,
+  ImageContentValidationService,
+  VideoContentValidationService,
   FileMetadataService,
   FileProcessListenerService,
   FileProcessingService,

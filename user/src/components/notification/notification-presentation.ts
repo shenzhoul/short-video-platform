@@ -7,9 +7,26 @@ import { INotification, NOTIFICATION_TYPE, NotificationType } from '@interfaces/
  * read the resolved result, so adding a type means adding one entry here rather
  * than editing every component that renders a notification.
  */
+/**
+ * Which badge a row wears, if any.
+ *
+ * A small vocabulary of kinds rather than one per type, because several types
+ * share a badge — a post like and a comment like are both likes. Components map
+ * the kind to a component, so notification types stay branched on in this file
+ * alone.
+ *
+ * Only the three interaction families carry a badge. A follow says everything it
+ * needs to in its wording and its follow-back control, and an unrecognised type
+ * has nothing honest to draw, so both resolve to `null` and the badge is left
+ * off the avatar entirely rather than rendered as an empty disc.
+ */
+export type NotificationIconKind = 'like' | 'comment' | 'mention';
+
 interface NotificationPresentation {
   /** Sentence shown under the actor's name. */
   message: string;
+  /** Badge drawn over the actor's avatar, or null for a bare avatar. */
+  icon: NotificationIconKind | null;
   /** Whether the row shows the related post's cover. */
   showThumbnail: boolean;
   /** Whether the row offers a follow control for the actor. */
@@ -39,12 +56,32 @@ const DELETED_COMMENT_NOTICE = 'This comment has been deleted.';
 const COMMENT_SCOPED_TYPES: NotificationType[] = [
   NOTIFICATION_TYPE.POST_COMMENT,
   NOTIFICATION_TYPE.COMMENT_REPLY,
-  NOTIFICATION_TYPE.COMMENT_MENTION
+  NOTIFICATION_TYPE.COMMENT_MENTION,
+  // A like on a comment is about that comment, not about the post it sits in.
+  // Its `commentId` is the liked comment and is stable for the life of the
+  // group — the group key is per-comment — so it deep-links like the others.
+  // Its `lastEventId` is a *reaction* id, which is why the aggregate rule below
+  // still excludes it.
+  NOTIFICATION_TYPE.COMMENT_LIKE
 ];
 
 export function isCommentScoped(notification: INotification): boolean {
   return COMMENT_SCOPED_TYPES.includes(notification.type);
 }
+
+/**
+ * Types that quote the referenced comment under the actor's name.
+ *
+ * Narrower than the comment-scoped set: a like on your own comment quotes text
+ * you wrote yourself, which tells you nothing you did not already know and
+ * costs the row two lines. "liked your comment" plus the thumbnail is the whole
+ * message; the comment itself is one click away.
+ */
+const QUOTED_TYPES: NotificationType[] = [
+  NOTIFICATION_TYPE.POST_COMMENT,
+  NOTIFICATION_TYPE.COMMENT_REPLY,
+  NOTIFICATION_TYPE.COMMENT_MENTION
+];
 
 /**
  * Types whose aggregate rows fold *comments* in, so `lastEventId` is a comment.
@@ -99,36 +136,43 @@ type NotificationPresentationBase = Omit<
 const PRESENTATION: Record<NotificationType, NotificationPresentationBase> = {
   [NOTIFICATION_TYPE.POST_LIKE]: {
     message: 'liked your post',
+    icon: 'like',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.COMMENT_LIKE]: {
     message: 'liked your comment',
+    icon: 'like',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.POST_COMMENT]: {
     message: 'commented on your post',
+    icon: 'comment',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.COMMENT_REPLY]: {
     message: 'replied to your comment',
+    icon: 'comment',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.POST_MENTION]: {
     message: 'mentioned you in a post',
+    icon: 'mention',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.COMMENT_MENTION]: {
     message: 'mentioned you in a comment',
+    icon: 'mention',
     showThumbnail: true,
     showFollowAction: false
   },
   [NOTIFICATION_TYPE.FOLLOW]: {
     message: 'started following you',
+    icon: null,
     showThumbnail: false,
     showFollowAction: true
   }
@@ -136,6 +180,9 @@ const PRESENTATION: Record<NotificationType, NotificationPresentationBase> = {
 
 const FALLBACK: NotificationPresentationBase = {
   message: 'interacted with you',
+  // Nothing is drawn for a type this build does not know: a wrong badge would
+  // describe the interaction inaccurately, and an empty disc describes nothing.
+  icon: null,
   showThumbnail: false,
   showFollowAction: false
 };
@@ -154,9 +201,8 @@ export function resolveNotificationPresentation(notification: INotification): No
     ? DELETED_COMMENT_NOTICE
     : null;
 
-  // Only a comment-scoped row has a comment to quote, and a deleted one has
-  // nothing left to show but the notice.
-  const commentPreview = !deletedNotice && isCommentScoped(notification)
+  // A deleted comment has nothing left to show but the notice.
+  const commentPreview = !deletedNotice && QUOTED_TYPES.includes(notification.type)
     ? notification.commentPreview || null
     : null;
 

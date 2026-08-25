@@ -56,6 +56,20 @@ describe('restriction notice', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('explains a blocked conversation without saying who blocked whom', () => {
+    render(<MessageRestrictionNotice requestState="blocked" awaitingReplyFrom={null} />);
+
+    expect(screen.getByText(/cannot send messages in this conversation/i)).toBeInTheDocument();
+  });
+
+  it('says exactly the same thing when restricted', () => {
+    // Different wording would be the confirmation a quiet control exists to
+    // withhold.
+    render(<MessageRestrictionNotice requestState="restricted" awaitingReplyFrom={null} />);
+
+    expect(screen.getByText(/cannot send messages in this conversation/i)).toBeInTheDocument();
+  });
+
   it('says nothing before the conversation is known', () => {
     const { container } = render(
       <MessageRestrictionNotice requestState={null} awaitingReplyFrom={null} />
@@ -66,17 +80,16 @@ describe('restriction notice', () => {
 });
 
 describe('composer containment', () => {
-  const renderComposer = (canSend: boolean, awaiting: 'me' | 'them' | null) => render(
+  const renderComposer = (canSend: boolean) => render(
     <MessageComposer
       canSend={canSend}
       sending={false}
-      awaitingReplyFrom={awaiting}
       onSend={jest.fn().mockResolvedValue(true)}
     />
   );
 
   it('puts the text area and one action group on the same surface', () => {
-    renderComposer(true, null);
+    renderComposer(true);
 
     const surface = screen.getByTestId('message-composer-surface');
     const actions = screen.getByTestId('message-composer-actions');
@@ -88,7 +101,7 @@ describe('composer containment', () => {
   });
 
   it('keeps the same single surface while the sender is waiting', () => {
-    renderComposer(false, 'me');
+    renderComposer(false);
 
     expect(screen.getAllByTestId('message-composer-surface')).toHaveLength(1);
     expect(screen.getByTestId('message-composer-surface'))
@@ -96,7 +109,7 @@ describe('composer containment', () => {
   });
 
   it('disables the controls while waiting instead of removing them', () => {
-    renderComposer(false, 'me');
+    renderComposer(false);
 
     expect(screen.getByLabelText('Message')).toBeDisabled();
     expect(screen.getByLabelText('Attach photo or video')).toBeDisabled();
@@ -104,13 +117,21 @@ describe('composer containment', () => {
   });
 
   it('does not repeat the restriction copy underneath the input', () => {
-    renderComposer(false, 'me');
+    renderComposer(false);
 
     expect(screen.queryByText(/one message until they reply/i)).not.toBeInTheDocument();
   });
 
+  it('disables itself for a blocked or restricted conversation too', () => {
+    // Both arrive as `canSend: false` with nobody waiting. Keying the disabled
+    // state on who was waiting left the input live for exactly these two.
+    renderComposer(false);
+
+    expect(screen.getByLabelText('Message')).toBeDisabled();
+  });
+
   it('leaves the recipient of a request able to answer', () => {
-    renderComposer(true, 'them');
+    renderComposer(true);
 
     expect(screen.getByLabelText('Message')).not.toBeDisabled();
   });

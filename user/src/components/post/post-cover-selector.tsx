@@ -2,11 +2,15 @@
 
 import Button from '@components/ui/button';
 import Modal from '@components/ui/modal';
+import { toast } from '@douyin-clone/shared-toast';
 import type { PostCoverRatio } from '@hooks/use-post-create';
-import { FILE_VALIDATION_PRESETS, validateFileSize } from '@utils/file-validation';
+import {
+  acceptAttributeFor,
+  describeRejectedUpload,
+  POST_THUMBNAIL_UPLOAD_TYPE
+} from '@lib/upload-policy';
 import { ChangeEvent, useRef, useState } from 'react';
 import { FiAlertTriangle } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 import { ImageIcon, SuccessIcon } from 'src/icons';
 
 interface PostCoverSelectorProps {
@@ -81,18 +85,19 @@ export default function PostCoverSelector({
   const hasConfirmedAiCover = selectedCoverIndex !== null;
   const coverRatios: PostCoverRatio[] = isEdit ? ['3:4', '4:3'] : ['4:3', '3:4'];
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
 
-    const sizeValidation = validateFileSize(file, FILE_VALIDATION_PRESETS.IMAGE.maxSizeMB);
-    if (!sizeValidation.isValid) {
-      toast.error(sizeValidation.error || 'The selected cover is too large.');
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select a supported image file.');
+    // The `post-thumbnail` policy, which is what the API writes onto the record
+    // when this file is uploaded. The old check used a 5MB client preset and a
+    // `startsWith('image/')` test — the first was a number no server agreed
+    // with, and the second admits SVG, which is a document rather than a
+    // picture.
+    const rejection = await describeRejectedUpload(file, POST_THUMBNAIL_UPLOAD_TYPE);
+    if (rejection) {
+      toast.error(rejection);
       return;
     }
 
@@ -121,7 +126,7 @@ export default function PostCoverSelector({
             inputRefs.current[ratio] = node;
           }}
           type="file"
-          accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif,.avif"
+          accept={acceptAttributeFor(POST_THUMBNAIL_UPLOAD_TYPE)}
           className="sr-only"
           aria-label={`Upload a custom ${ratio} cover`}
           onChange={handleFileChange}

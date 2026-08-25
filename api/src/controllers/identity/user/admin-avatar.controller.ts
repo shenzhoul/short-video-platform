@@ -9,15 +9,12 @@ import {
   UseGuards
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
-import { FILE_REFERENCE_TYPES } from 'src/common/constants';
 import { CurrentUser, Roles } from 'src/common/decorators';
 import { RoleGuard } from 'src/common/guards';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { UserDto } from 'src/dtos/identity/user';
 import { DataResponse, EntityNotFoundException } from 'src/kernel';
-import { IdentityFileService } from 'src/services';
 import { UserAccountManagementService } from 'src/services/identity/user/user.service';
-import { FileServerService } from 'src/services/shared/file-server';
 
 @ApiTags('Admin User Avatars')
 @ApiSecurity('token-auth')
@@ -25,9 +22,7 @@ import { FileServerService } from 'src/services/shared/file-server';
 @Controller('admin/users')
 export class AdminAvatarController {
   constructor(
-    private readonly userService: UserAccountManagementService,
-    private readonly fileServerService: FileServerService,
-    private readonly identityFileService: IdentityFileService
+    private readonly userService: UserAccountManagementService
   ) { }
 
   @ApiOperation({
@@ -96,23 +91,17 @@ export class AdminAvatarController {
       throw new EntityNotFoundException();
     }
 
-    // Validate file ownership (admin users can use any file)
-    await this.identityFileService.validateIdentityDocumentOwnership([avatarId], currentUser, 'update');
-
-    const avatar = await this.fileServerService.getFileInfo(avatarId);
-    if (!avatar) throw new EntityNotFoundException();
-
-    await this.userService.updateAvatar(new UserDto(user), avatar);
-
-    // Add file reference before updating avatar
-    await this.fileServerService.updateFileOwnership({
-      fileIds: [avatarId],
-      createdBy: userId,
-      ref: {
-        itemId: userId,
-        itemType: FILE_REFERENCE_TYPES.USER
-      }
-    });
+    // The admin is passed as the actor, separately from the profile being
+    // changed: an avatar an admin uploaded is stamped `createdBy: 'admin'`, and
+    // only an admin may spend one on somebody else's profile. Everything else —
+    // the file exists, it is an `avatar` upload, its processing succeeded, it is
+    // not already on another profile — is checked inside updateAvatar against
+    // the file server's own record.
+    //
+    // The claim also happens there, before the profile points at the image. It
+    // used to happen here, *after* the profile had already been updated, which
+    // left a window where the unused-file sweeper could collect a live avatar.
+    const avatar = await this.userService.updateAvatar(new UserDto(user), avatarId, currentUser);
 
     return DataResponse.ok({
       success: true,

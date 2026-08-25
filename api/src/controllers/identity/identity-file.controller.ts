@@ -22,7 +22,7 @@ import { CurrentUser, Roles } from "src/common/decorators";
 import { AuthGuard, CustomThrottlerGuard, RoleGuard } from "src/common/guards";
 import { AuthUserDto } from "src/dtos/identity/auth-user.dto";
 import { DataResponse } from "src/kernel";
-import { FileServerService } from "src/services/shared/file-server";
+import { FileServerService, UploadPolicyService } from "src/services/shared/file-server";
 import { __t } from "src/utils/translation";
 
 @Injectable()
@@ -31,7 +31,8 @@ import { __t } from "src/utils/translation";
 @ApiSecurity('token-auth')
 export class IdentityFileController {
   constructor(
-    private readonly fileServerService: FileServerService
+    private readonly fileServerService: FileServerService,
+    private readonly uploadPolicyService: UploadPolicyService
   ) { }
   // User file upload URL generation
 
@@ -102,12 +103,21 @@ export class IdentityFileController {
     @Body() body: { filename: string; fileSize: number },
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'avatar' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('avatar', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         mediaType: 'image',
         type: 'avatar',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: false,
@@ -204,12 +214,21 @@ export class IdentityFileController {
     @Body() body: { filename: string; fileSize: number },
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'cover' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('cover', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         mediaType: 'image',
         type: 'cover',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: false,

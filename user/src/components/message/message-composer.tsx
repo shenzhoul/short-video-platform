@@ -1,19 +1,55 @@
 'use client';
 
-import type { AwaitingReplyFrom } from '@interfaces/message';
+import { toast } from '@douyin-clone/shared-toast';
+import {
+  acceptAttributeFor,
+  describeRejectedUpload,
+  MESSAGE_PHOTO_UPLOAD_TYPE,
+  MESSAGE_VIDEO_UPLOAD_TYPE
+} from '@lib/upload-policy';
 import { useRef, useState } from 'react';
 import { FiImage, FiX } from 'react-icons/fi';
 import { RiSendPlane2Fill } from 'react-icons/ri';
 
 interface MessageComposerProps {
+  /**
+   * Whether the server would accept a send right now.
+   *
+   * The single input: an unanswered request, a block and a restriction all
+   * arrive as `false`, and the notice above the composer explains which. The
+   * composer itself has no business knowing the difference.
+   */
   canSend: boolean;
   sending: boolean;
-  awaitingReplyFrom: AwaitingReplyFrom;
   onSend: (input: { text: string; file?: File | null }) => Promise<boolean>;
 }
 
-/** Accepted attachment types, matching what the API will store. */
-const ACCEPTED_MEDIA = 'image/*,video/*';
+/**
+ * Accepted attachment types, from the two policies this composer can produce.
+ *
+ * A message carries either a picture or a clip, and the API has a separate
+ * upload type for each — so the picker offers the union of what those two
+ * policies allow. `image/*,video/*` used to stand in for it, which invited SVG
+ * (a document, not a picture), TIFF (never decodable here) and every container
+ * FFmpeg has heard of. A hint either way: `accept` is bypassed by choosing "All
+ * files", and the server decides from the bytes regardless.
+ */
+const ACCEPTED_MEDIA = [
+  acceptAttributeFor(MESSAGE_PHOTO_UPLOAD_TYPE),
+  acceptAttributeFor(MESSAGE_VIDEO_UPLOAD_TYPE)
+].filter(Boolean).join(',');
+
+/**
+ * Which upload type a picked attachment will become.
+ *
+ * Decided from the browser's `type` only because this is the *client's* guess at
+ * which of two policies to warn against; the durable type is chosen by
+ * `MessageThread` when it calls the API, and the file server reads that. Getting
+ * this wrong costs a slightly wrong early message, never a wrong limit.
+ */
+const uploadTypeFor = (file: File): string => (
+  file.type?.startsWith('video') ? MESSAGE_VIDEO_UPLOAD_TYPE : MESSAGE_PHOTO_UPLOAD_TYPE
+);
 
 /**
  * Message input, attachment picker and send control.
@@ -31,7 +67,6 @@ const ACCEPTED_MEDIA = 'image/*,video/*';
 export default function MessageComposer({
   canSend,
   sending,
-  awaitingReplyFrom,
   onSend
 }: MessageComposerProps) {
   const [text, setText] = useState('');
@@ -39,7 +74,10 @@ export default function MessageComposer({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const blocked = !canSend && awaitingReplyFrom === 'me';
+  // Any refusal disables the composer, not only an unanswered request: being
+  // blocked or restricted also means `canSend` is false, and keying this on
+  // `awaitingReplyFrom` left the input live for exactly those two cases.
+  const blocked = !canSend;
   const hasContent = Boolean(text.trim() || file);
   const disabled = blocked || sending;
 
@@ -50,9 +88,21 @@ export default function MessageComposer({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handlePick = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePick = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0];
     if (!picked) return;
+
+    // Refused here so an oversized clip never costs the transfer, and — more to
+    // the point — so a rejected pick never replaces an attachment that was
+    // already valid. The input is cleared either way so choosing the same file
+    // again re-fires `change`.
+    const rejection = await describeRejectedUpload(picked, uploadTypeFor(picked));
+    if (rejection) {
+      toast.error(rejection);
+      event.target.value = '';
+      return;
+    }
+
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(picked);
     setPreviewUrl(URL.createObjectURL(picked));

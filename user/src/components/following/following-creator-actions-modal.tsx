@@ -1,10 +1,10 @@
 'use client';
 
 import Modal from '@components/ui/modal';
+import { toast } from '@douyin-clone/shared-toast';
 import { IUser } from '@interfaces/user';
 import { useState } from 'react';
 import { FiCopy, FiMinusCircle } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 
 interface FollowingCreatorActionsModalProps {
   creator: IUser | null;

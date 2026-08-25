@@ -1,9 +1,9 @@
 'use client';
 
 import Button from '@components/ui/button';
+import { toast } from '@douyin-clone/shared-toast';
 import { thousandToK } from '@lib/index';
 import { AiOutlineComment } from 'react-icons/ai';
-import { toast } from 'react-toastify';
 
 interface CommentButtonProps {
   /** Total number of comments */

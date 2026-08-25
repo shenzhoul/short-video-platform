@@ -1,5 +1,5 @@
 import {
-  ArgumentsHost, Catch, HttpException
+  ArgumentsHost, Catch, HttpException, Logger
 } from '@nestjs/common';
 import { BaseExceptionFilter } from '@nestjs/core';
 
@@ -7,6 +7,8 @@ import { getHttpExceptionLogModel } from './logger-mongoose';
 
 @Catch()
 export class HttpExceptionLogFilter extends BaseExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionLogFilter.name);
+
   async catch(exception: any, host: ArgumentsHost) {
     try {
       const ctx = host.switchToHttp();
@@ -32,7 +34,18 @@ export class HttpExceptionLogFilter extends BaseExceptionFilter {
         return super.catch(exception, host);
       }
 
-      // Handle 500 status exceptions with custom logging
+      // An unhandled 500 is an internal fault. Everything useful about it goes
+      // to the server, and nothing about it goes to the client.
+      //
+      // The response used to carry `exception.stack` outside production, which
+      // put MongoDB index names and absolute source paths straight into the
+      // chat UI when a send failed. Diagnosing from the terminal is no real
+      // loss; leaking database internals into a rendered error bubble is.
+      this.logger.error(
+        `Unhandled ${status} on ${request.method} ${request.path}: ${exception?.message}`,
+        exception?.stack
+      );
+
       if (process.env.NODE_ENV === 'production') {
         const HttpExceptionLogModel = getHttpExceptionLogModel();
         // remove await to avoid blocking
@@ -43,21 +56,13 @@ export class HttpExceptionLogFilter extends BaseExceptionFilter {
           body: request.body,
           error: exception.stack || exception
         });
-
-        return response
-          .status(status)
-          .json({
-            statusCode: status,
-            message
-          });
       }
 
       return response
         .status(status)
         .json({
-          error: exception,
           statusCode: status,
-          message: exception.stack
+          message
         });
     } catch (e) {
       const ctx = host.switchToHttp();
@@ -65,7 +70,6 @@ export class HttpExceptionLogFilter extends BaseExceptionFilter {
       return response
         .status(500)
         .json({
-          error: process.env.NODE_ENV === 'development' ? e : null,
           statusCode: 500,
           message: 'Something went wrong, please try again later!'
         });

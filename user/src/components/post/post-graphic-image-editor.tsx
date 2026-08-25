@@ -1,12 +1,19 @@
 'use client';
 
 import type { GraphicFileItem } from '@hooks/use-post-graphic-create';
+import { acceptAttributeFor, POST_PHOTO_UPLOAD_TYPE } from '@lib/upload-policy';
 import { type DragEvent, useRef, useState } from 'react';
 import { FiCheck, FiImage, FiX } from 'react-icons/fi';
 
 import PostGraphicImageViewer from './post-graphic-image-viewer';
 
-const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/bmp,image/tiff,.jpg,.jpeg,.png,.webp,.bmp,.tif,.tiff,.raw';
+/**
+ * What the picker advertises, from the `post-photo` policy.
+ *
+ * The list this replaces offered BMP, TIFF and RAW, none of which the image
+ * pipeline decodes — so it invited files the server was always going to refuse.
+ */
+const IMAGE_ACCEPT = acceptAttributeFor(POST_PHOTO_UPLOAD_TYPE);
 
 interface GraphicImageThumbnailProps {
   item: GraphicFileItem;

@@ -11,7 +11,7 @@ import {
 import {
   MESSAGE_MAX_ATTACHMENTS,
   MESSAGE_TEXT_MAX_LENGTH,
-  MESSAGE_TYPE_LIST,
+  MESSAGE_COMPOSER_TYPE_LIST,
   MESSAGE_TYPES
 } from 'src/common/constants/community';
 import { SanitizeHtmlStrict } from 'src/common/decorators/sanitize-html.decorator';
@@ -26,7 +26,7 @@ import { SanitizeHtmlStrict } from 'src/common/decorators/sanitize-html.decorato
 export class MessageCreatePayload {
   @IsOptional()
   @IsString()
-  @IsIn(MESSAGE_TYPE_LIST)
+  @IsIn(MESSAGE_COMPOSER_TYPE_LIST as unknown as string[])
   type?: string = MESSAGE_TYPES.TEXT;
 
   @SanitizeHtmlStrict(MESSAGE_TEXT_MAX_LENGTH)

@@ -1,5 +1,5 @@
+import { describeUploadFailure } from '@lib/upload-policy';
 import { APIRequest } from '@services/api-request';
-import { getUserFriendlyUploadErrorMessage } from '@utils/file-validation';
 
 import { uploadFile, UploadPrepared, UploadProgress } from './file-upload.service';
 
@@ -107,7 +107,7 @@ export class PostService extends APIRequest {
     );
 
     if (!result.success) {
-      throw new Error(getUserFriendlyUploadErrorMessage(result.error, 'Photo upload failed'));
+      throw new Error(describeUploadFailure(result, 'Photo upload failed'));
     }
 
     return result;
@@ -135,7 +135,7 @@ export class PostService extends APIRequest {
     );
 
     if (!result.success) {
-      throw new Error(getUserFriendlyUploadErrorMessage(result.error, 'Video upload failed'));
+      throw new Error(describeUploadFailure(result, 'Video upload failed'));
     }
 
     return result;
@@ -157,7 +157,7 @@ export class PostService extends APIRequest {
     );
 
     if (!result.success) {
-      throw new Error(getUserFriendlyUploadErrorMessage(result.error, 'Thumbnail upload failed'));
+      throw new Error(describeUploadFailure(result, 'Thumbnail upload failed'));
     }
 
     return result;
@@ -179,7 +179,7 @@ export class PostService extends APIRequest {
     );
 
     if (!result.success) {
-      throw new Error(getUserFriendlyUploadErrorMessage(result.error, 'Teaser upload failed'));
+      throw new Error(describeUploadFailure(result, 'Teaser upload failed'));
     }
 
     return result;

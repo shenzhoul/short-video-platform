@@ -41,7 +41,8 @@ Load the matching repo skill before changing specialized areas:
 - Feed infinite scroll (home + creator posts): `.agents/skills/feed-infinite-scroll/SKILL.md`
 - One-way creator follows and the authenticated following feed: `.agents/skills/following-feed/SKILL.md`
 - Interaction notifications (like/comment/reply/share/follow), realtime delivery, and the header panel: `.agents/skills/notification-system/SKILL.md`
-- Private one-to-one messaging, follow-based send permission, and the right-side message workspace: `.agents/skills/direct-messaging/SKILL.md`
+- Private one-to-one messaging, request-based consent, block/restrict, and the right-side message workspace: `.agents/skills/direct-messaging/SKILL.md`
+- Sharing a post — share popover, shared-post messages, and `totalShare` counting: `.agents/skills/post-sharing/SKILL.md`
 - API auth guards, role-based access, and current user extraction: `.agents/skills/api-auth-guards/SKILL.md`
 - API pagination — SearchRequest, cursor/offset, PageableData: `.agents/skills/api-pagination/SKILL.md`
 - API payload and request class patterns: `.agents/skills/api-payload/SKILL.md`
@@ -73,6 +74,34 @@ Load the matching repo skill before changing specialized areas:
 ## Code Intelligence
 
 This repo is indexed under `.code-review-graph/`, served by the `code-review-graph` MCP server declared in `.mcp.json`. Prefer these tools over grep for structural questions such as definitions, callers/callees, impact, and system tracing. Use `rg` for literal text and file discovery. See `.agents/rules/shared.md` for the tool names and query patterns. The index does not auto-update; refresh it when `list_graph_stats_tool` reports a stale `Last updated`.
+
+## Browser Verification Screenshots
+
+Every screenshot from browser verification goes into one fixed folder at the repo root:
+
+```text
+output/screenshots/
+```
+
+This applies to both browser skills — `.agents/skills/webapp-testing/SKILL.md` and
+`.agents/skills/playwright/SKILL.md` — and to any other tool that captures a screenshot. Create it
+with `mkdir -p output/screenshots` before capturing.
+
+- Never leave verification screenshots in a system temp directory, `/mnt/user-data/`, or the Claude
+  scratchpad. Those are wiped or do not exist on every platform, so evidence kept only there is gone
+  by the time the report is read. If a tool can only capture into a temp path, copy the shots that
+  prove acceptance into `output/screenshots/` and verify the copies before reporting.
+- Name files so the order and the scenario are obvious: `01-before.png`, `02-after.png`,
+  `03-dark-theme.png`, `04-user-b-realtime.png`. Never `tmp1.png`, `probe2.png`, or
+  `test-final-final.png`.
+- Keep only the shots that prove acceptance — before/after, light/dark, broken state and fixed state,
+  realtime across sessions. Delete debug and duplicate captures.
+- Do not create new top-level artifact folders. Playwright's other artifacts (pdf, traces, downloads)
+  belong in `output/playwright/`; `webapp-testing` logs belong in `output/webapp-testing/`.
+- All of `/output/` is git-ignored. Never stage or commit a verification screenshot, and never modify
+  or delete screenshots from an earlier task.
+- When reporting, give the absolute path of the folder, the file names, and which scenario each file
+  proves.
 
 ## Minimum Delivery Bar
 

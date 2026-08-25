@@ -86,7 +86,12 @@ export abstract class APIRequest {
         } else if (response?.status === 403) {
           throw new PermissionError('forbidden', {
             code: 403,
-            message: response?.data?.message || 'Forbidden'
+            message: response?.data?.message || 'Forbidden',
+            // The API's machine-readable code, when it sent one. Carried through
+            // so callers can branch on *why* they were refused; without it every
+            // 403 looks the same and the only thing left to match on is display
+            // text, which is translated and meant to change.
+            error: response?.data?.error
           });
         }
         // other errors

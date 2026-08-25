@@ -72,6 +72,31 @@ export class ConversationParticipantService {
    * is reading. It also keeps their `lastMessageAt` current so the conversation
    * rises to the top of their own list.
    */
+  /**
+   * Move a conversation's activity time for every participant, unread untouched.
+   *
+   * For events that belong to the thread without being a message from anybody —
+   * a system notice. Both people see the conversation surface; neither sees a
+   * badge, because neither was messaged.
+   */
+  public async touchActivity(
+    conversationId: string | ObjectId,
+    userIds: Array<string | ObjectId>,
+    createdAt: Date
+  ): Promise<void> {
+    await Promise.all(userIds.map(userId => this.participantModel.updateOne(
+      { conversationId: toObjectId(conversationId), userId: toObjectId(userId) },
+      {
+        $set: { lastMessageAt: createdAt },
+        $setOnInsert: {
+          conversationId: toObjectId(conversationId),
+          userId: toObjectId(userId)
+        }
+      },
+      { upsert: true }
+    )));
+  }
+
   public async recordMessage(
     conversationId: string | ObjectId,
     senderId: string | ObjectId,

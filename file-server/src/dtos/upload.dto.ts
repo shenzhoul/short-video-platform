@@ -100,6 +100,22 @@ export class SignedUploadRequestDto {
   @IsObject()
   metadata?: Record<string, any>;
 
+  /**
+   * The limits this upload is to be held to, resolved by the API from the
+   * registry defaults plus whatever an operator has set in Admin → Settings.
+   *
+   * Declared here because the internal API validates with `whitelist: true`,
+   * which silently drops any property the DTO does not name — a limit that
+   * vanished on the way in would look exactly like a default, and the upload
+   * would be judged by the wrong numbers with nothing to show for it.
+   *
+   * Not trusted as given: `resolveUploadPolicy` clamps every value to this
+   * service's own hard ceilings before using it.
+   */
+  @IsOptional()
+  @IsObject()
+  uploadLimits?: Record<string, number>;
+
   @IsOptional()
   @IsString()
   createdBy?: string;

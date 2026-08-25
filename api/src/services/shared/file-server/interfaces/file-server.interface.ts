@@ -74,6 +74,21 @@ export interface GenerateUploadUrlOptions {
   /** Additional metadata to store with the file */
   metadata?: Record<string, any>;
 
+  /**
+   * The limits this upload is to be held to, resolved from the registry
+   * defaults plus any admin overrides.
+   *
+   * Sent so the file server can bind them to the durable file record. That is
+   * what makes an in-flight upload keep the policy that was in force when its
+   * token was issued: an operator lowering a limit does not retroactively refuse
+   * a transfer somebody is already halfway through.
+   *
+   * The file server clamps whatever arrives to its own hard ceilings — these are
+   * numbers from another process, and the process that has to decode the file is
+   * the one that must not be talked into decoding something enormous.
+   */
+  uploadLimits?: Record<string, number>;
+
   /** User ID who created the file */
   createdBy?: string | ObjectId;
 

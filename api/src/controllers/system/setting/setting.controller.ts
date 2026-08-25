@@ -18,6 +18,7 @@ import {
   ApiTags
 } from '@nestjs/swagger';
 import { DataResponse } from 'src/kernel';
+import { UploadPolicyService } from 'src/services/shared/file-server';
 import { SettingService } from 'src/services/system/setting/setting.service';
 
 /**
@@ -68,7 +69,51 @@ import { SettingService } from 'src/services/system/setting/setting.service';
 @Controller('settings')
 @ApiTags('Public Settings')
 export class SettingController {
-  constructor(private readonly settingService: SettingService) { }
+  constructor(
+    private readonly settingService: SettingService,
+    private readonly uploadPolicyService: UploadPolicyService
+  ) { }
+
+  /**
+   * The upload limits currently in force, per durable upload type.
+   *
+   * ## Why this is not just the raw settings
+   *
+   * A client could fetch `?group=upload-limits` and get fifty-seven numbers in
+   * operator units — megabytes, megapixels, seconds — and would then have to
+   * convert them, apply the defaults for whatever is missing, and clamp anything
+   * out of range. Three implementations of that, and one of them would be wrong.
+   *
+   * So the API resolves the effective policy once, with the same function the
+   * upload path uses, and returns the finished article: bytes, pixels and
+   * milliseconds, complete on every axis, ready to compare a picked file
+   * against.
+   *
+   * ## Public on purpose
+   *
+   * These are limits, not secrets. The file server names every one of them in a
+   * rejection body, and a picker that cannot say "10MB" before the upload is a
+   * picker that wastes somebody's transfer to find out.
+   *
+   * ## Still not enforcement
+   *
+   * What a client does with this is early feedback. The file server measures the
+   * bytes that actually arrive, against the limits bound to the durable record,
+   * and is the only side whose answer counts.
+   */
+  @Get('/upload-policies')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get effective upload limits',
+    description: 'Returns the upload policy in force for every durable upload type, with any admin overrides applied and clamped. Public: these are limits a picker has to show, not secrets.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Effective upload policies, keyed by durable upload type'
+  })
+  async getUploadPolicies(): Promise<DataResponse<Record<string, any>>> {
+    return DataResponse.ok(this.uploadPolicyService.allEffectivePolicies());
+  }
 
   /**
    * Get public settings

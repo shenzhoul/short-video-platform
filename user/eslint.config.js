@@ -153,6 +153,31 @@ module.exports = [
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
 
+      /*
+       * `react-toastify` is off limits in application code.
+       *
+       * The app renders exactly one container, `SharedToastProvider`, and it
+       * registers with a `containerId`. `react-toastify` delivers a toast to a
+       * container only when the call carries the matching id, so a toast raised
+       * straight from the library is dispatched to a container that does not
+       * exist and renders nothing at all — no error, no warning, just silence
+       * where the user should have been told something.
+       *
+       * That is exactly how 34 files ended up with dead success and error
+       * messages. `@douyin-clone/shared-toast` wraps every level and injects the
+       * id, so it is the only correct way in.
+       */
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'react-toastify',
+          message: "Import { toast } from '@douyin-clone/shared-toast' instead. A bare react-toastify call misses the shared container's containerId and renders nothing."
+        }],
+        patterns: [{
+          group: ['react-toastify/*'],
+          message: "The shared toast package owns react-toastify's styles and setup. Import from '@douyin-clone/shared-toast' instead."
+        }]
+      }],
+
       // General rules
       'no-unused-vars': 'off', // Use TypeScript version instead
       'no-console': 'warn', // Keep console warnings

@@ -15,6 +15,7 @@ import {
   Conversation, ConversationSchema,
   ConversationParticipant, ConversationParticipantSchema,
   Message, MessageSchema,
+  UserRelationship, UserRelationshipSchema,
   Notification, NotificationSchema,
   ReactionSchema, Reaction,
 } from './index';
@@ -72,6 +73,7 @@ export const mongooseFeatures = MongooseModule.forFeature([
   { name: Conversation.name, schema: ConversationSchema },
   { name: ConversationParticipant.name, schema: ConversationParticipantSchema },
   { name: Message.name, schema: MessageSchema },
+  { name: UserRelationship.name, schema: UserRelationshipSchema },
   { name: Notification.name, schema: NotificationSchema },
   { name: Reaction.name, schema: ReactionSchema }
 ])

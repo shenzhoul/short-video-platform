@@ -243,11 +243,10 @@ describe('notification presentation', () => {
     expect(presentation.deletedNotice).toBe('This comment has been deleted.');
   });
 
-  it('quotes the referenced comment on every comment-scoped type', () => {
+  it('quotes the referenced comment when the quote adds something', () => {
     [
       NOTIFICATION_TYPE.POST_COMMENT,
       NOTIFICATION_TYPE.COMMENT_REPLY,
-      NOTIFICATION_TYPE.COMMENT_LIKE,
       NOTIFICATION_TYPE.COMMENT_MENTION
     ].forEach((type) => {
       const presentation = resolveNotificationPresentation(build({
@@ -262,11 +261,14 @@ describe('notification presentation', () => {
     });
   });
 
-  it('quotes nothing on post-scoped or follow rows', () => {
+  it('quotes nothing on post-scoped, follow, or comment-like rows', () => {
     [
       NOTIFICATION_TYPE.POST_LIKE,
       NOTIFICATION_TYPE.POST_MENTION,
-      NOTIFICATION_TYPE.FOLLOW
+      NOTIFICATION_TYPE.FOLLOW,
+      // Your own comment, quoted back at you: the row already says which
+      // interaction it was, and the comment is one click away.
+      NOTIFICATION_TYPE.COMMENT_LIKE
     ].forEach((type) => {
       expect(resolveNotificationPresentation(build({
         type,
@@ -303,5 +305,104 @@ describe('notification presentation', () => {
     expect(resolveActorName(build())).toBe('Bee');
     expect(resolveActorName(build({ actor: { _id: 'a1', username: 'bee' } }))).toBe('bee');
     expect(resolveActorName(build({ actor: undefined }))).toBe('Someone');
+  });
+});
+
+/**
+ * Badges and deep links, resolved from the type alone.
+ *
+ * Both were the same bug in different clothing: a type that fell through the
+ * mapping rendered an empty disc, and a type missing from the comment-scoped
+ * list opened the post while saying it was about a comment.
+ */
+describe('notification badges', () => {
+  it('gives every interaction type a badge', () => {
+    [
+      NOTIFICATION_TYPE.POST_LIKE,
+      NOTIFICATION_TYPE.COMMENT_LIKE,
+      NOTIFICATION_TYPE.POST_COMMENT,
+      NOTIFICATION_TYPE.COMMENT_REPLY,
+      NOTIFICATION_TYPE.POST_MENTION,
+      NOTIFICATION_TYPE.COMMENT_MENTION
+    ].forEach((type) => {
+      expect(resolveNotificationPresentation(build({ type })).icon).toBeTruthy();
+    });
+  });
+
+  const iconFor = (type: any) => resolveNotificationPresentation(build({ type })).icon;
+
+  it('uses one badge per kind of interaction, not one per type', () => {
+
+    expect(iconFor(NOTIFICATION_TYPE.POST_LIKE)).toBe('like');
+    // A like on a comment is still a like, and must look like one.
+    expect(iconFor(NOTIFICATION_TYPE.COMMENT_LIKE)).toBe('like');
+    expect(iconFor(NOTIFICATION_TYPE.POST_COMMENT)).toBe('comment');
+    expect(iconFor(NOTIFICATION_TYPE.COMMENT_REPLY)).toBe('comment');
+    expect(iconFor(NOTIFICATION_TYPE.POST_MENTION)).toBe('mention');
+    expect(iconFor(NOTIFICATION_TYPE.COMMENT_MENTION)).toBe('mention');
+  });
+
+  it('leaves a follow row without a badge', () => {
+    // The wording and the follow-back control already say what happened.
+    expect(iconFor(NOTIFICATION_TYPE.FOLLOW)).toBeNull();
+  });
+
+  it('draws no badge for a type it does not know', () => {
+    // A guessed badge would describe the interaction wrongly, and an empty disc
+    // describes nothing — so a row created by a newer backend shows neither.
+    const unknown = build({ type: 'reaction_invented_later' as any });
+
+    expect(resolveNotificationPresentation(unknown).icon).toBeNull();
+  });
+});
+
+describe('comment-like navigation', () => {
+  const commentLike = (overrides: Partial<INotification> = {}) => build({
+    type: NOTIFICATION_TYPE.COMMENT_LIKE,
+    postId: 'p1',
+    commentId: 'c-liked',
+    ...overrides
+  });
+
+  it('opens the liked comment, not just the post it sits in', () => {
+    const target = resolveNotificationTarget(commentLike());
+
+    expect(target).toContain('modal_id=p1');
+    expect(target).toContain('modal_tab=comments');
+    expect(target).toContain('target_comment_id=c-liked');
+  });
+
+  it('deep-links the same way the other comment-scoped types do', () => {
+    // The shape is shared on purpose: one navigation mechanism, not one per type.
+    const like = resolveNotificationTarget(commentLike());
+    const reply = resolveNotificationTarget(build({
+      type: NOTIFICATION_TYPE.COMMENT_REPLY, postId: 'p1', commentId: 'c-liked'
+    }));
+
+    expect(like).toBe(reply);
+  });
+
+  it('carries the liked comment even when many people liked it', () => {
+    // The group is per-comment, so an aggregate still names one comment — and
+    // its lastEventId is a reaction, which must never be used as the target.
+    const target = resolveNotificationTarget(commentLike({
+      isAggregate: true, activityCount: 4, actorCount: 4, lastEventId: 'reaction-9'
+    }));
+
+    expect(target).toContain('target_comment_id=c-liked');
+    expect(target).not.toContain('reaction-9');
+  });
+
+  it('opens the post without a comment id when the reference is missing', () => {
+    // A legacy row with no commentId must still open something sensible.
+    const target = resolveNotificationTarget(commentLike({ commentId: null }));
+
+    expect(target).toContain('modal_tab=comments');
+    expect(target).not.toContain('target_comment_id=');
+  });
+
+  it('leaves post likes pointing at the post', () => {
+    expect(resolveNotificationTarget(build({ type: NOTIFICATION_TYPE.POST_LIKE })))
+      .toBe('/?modal_id=p1');
   });
 });

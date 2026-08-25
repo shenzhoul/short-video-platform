@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { usePostInteractionUpdater } from '@hooks/use-post-interactions';
 import type { CursorInfo } from '@interfaces/pagination';
 import { IPost } from '@interfaces/post';
@@ -10,7 +11,6 @@ import {
   unpinPost as unpinPostService
 } from '@services/post.service';
 import { useCallback, useState } from 'react';
-import { toast } from 'react-toastify';
 
 interface UseCreatorPostSearchProps {
   initialPosts?: IPost[];

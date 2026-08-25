@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QueueService } from 'src/kernel';
+import { CommentImageIntegrityService } from 'src/services/community/comment/comment-image-integrity.service';
 import { FileServerService } from 'src/services/shared/file-server';
 
 /**
@@ -35,6 +36,8 @@ const CLEANUP_UNUSED_FILES_AGENDA = 'CLEANUP_UNUSED_FILES_AGENDA';
  * - post-photo: Post photo content files
  * - post-teaser: Video preview/teaser files
  * - post-thumbnail: Video thumbnail images
+ * - message-photo: Photos attached to a direct message
+ * - message-video: Videos attached to a direct message
  * - product-image: Product preview images
  * - product-digital: Digital product files
  * - avatar: User profile avatar images
@@ -66,7 +69,8 @@ export class CleanupUnusedFilesJob {
 
   constructor(
     private readonly fileServerService: FileServerService,
-    private readonly queueService: QueueService
+    private readonly queueService: QueueService,
+    private readonly commentImageIntegrityService: CommentImageIntegrityService
   ) {
     this.initializeJobs();
   }
@@ -150,11 +154,43 @@ export class CleanupUnusedFilesJob {
       // Process post-related files (videos, photos, teasers, thumbnails)
       await this.cleanupFilesByTypes(['post-video', 'post-photo', 'post-teaser', 'post-thumbnail']);
 
-      // Process creator profile files (avatars)
-      await this.cleanupFilesByTypes(['avatar']);
+      // Profile images. Both types are safe to sweep because
+      // `BaseUserService.attachProfileImageReference` claims the file with
+      // `{ itemType: 'user' }` *before* the user document points at it, so a
+      // profile image in use always carries a reference. `cover` was held back
+      // while that ordering was unverified; it is swept now, and abandoned
+      // covers — a picker opened and closed, a browser that crashed mid-flow —
+      // no longer accumulate forever.
+      //
+      // Deployments predating that guarantee should run
+      // `node scripts/audit-profile-image-refs.js` once before enabling this, to
+      // confirm no live profile image is missing its reference.
+      await this.cleanupFilesByTypes(['avatar', 'cover']);
 
       // Process system and admin files
       await this.cleanupFilesByTypes(['setting-file']);
+
+      // Message attachments. Safe to sweep because `MessageService.send` calls
+      // `addRefToMultipleFiles(..., { itemType: 'message' })` for every photo
+      // and video it attaches, so anything still unreferenced after the delay is
+      // a picture somebody chose and never sent. Before this they were uploaded
+      // and then never collected at all.
+      await this.cleanupFilesByTypes(['message-photo', 'message-video']);
+
+      // Comment images, and the order here is load-bearing.
+      //
+      // A comment is written before its image is referenced, so a process that
+      // dies between the two leaves a *published* comment whose image looks
+      // abandoned. Sweeping first would delete it and break that comment
+      // permanently. Repairing first restores the reference while the sweeper is
+      // still looking at the set from before, which is what closes the race.
+      await this.repairCommentImageReferences();
+
+      // What remains unreferenced after the repair is genuinely abandoned: a
+      // picture chosen for a comment that was never posted. This is the fallback
+      // that makes the composer's own cleanup optional rather than load-bearing
+      // — a crashed browser, a closed tab or a dropped connection all end here.
+      await this.cleanupFilesByTypes(['comment-photo']);
     } catch {
       // Silent fail - errors will be handled by the queue system
       // This prevents job failures from stopping the cleanup process
@@ -168,6 +204,21 @@ export class CleanupUnusedFilesJob {
    * TODO: Add logging to track cleanup statistics and performance metrics
    * TODO: Consider adding configurable retention periods for different file types
    */
+  /**
+   * Restore references the crash window may have lost, before anything sweeps.
+   *
+   * Swallowed on purpose: a failed repair must not stop the rest of the cleanup,
+   * and the next run tries again. Skipping the sweep entirely would be worse
+   * than a late collection.
+   */
+  private async repairCommentImageReferences(): Promise<void> {
+    try {
+      await this.commentImageIntegrityService.repairPublishedReferences(true);
+    } catch (e) {
+      this.logger.error(`Comment image integrity pass failed: ${e.message}`, e.stack);
+    }
+  }
+
   private async cleanupFilesByTypes(types: string[]): Promise<void> {
     try {
       await this.fileServerService.removeUnusedFilesByTypes(types);

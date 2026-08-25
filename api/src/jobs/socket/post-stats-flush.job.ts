@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { POST_STATS_POLICY } from 'src/common/constants/community';
 import { QueueService } from 'src/kernel';
+import { CommentStatsCoalescerService } from 'src/services/socket/comment-stats-coalescer.service';
+import { FollowStatsCoalescerService } from 'src/services/socket/follow-stats-coalescer.service';
 import { PostStatsCoalescerService } from 'src/services/socket/post-stats-coalescer.service';
 
 const SCHEDULE_POST_STATS_FLUSH = 'SCHEDULE_POST_STATS_FLUSH';
@@ -22,7 +24,9 @@ export class PostStatsFlushJob implements OnModuleInit {
 
   constructor(
     private readonly queueService: QueueService,
-    private readonly postStatsCoalescerService: PostStatsCoalescerService
+    private readonly postStatsCoalescerService: PostStatsCoalescerService,
+    private readonly commentStatsCoalescerService: CommentStatsCoalescerService,
+    private readonly followStatsCoalescerService: FollowStatsCoalescerService
   ) { }
 
   async onModuleInit() {
@@ -59,11 +63,18 @@ export class PostStatsFlushJob implements OnModuleInit {
   private async flush(job: Job): Promise<void> {
     try {
       if (!this.queueService.isInActiveQueueJob(job)) return;
-      await this.postStatsCoalescerService.flush();
+      // One tick drains both sets. A second scheduler would double the timer
+      // traffic to emit on the same cadence, and the two drains are independent
+      // — `Promise.all` so a slow one does not delay the other.
+      await Promise.all([
+        this.postStatsCoalescerService.flush(),
+        this.commentStatsCoalescerService.flush(),
+        this.followStatsCoalescerService.flush()
+      ]);
     } catch (e) {
       // Swallowed on purpose: shared counters stay authoritative in the
       // database, so a failed flush delays a snapshot rather than losing state.
-      this.logger.error(`Post stats flush failed: ${e.message}`, e.stack);
+      this.logger.error(`Stats flush failed: ${e.message}`, e.stack);
     }
   }
 }

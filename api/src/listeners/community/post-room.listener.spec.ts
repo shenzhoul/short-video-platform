@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { POST_ROOM_EVENTS } from 'src/common/constants/community';
+import { COMMENT_ROOM_EVENTS, POST_ROOM_EVENTS } from 'src/common/constants/community';
 import { EVENT } from 'src/kernel/constants';
 
 import { PostRoomListener } from './post-room.listener';
@@ -11,6 +11,7 @@ import { PostRoomListener } from './post-room.listener';
 function createSubject(options: { rootComment?: any } = {}) {
   const queueMessageService = { subscribe: jest.fn() };
   const postRoomService = { emit: jest.fn().mockResolvedValue(undefined) };
+  const commentRoomService = { emit: jest.fn().mockResolvedValue(undefined) };
   const postStatsCoalescerService = { markDirty: jest.fn().mockResolvedValue(undefined) };
   const commentService = {
     findById: jest.fn().mockResolvedValue(options.rootComment ?? null)
@@ -19,12 +20,18 @@ function createSubject(options: { rootComment?: any } = {}) {
   const listener = new PostRoomListener(
     queueMessageService as any,
     postRoomService as any,
+    commentRoomService as any,
     postStatsCoalescerService as any,
     commentService as any
   );
 
   return {
-    listener, queueMessageService, postRoomService, postStatsCoalescerService, commentService
+    listener,
+    queueMessageService,
+    postRoomService,
+    commentRoomService,
+    postStatsCoalescerService,
+    commentService
   };
 }
 
@@ -57,7 +64,10 @@ describe('post room content events', () => {
     expect(payload.eventId).toBe(commentId.toString());
   });
 
-  it('resolves a reply to its containing post and names the root', async () => {
+  it('tells the post room a thread grew, without sending the reply itself', async () => {
+    // Everyone watching the post hears this, and most of them have the thread
+    // collapsed. Putting the body here would send the bulk of a busy post's
+    // traffic to people who are not reading it.
     const rootId = new ObjectId();
     const { listener, postRoomService } = createSubject({
       rootComment: { _id: rootId, objectId: postId, objectType: 'post' }
@@ -71,8 +81,39 @@ describe('post room content events', () => {
     // A reply names its root, not the post, so the room had to be resolved.
     expect(room.toString()).toBe(postId.toString());
     expect(event).toBe(POST_ROOM_EVENTS.REPLY_CREATED);
-    expect(payload.rootId).toBe(rootId.toString());
+    expect(payload.parentCommentId).toBe(rootId.toString());
+    expect(payload).not.toHaveProperty('reply');
+    expect(JSON.stringify(payload)).not.toContain('a reply');
+  });
+
+  it('sends the reply body only to the thread room', async () => {
+    const rootId = new ObjectId();
+    const replyId = new ObjectId();
+    const { listener, commentRoomService } = createSubject({
+      rootComment: { _id: rootId, objectId: postId, objectType: 'post' }
+    });
+
+    await listener.handleComment(commentEvent(EVENT.CREATED, {
+      _id: replyId, objectId: rootId, objectType: 'comment', content: 'a reply'
+    }));
+
+    expect(commentRoomService.emit).toHaveBeenCalledTimes(1);
+    const [thread, event, payload] = commentRoomService.emit.mock.calls[0];
+    expect(thread).toBe(rootId.toString());
+    expect(event).toBe(COMMENT_ROOM_EVENTS.REPLY_CREATED);
     expect(payload.reply.content).toBe('a reply');
+    // Same id on a redelivered queue job, so the client can drop a repeat.
+    expect(payload.eventId).toBe(replyId.toString());
+  });
+
+  it('sends nothing to a thread room for a top-level comment', async () => {
+    const { listener, commentRoomService } = createSubject();
+
+    await listener.handleComment(commentEvent(EVENT.CREATED, {
+      _id: new ObjectId(), objectId: postId, objectType: 'post', content: 'hello'
+    }));
+
+    expect(commentRoomService.emit).not.toHaveBeenCalled();
   });
 
   it('emits comment_deleted so a removed comment disappears live', async () => {
@@ -210,9 +251,9 @@ describe('realtime comments are render-ready', () => {
     }));
   });
 
-  it('carries the author on a reply too', async () => {
+  it('carries the author on a reply too, in the thread room', async () => {
     const rootId = new ObjectId();
-    const { listener, postRoomService } = createSubject({
+    const { listener, commentRoomService } = createSubject({
       rootComment: { _id: rootId, objectId: postId, objectType: 'post' }
     });
 
@@ -224,7 +265,7 @@ describe('realtime comments are render-ready', () => {
       user: { _id: new ObjectId(), username: 'jiang', name: 'Jiang Shiyi', avatar: 'https://cdn/a.jpg' }
     }));
 
-    const [, , payload] = postRoomService.emit.mock.calls[0];
+    const [, , payload] = commentRoomService.emit.mock.calls[0];
     expect(payload.reply.user).toEqual(expect.objectContaining({ name: 'Jiang Shiyi' }));
   });
 });

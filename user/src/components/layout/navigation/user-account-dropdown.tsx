@@ -1,15 +1,18 @@
 'use client';
 
+import type { FollowListTabKey } from '@components/creator/creator-profile-follower-following';
 import {
   CREATOR_PROFILE_TAB_PARAM,
   type CreatorProfileUrlTab
 } from '@components/creator/creator-profile-types';
 import Dropdown from '@components/ui/dropdown-menu';
 import ToggleSwitch from '@components/ui/toggle-switch';
+import { toast } from '@douyin-clone/shared-toast';
+import { useFollowStats } from '@hooks/use-follow-stats';
 import { useLikedPostCount } from '@hooks/use-liked-post-count';
 import { IUser } from '@interfaces/user';
+import { useFollowListModal } from '@providers/follow-list.provider';
 import { useRouter } from 'next/navigation';
-import { toast } from 'react-toastify';
 import {
   AppointmentIcon,
   ArrowRightIcon,
@@ -40,8 +43,18 @@ function LikedPostCount({ enabled }: { enabled: boolean }) {
 export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropdownProps) {
   const router = useRouter();
   const displayName = loggedIn ? (user?.name || user?.username || 'Guest') : 'Not logged in';
-  const followingCount = user?.stats?.followings || 0;
-  const followerCount = user?.stats?.followers || 0;
+  const { openFollowList } = useFollowListModal();
+  // Seeded from the profile response — which counts the follow rows rather than
+  // reading the cached counters — then kept current by live snapshots. The same
+  // source the profile header and the modal tabs use, so the three cannot
+  // disagree.
+  const { followersCount, followingCount } = useFollowStats({
+    userId: user?._id,
+    initial: {
+      followersCount: user?.stats?.followers || 0,
+      followingCount: user?.stats?.followings || 0
+    }
+  });
   const postCount = user?.stats?.totalPosts || 0;
   const profileHref = user?.username ? `/${user.username}` : '';
 
@@ -51,6 +64,25 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
       return false;
     }
     return true;
+  };
+
+  /**
+   * Open the shared follower/following modal on the signed-in user's own lists.
+   *
+   * No navigation: the modal is mounted beside the page, so it opens over
+   * whatever the reader is looking at rather than sending them to their profile
+   * to see the same thing. It also lives outside this dropdown, which is why the
+   * dropdown closing behind it does not take it away.
+   */
+  const openOwnFollowList = (initialTab: FollowListTabKey) => {
+    if (!requireLogin()) return;
+    if (!user?._id) {
+      toast.error('Your profile is not available yet');
+      return;
+    }
+    // The signed-in user is the subject *here* because this is their own
+    // account menu — not because the modal defaults to them.
+    openFollowList({ subjectUserId: user._id, initialTab });
   };
 
   const goToProfileTab = (tab: CreatorProfileUrlTab) => {
@@ -117,20 +149,25 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
               <div className="flex items-center gap-3 text-sm text-(--text-soft)">
                 <button
                   type="button"
-                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap transition hover:text-(--text-strong)"
-                  onClick={() => requireLogin() && toast.info('Attention is coming soon')}
+                  aria-label={`Show the ${followingCount} accounts you follow`}
+                  className="flex cursor-pointer items-center gap-1 rounded whitespace-nowrap transition hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--text-muted)"
+                  onClick={() => openOwnFollowList('following')}
                 >
                   <span>Attention</span>
-                  <span className="text-(--text-strong)">{followingCount}</span>
+                  {/* Tabular figures so the row keeps its width as the number
+                      grows — a live count must not resize the dropdown under
+                      the pointer. */}
+                  <span className="text-(--text-strong) tabular-nums">{followingCount}</span>
                 </button>
                 <span className="h-3 w-px bg-(--divider)" />
                 <button
                   type="button"
-                  className="flex cursor-pointer items-center gap-1 whitespace-nowrap transition hover:text-(--text-strong)"
-                  onClick={() => requireLogin() && toast.info('Fans is coming soon')}
+                  aria-label={`Show your ${followersCount} followers`}
+                  className="flex cursor-pointer items-center gap-1 rounded whitespace-nowrap transition hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--text-muted)"
+                  onClick={() => openOwnFollowList('follower')}
                 >
                   <span>Fans</span>
-                  <span className="text-(--text-strong)">{followerCount}</span>
+                  <span className="text-(--text-strong) tabular-nums">{followersCount}</span>
                 </button>
               </div>
             ) : (

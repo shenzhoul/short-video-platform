@@ -6,7 +6,11 @@ import type { IUser } from './user';
 export const MESSAGE_TYPE = {
   TEXT: 'text',
   IMAGE: 'image',
-  VIDEO: 'video'
+  VIDEO: 'video',
+  /** A shared post. Carries `postId` and a server-resolved `sharedPost` card. */
+  POST: 'post',
+  /** A notice the system placed in the thread. Nobody sent it. */
+  SYSTEM: 'system'
 } as const;
 
 export type MessageType = typeof MESSAGE_TYPE[keyof typeof MESSAGE_TYPE];
@@ -30,6 +34,25 @@ export interface IMessageFile {
   processingStatus?: string;
 }
 
+/**
+ * The post preview inside a shared-post bubble.
+ *
+ * Resolved by the server on every read, never stored on the message: a post that
+ * is deleted or hidden must stop rendering in history too, so the card can
+ * arrive unavailable at any time and the bubble has to handle it.
+ */
+export interface ISharedPost {
+  postId: string;
+  available: boolean;
+  type?: string | null;
+  thumbnailUrl?: string | null;
+  caption?: string | null;
+  isVideo?: boolean;
+  isMultiImage?: boolean;
+  author?: Partial<IUser> | null;
+  unavailableReason?: 'deleted' | 'not_accessible' | null;
+}
+
 export interface IMessage {
   _id: string;
   conversationId: string;
@@ -38,6 +61,16 @@ export interface IMessage {
   senderId: string;
   fileIds?: string[];
   files?: IMessageFile[];
+  /** Set on `post` messages. The card itself is `sharedPost`. */
+  postId?: string | null;
+  sharedPost?: ISharedPost | null;
+  /**
+   * Which notice this is, on a `system` message.
+   *
+   * Present so an unrecognised notice can be skipped rather than drawn as an
+   * empty bubble. The wording arrives in `text`, already translated.
+   */
+  systemEvent?: string | null;
   createdAt: string;
   updatedAt?: string;
 }
@@ -68,13 +101,23 @@ export interface IPendingMessage {
 export type AwaitingReplyFrom = 'me' | 'them' | null;
 
 /**
- * Where a conversation's message request stands.
+ * Where a conversation stands, in the server's evaluation order.
  *
- * `mutual` and `accepted` both mean "send freely", but for different reasons:
- * mutual freedom disappears the moment either side unfollows, while an accepted
- * request survives until the pair's follow state changes.
+ * `blocked` and `restricted` sit above everything: a flag is not undone by a
+ * follow, by an accepted request, or by the other person replying.
+ *
+ * `mutual` and `accepted` both mean "send freely", for different reasons.
+ * Mutual freedom disappears the moment either side unfollows; an accepted
+ * request is durable and survives it, because agreeing to talk is not the same
+ * act as following someone.
  */
-export type MessageRequestState = 'mutual' | 'accepted' | 'waiting' | 'idle';
+export type MessageRequestState =
+  | 'blocked'
+  | 'restricted'
+  | 'accepted'
+  | 'mutual'
+  | 'waiting'
+  | 'idle';
 
 export interface IConversation {
   _id: string;
@@ -96,6 +139,14 @@ export interface IConversation {
   awaitingReplyFrom: AwaitingReplyFrom;
   requestState: MessageRequestState;
   restrictionReason: string | null;
+  /**
+   * The viewer's own flags on the other person, driving Unblock / Unrestrict.
+   *
+   * Only this direction exists: the server never reports that somebody else
+   * restricted you, because a restriction is only useful while unconfirmed.
+   */
+  blockedByMe?: boolean;
+  restrictedByMe?: boolean;
   createdAt: string;
   updatedAt: string;
 }

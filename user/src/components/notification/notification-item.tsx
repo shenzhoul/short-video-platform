@@ -2,18 +2,19 @@
 
 import Dropdown from '@components/ui/dropdown-menu';
 import { useFollowCreator } from '@hooks/use-follow-creator';
-import { INotification, NOTIFICATION_TYPE } from '@interfaces/notification';
+import { INotification } from '@interfaces/notification';
 import { formatActivityTimestamp } from '@lib/date';
 import { useNotifications } from '@providers/notification.provider';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { FiMoreHorizontal, FiTrash2 } from 'react-icons/fi';
+
+import NotificationIcon from './notification-icon';
 import {
   resolveActorName,
   resolveNotificationPresentation,
   resolveNotificationTarget
 } from './notification-presentation';
-import { CommentIcon, LikePostIcon, TagIcon } from 'src/icons';
 
 interface NotificationItemProps {
   notification: INotification;
@@ -45,19 +46,6 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
     handleActivate();
   };
 
-  const renderIcon = () => {
-    switch (notification.type) {
-      case NOTIFICATION_TYPE.POST_LIKE || NOTIFICATION_TYPE.COMMENT_LIKE:
-        return <LikePostIcon className='text-xl' />
-      case NOTIFICATION_TYPE.POST_COMMENT || NOTIFICATION_TYPE.COMMENT_REPLY:
-        return <CommentIcon className='text-xl' />
-      case NOTIFICATION_TYPE.COMMENT_MENTION || NOTIFICATION_TYPE.POST_MENTION:
-        return <TagIcon className='text-xl' />
-      default:
-        return null;
-    }
-  }
-
   return (
     <div
       role="button"
@@ -76,9 +64,18 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
         {notification.read ? null : (
           <span className="absolute top-0 right-0 h-2 w-2 shrink-0 rounded-full bg-[#fe2c55]" aria-label="Unread" />
         )}
-        <div className='w-5.5 h-5.5 rounded-full absolute -bottom-0.75 -right-0.75 bg-[rgba(37,38,50,1)]'>
-          {renderIcon()}
-        </div>
+        {/*
+          The disc is the icon's backing, so it only exists when there is an
+          icon — a type without one shows a plain avatar, not an empty circle.
+        */}
+        {presentation.icon ? (
+          <div
+            data-testid="notification-badge"
+            className='w-5.5 h-5.5 rounded-full absolute -bottom-0.75 -right-0.75 bg-[rgba(37,38,50,1)] flex items-center justify-center'
+          >
+            <NotificationIcon kind={presentation.icon} />
+          </div>
+        ) : null}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -122,7 +119,7 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
               : 'bg-[#fe2c55] text-white hover:bg-[#e4264e]'
               }`}
           >
-            {followState.isFollowed ? 'Following' : 'Follow back'}
+            {followState.isFollowed ? 'Following' : 'Follow'}
           </button>
         ) : null}
 

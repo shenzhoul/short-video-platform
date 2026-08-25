@@ -4,6 +4,31 @@ import { Server } from '@tus/server';
 import { FileStore } from '@tus/file-store'
 import { TusAuthService } from "src/services/tus/tus-auth.service";
 import { FileService } from "src/services/file";
+import { ALL_UPLOAD_REJECTION_CODES } from "src/services/file/upload-policy";
+
+/**
+ * Failures that are the uploader's to fix, and so are worth answering with.
+ *
+ * Every content rejection any policy can raise belongs here — a file that is not
+ * a picture or not a video, one that is too many bytes, one whose resolution,
+ * animation, duration, frame rate or codec is out of bounds, and an upload type
+ * nothing in the registry claims. They reach the client as different
+ * instructions, so losing any of them to the generic swallow below would turn
+ * actionable advice into "upload failed".
+ *
+ * `UPLOAD_VALIDATION_BUSY` is here too, and it is the one that is *not* the
+ * file's fault: it means the validator's concurrency gate was full. Swallowing
+ * it would tell someone their perfectly good video is broken when the honest
+ * answer is "try again in a moment".
+ *
+ * Taken from the policies rather than listed by hand: a new upload policy brings
+ * its codes with it, and a list maintained separately is a list that will one
+ * day be missing one.
+ *
+ * Everything else stays swallowed: the upload itself succeeded, and the retry
+ * and sweep paths already cover a processing fault.
+ */
+const REJECTED_UPLOAD_CODES = [...ALL_UPLOAD_REJECTION_CODES, 'UPLOAD_VALIDATION_BUSY'];
 import { FILE_STATUS } from "src/common/constants/content";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -133,6 +158,22 @@ export class TusServerService {
           await fileService.processTusUpload(upload.id, this.tusUploadDir);
         } catch (error) {
           this.logger.error('TUS: Failed to process upload:', error);
+
+          // A file rejected for not being an image is the uploader's problem,
+          // not the server's, and they are still holding the connection. Told
+          // now, the composer can refuse the attachment while the person is
+          // still looking at the picker; swallowed, they find out at Send —
+          // after choosing a file, seeing a preview and writing a comment.
+          //
+          // Only this rejection is re-raised. A genuine processing failure is
+          // still absorbed, because the upload itself did succeed and the
+          // existing retry and sweep paths already cover it.
+          if (this.isRejectedContent(error)) {
+            // The record and its bytes are already gone; nothing to mark.
+            await this.cleanupTusUploadFiles(upload.id).catch(() => undefined);
+            throw this.asTusError(error);
+          }
+
           await this.handleUploadError(app, upload.id, error);
         }
 
@@ -169,6 +210,37 @@ export class TusServerService {
   /**
   * Handle TUS upload errors - update file status and cleanup
   */
+  /**
+   * Restate a rejection in the shape the TUS server serialises.
+   *
+   * `@tus/server` reads `status_code` and `body` off the thrown error and falls
+   * back to a generic 500 with the message appended when they are absent. A
+   * NestJS `HttpException` has neither, so without this the client received
+   * "Something went wrong with that request" — no status worth acting on and no
+   * code to match, which is exactly what the stable code exists to avoid.
+   */
+  private asTusError(error: any): any {
+    const body = typeof error?.getResponse === 'function' ? error.getResponse() : error?.response;
+    const payload = typeof body === 'object' && body !== null ? body : { message: String(error?.message || error) };
+    const rejection: any = new Error(payload.message || 'Invalid image');
+    rejection.status_code = payload.statusCode || 400;
+    rejection.body = JSON.stringify(payload);
+    return rejection;
+  }
+
+  /**
+   * Whether this failure means "that was not an image".
+   *
+   * Matched on the stable code rather than the message, so the text can be
+   * reworded or translated without quietly turning a rejection back into a
+   * swallowed error.
+   */
+  private isRejectedContent(error: any): boolean {
+    const body = typeof error?.getResponse === 'function' ? error.getResponse() : error?.response;
+    const code = body?.error || error?.error;
+    return REJECTED_UPLOAD_CODES.includes(code);
+  }
+
   private async handleUploadError(app: INestApplication, tusId: string, error: any): Promise<void> {
     try {
       // Get FileService using static import

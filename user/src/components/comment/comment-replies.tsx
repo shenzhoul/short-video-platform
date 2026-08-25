@@ -3,10 +3,15 @@
 
 import CommentItem from '@components/comment/comment-item';
 import Spin from '@components/ui/spin';
+import { useCommentRoom } from '@hooks/use-comment-room';
 import { useComments } from '@hooks/use-comments';
 import { IComment } from '@interfaces/comment';
 import { IUser } from '@interfaces/user';
 import { useEffect, useState } from 'react';
+import { useSocketListener } from 'src/socket/use-socket-listener';
+
+/** Server -> thread room. Mirrors COMMENT_ROOM_EVENTS in the API constants. */
+const THREAD_REPLY_CREATED = 'comment:reply_created';
 
 type Props = {
   parentId: string;
@@ -59,6 +64,33 @@ export default function CommentReplies({
       return [...prev, createdReply];
     });
   }, [createdReply, parentId]);
+
+  // Subscribed only while this thread is mounted, which is only while it is
+  // expanded. Collapsing unmounts the component and leaves the room, so a reader
+  // stops paying for threads they have closed.
+  useCommentRoom(parentId);
+
+  /**
+   * A reply that arrived live, for this thread.
+   *
+   * Appended to what is already rendered rather than refetched: the cursor and
+   * the pages already loaded are untouched, so paging continues from exactly
+   * where it was and the reader's scroll position does not move under them.
+   *
+   * The id check is what makes the author's own reply appear once rather than
+   * twice — it is already here optimistically via `createdReply`, and the socket
+   * echo of the same reply carries the same id.
+   */
+  useSocketListener<any>(THREAD_REPLY_CREATED, (payload) => {
+    if (payload?.parentCommentId !== parentId) return;
+    const reply = payload.reply as IComment;
+    if (!reply?._id) return;
+
+    setLocalReplies((prev) => {
+      if (prev.some((item) => item._id === reply._id)) return prev;
+      return [...prev, reply];
+    });
+  }, { enabled: Boolean(parentId) });
 
   if (loading) {
     return (

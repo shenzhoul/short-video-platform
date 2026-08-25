@@ -3,6 +3,7 @@
 import AvatarUpload from '@components/shared/avatar-upload';
 import { FormFieldText, FormFieldTextarea } from '@components/ui/form-field';
 import Modal from '@components/ui/modal';
+import { toast } from '@douyin-clone/shared-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { IUser } from '@interfaces/user';
 import { showErrorMessage } from '@lib/utils';
@@ -11,7 +12,6 @@ import { updateCurrentCreator } from '@services/creator.service';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'react-toastify';
 import z from 'zod';
 
 const MAX_NAME_LENGTH = 20;

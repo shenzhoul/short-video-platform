@@ -11,8 +11,33 @@ Use this map to route work to the correct app and supporting guidance.
 - `docs/`: canonical product and architecture documentation.
 - `.agents/`: repository-specific rules, checklists, skills, and issue-tracking templates.
 - `.code-review-graph/`: generated structural code index.
+- `shared/`: small packages more than one app imports, each wired into its
+  consumers as `"file:../shared/<name>"`.
 
-There is no top-level `shared/` package in the current repository.
+## Shared Packages
+
+- `shared/toast/` (`@douyin-clone/shared-toast`): the toast API and its single
+  provider, used by `user/` and `admin/`. TypeScript source, so both consumers
+  list it in `transpilePackages`.
+- `shared/upload-policy/` (`@douyin-clone/upload-policy`): the public
+  comment-image upload limits, format whitelist, and the three error codes with
+  their statuses and messages. Imported by `api/`, `file-server/` and `user/`.
+  Deliberately dependency-free CommonJS plus a hand-written `.d.ts` — the two
+  Nest apps compile with `tsc` and cannot build a `.ts` file under
+  `node_modules`, so TypeScript source would work in the web app and fail in both
+  services. Nothing browser-, Nest- or Sharp-specific may go in it.
+
+**Yarn v1 copies a `file:` dependency rather than linking it.** Editing a shared
+package does not reach its consumers until you delete the copy and reinstall in
+each app:
+
+```bash
+rm -rf node_modules/@douyin-clone/<name> && yarn install --force
+```
+
+`yarn install --check-files` will report "already up-to-date" and skip the
+re-copy. Contract specs in the consumers compare the installed module against the
+repo source so the drift fails a test instead of shipping.
 
 ## Agent Guidance
 

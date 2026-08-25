@@ -1,5 +1,6 @@
 'use client';
 
+import { useCommentLiveStatsStore } from '@components/comment/comment-live-stats';
 import { IComment } from '@interfaces/comment';
 import { useCallback, useRef, useState } from 'react';
 import { useSocketListener } from 'src/socket/use-socket-listener';
@@ -7,6 +8,7 @@ import { useSocketListener } from 'src/socket/use-socket-listener';
 const COMMENT_CREATED = 'post:comment_created';
 const REPLY_CREATED = 'post:reply_created';
 const COMMENT_DELETED = 'post:comment_deleted';
+const COMMENT_STATS_UPDATED = 'post:comment_stats_updated';
 
 /**
  * How incoming comments are absorbed without disrupting the reader.
@@ -35,6 +37,8 @@ interface UsePostLiveCommentsOptions {
   onInsert: (comment: IComment) => void;
   /** Drop a comment that was removed elsewhere. */
   onRemove: (commentId: string) => void;
+  /** A thread on this post gained a reply. Carries the parent's id. */
+  onThreadGrew?: (parentCommentId?: string) => void;
 }
 
 /**
@@ -48,8 +52,10 @@ export function usePostLiveComments({
   postId,
   atNewest,
   onInsert,
-  onRemove
+  onRemove,
+  onThreadGrew
 }: UsePostLiveCommentsOptions) {
+  const statsStore = useCommentLiveStatsStore();
   const [pending, setPending] = useState<IComment[]>([]);
   // Events already applied. A queue retry redelivers the same comment id, and
   // the reader must not see it twice.
@@ -81,13 +87,39 @@ export function usePostLiveComments({
     onInsert(comment);
   }, { enabled: Boolean(postId) });
 
+  /**
+   * A thread on this post grew.
+   *
+   * Carries no reply body by design — that goes to the thread room, to the
+   * people actually reading it. Nothing is inserted here, and nothing needs to
+   * be: the parent's new reply count arrives in the coalesced snapshot below and
+   * moves the "Expand N replies" control, whether the thread is open or not.
+   *
+   * Listened to anyway rather than dropped, because it is what tells a reader
+   * with the thread *open* that they are about to receive one, and because
+   * ignoring an event the server sends is how a contract quietly rots.
+   */
   useSocketListener<any>(REPLY_CREATED, (payload) => {
     if (!postId || payload?.postId !== postId) return;
-    const reply = payload.reply as IComment;
-    if (!reply?._id || seenRef.current.has(reply._id)) return;
-    seenRef.current.add(reply._id);
-    // Replies live inside a collapsed thread, so they never displace the list;
-    // the thread reloads when it is opened.
+    onThreadGrew?.(payload.parentCommentId);
+  }, { enabled: Boolean(postId) });
+
+  /**
+   * Authoritative counters for one comment.
+   *
+   * Absolute totals, never deltas, so this is also what makes the local
+   * optimistic like and the server's own echo agree instead of adding up: the
+   * snapshot states the total outright, and applying it twice reaches the same
+   * number. Writes land in the shared store rather than in this hook's state, so
+   * only the row for that comment re-renders.
+   */
+  useSocketListener<any>(COMMENT_STATS_UPDATED, (payload) => {
+    if (!postId || payload?.postId !== postId || !payload.commentId) return;
+    statsStore?.apply(payload.commentId, {
+      likesCount: payload.likesCount || 0,
+      replyCount: payload.replyCount || 0,
+      revision: payload.revision || 0
+    });
   }, { enabled: Boolean(postId) });
 
   useSocketListener<any>(COMMENT_DELETED, (payload) => {

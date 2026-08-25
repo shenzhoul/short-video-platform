@@ -47,6 +47,8 @@ export class MessageDeliveryListener {
     try {
       if (event.eventName === MESSAGE_EVENTS.CREATED) {
         await this.handleCreated(event.data);
+      } else if (event.eventName === MESSAGE_EVENTS.SYSTEM_CREATED) {
+        await this.handleSystemCreated(event.data);
       } else if (event.eventName === MESSAGE_EVENTS.READ) {
         await this.handleRead(event.data);
       }
@@ -84,6 +86,36 @@ export class MessageDeliveryListener {
 
     // Only the recipient's totals moved; the sender's own message is already read.
     await this.emitUnreadTotals(recipientId);
+  }
+
+  /**
+   * Deliver a system notice to both participants.
+   *
+   * Its own handler because a notice has no sender: the message path above reads
+   * one to decide who gets the unread bump, and there is nobody here to name.
+   * Both participants are simply told, symmetrically.
+   *
+   * No unread totals are emitted. Nothing incremented them — a notice is not a
+   * message from a person — so there is nothing new to announce, and pushing a
+   * total here would only invite a client to render a badge for it.
+   */
+  private async handleSystemCreated(data: Record<string, any>): Promise<void> {
+    const { message, conversationId, participantIds } = data || {};
+    if (!message || !conversationId || !participantIds?.length) return;
+
+    await this.socketUserService.emitToUsers(
+      participantIds,
+      MESSAGE_SOCKET_EVENTS.CREATED,
+      message
+    );
+
+    // Each participant's row differs — their own unread count and their own side
+    // of the permission state — so it is built per person.
+    await Promise.all(participantIds.map((viewerId: string) => this.emitConversationUpdate(
+      conversationId,
+      viewerId,
+      participantIds.find((id: string) => id !== viewerId) || viewerId
+    )));
   }
 
   /** Tell a reader's other sessions that a conversation is no longer unread. */

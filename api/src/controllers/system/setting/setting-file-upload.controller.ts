@@ -22,7 +22,7 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { RoleGuard } from 'src/common/guards';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { DataResponse } from 'src/kernel';
-import { FileServerService } from 'src/services/shared/file-server';
+import { FileServerService, UploadPolicyService } from 'src/services/shared/file-server';
 import { __t } from 'src/utils/translation';
 
 /**
@@ -82,7 +82,8 @@ import { __t } from 'src/utils/translation';
 @ApiSecurity('token-auth')
 export class SettingFileUploadController {
   constructor(
-    private readonly fileServerService: FileServerService
+    private readonly fileServerService: FileServerService,
+    private readonly uploadPolicyService: UploadPolicyService
   ) { }
 
   /**
@@ -337,6 +338,11 @@ export class SettingFileUploadController {
     @Body() body: { filename: string; fileSize: number; metadata?: Record<string, any> },
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, and before a pending file record
+    // does. Admin-only, but an admin's browser is still a browser: the same
+    // registry limits apply and the file server weighs what arrives.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('setting-file', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateUploadUrl({
         uploadType: 'normal', // do not use 'chunked' for setting files
@@ -344,6 +350,9 @@ export class SettingFileUploadController {
         fileSize: body.fileSize,
         mediaType: 'image',
         type: 'setting-file',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: false,

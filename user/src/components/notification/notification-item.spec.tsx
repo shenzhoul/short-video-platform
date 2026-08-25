@@ -155,3 +155,55 @@ describe('notification row read state', () => {
     expect(container.querySelector('img')).toHaveAttribute('src', '/no_avatar.jpeg');
   });
 });
+
+describe('notification badge rendering', () => {
+  const badge = () => screen.getByTestId('notification-badge');
+
+  it.each([
+    NOTIFICATION_TYPE.POST_LIKE,
+    NOTIFICATION_TYPE.COMMENT_LIKE,
+    NOTIFICATION_TYPE.POST_COMMENT,
+    NOTIFICATION_TYPE.COMMENT_REPLY,
+    NOTIFICATION_TYPE.POST_MENTION,
+    NOTIFICATION_TYPE.COMMENT_MENTION
+  ])('draws an icon for %s', (type) => {
+    renderItem({ type });
+
+    // The bug this guards: an unmatched type left the badge an empty disc.
+    expect(badge().querySelector('svg')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a follow', NOTIFICATION_TYPE.FOLLOW],
+    ['an unrecognised type', 'invented_later' as any]
+  ])('draws no disc at all for %s', (_label, type) => {
+    renderItem({ type });
+
+    // Not an empty circle over the avatar — nothing.
+    expect(screen.queryByTestId('notification-badge')).not.toBeInTheDocument();
+  });
+
+  it('does not quote the comment back to you when it was liked', () => {
+    renderItem({
+      type: NOTIFICATION_TYPE.COMMENT_LIKE,
+      commentId: 'c-1',
+      commentPreview: 'my own comment text'
+    });
+
+    expect(screen.queryByText('my own comment text')).not.toBeInTheDocument();
+    expect(screen.getByText('liked your comment')).toBeInTheDocument();
+  });
+
+  it('opens the liked comment when a comment like is activated', async () => {
+    renderItem({
+      type: NOTIFICATION_TYPE.COMMENT_LIKE,
+      postId: 'p1',
+      commentId: 'c-liked'
+    });
+
+    await userEvent.click(row());
+
+    expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('target_comment_id=c-liked'));
+    expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('modal_tab=comments'));
+  });
+});

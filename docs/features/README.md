@@ -20,9 +20,10 @@ These documents describe shipped workflows. Domain documents remain the source o
 | Feeds and recommendations | [feeds-and-recommendations.md](./feeds-and-recommendations.md) | Home, For You, profile posts, post detail |
 | Search and discovery | [search-and-discovery.md](./search-and-discovery.md) | Header discovery, autocomplete, search results |
 | Creator following | [following.md](./following.md) | Avatar follow action, Following rail and feed |
-| Comments and reactions | [comments-and-reactions.md](./comments-and-reactions.md) | Comments, replies, edit/delete, likes |
+| Comments and reactions | [comments-and-reactions.md](./comments-and-reactions.md) | Comments, replies, edit/delete, likes, live like/reply updates while a post is open |
 | Interaction notifications | [notifications.md](./notifications.md) | Grouped like/comment/reply/follow notifications, realtime delivery, category filter, header panel |
-| Direct messaging | [messaging.md](./messaging.md) | Private one-to-one messages, follow-based send permission, right-side workspace and page reflow, `/messages` |
+| Direct messaging | [messaging.md](./messaging.md) | Private one-to-one messages, request-based consent, block and restrict, right-side workspace and page reflow, `/messages` |
+| Post sharing | [post-sharing.md](./post-sharing.md) | The share popover, sending a post into a message, and how `totalShare` is counted |
 | Post sharing | [sharing.md](./sharing.md) | Share panel, recorded shares, `totalShare` |
 | File uploads and processing | [file-uploads-and-processing.md](./file-uploads-and-processing.md) | Direct/TUS uploads, ownership, Sharp/FFmpeg |
 | Admin operations | [admin-operations.md](./admin-operations.md) | Users, admins, settings, logs |

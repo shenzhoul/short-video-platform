@@ -26,9 +26,8 @@ import { UserDto } from 'src/dtos/identity/user';
 import { DataResponse, EntityNotFoundException } from 'src/kernel';
 import { PageableData, SearchRequest } from 'src/kernel/common';
 import { CreatorSelfUpdatePayload } from 'src/payloads';
-import { FollowService, IdentityFileService } from 'src/services';
+import { FollowService } from 'src/services';
 import { AuthService, BaseUserService, UserAccountManagementService } from 'src/services/identity';
-import { FileServerService } from 'src/services/shared/file-server';
 import { __t } from 'src/utils/translation';
 
 @ApiTags('Users')
@@ -39,8 +38,6 @@ export class UserController {
   constructor(
     private readonly baseService: BaseUserService,
     private readonly userService: UserAccountManagementService,
-    private readonly fileServerService: FileServerService,
-    private readonly identityFileService: IdentityFileService,
     private readonly authService: AuthService,
     private readonly followService: FollowService
   ) { }
@@ -70,6 +67,9 @@ export class UserController {
     @CurrentUser() current: AuthUserDto
   ): Promise<DataResponse<Partial<UserDto>>> {
     const user = await this.baseService.getMe(current._id);
+    // Same canonical counts as any other profile: looking at your own must not
+    // give a different number from somebody else looking at it.
+    user.setFollowCounts(await this.followService.countFollowRelations(current._id));
     return DataResponse.ok(user.toResponse(true));
   }
 
@@ -188,6 +188,25 @@ export class UserController {
     );
   }
 
+  @Get('/:id/follow-stats')
+  @UseGuards(LoadUser, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Canonical follower and following counts for one user',
+    description: 'Counts the follow records themselves rather than reading the cached counters on the user document, so it is the same definition the profile page and the follower list use. Exists so a client that missed live updates — a reconnect, a tab regaining focus — can resynchronise without refetching a whole profile.'
+  })
+  @ApiParam({ name: 'id', description: 'User id' })
+  async followStats(
+    @Param('id') userId: string
+  ): Promise<DataResponse<{ followersCount: number; followingCount: number }>> {
+    const counts = await this.followService.countFollowRelations(userId);
+    return DataResponse.ok({
+      followersCount: counts.followers,
+      followingCount: counts.followings
+    });
+  }
+
   @Delete('/me/followers/:id')
   @UseGuards(AuthGuard, CustomThrottlerGuard)
   @Throttle({ default: { limit: 30, ttl: 60000 } })
@@ -286,6 +305,12 @@ export class UserController {
       ? (await this.followService.getFollowingCreatorIdSet(user._id, [creator._id])).has(creator._id.toString())
       : false;
 
+    // Counted from the follow records rather than read from the stored counter,
+    // so this header and the follower list it opens are the same number. The
+    // counter is maintained too, but it can drift, and when it does the profile
+    // is exactly where the disagreement shows.
+    creator.setFollowCounts(await this.followService.countFollowRelations(creator._id));
+
     // Note: Profile view tracking moved to separate CreatorStatsController
     // Client should call POST /creator-stats/:creatorId/view endpoint
 
@@ -345,12 +370,14 @@ export class UserController {
     @Body('coverId') coverId: string,
     @CurrentUser() user: AuthUserDto
   ): Promise<any> {
-    // Validate file ownership
-    await this.identityFileService.validateIdentityDocumentOwnership([coverId], user, 'update');
-
-    const cover = await this.fileServerService.getFileInfo(coverId);
-    if (!cover) throw new EntityNotFoundException();
-    await this.userService.updateCover(user, cover);
+    // Every check that matters — the file exists, it is a `cover` upload, it
+    // belongs to this user, its processing succeeded, it is not already on
+    // somebody else's profile — happens inside updateCover, against the record
+    // the file server wrote rather than against anything in this request. Doing
+    // it there rather than here is what keeps a fourth caller from skipping it,
+    // and it replaces the looser controller-side ownership check this endpoint
+    // used to run.
+    const cover = await this.userService.updateCover(user, coverId);
     return DataResponse.ok({
       success: true,
       url: cover.url,
@@ -408,23 +435,11 @@ export class UserController {
     @Body('avatarId') avatarId: string,
     @CurrentUser() user: AuthUserDto
   ): Promise<any> {
-    // Validate file ownership
-    await this.identityFileService.validateIdentityDocumentOwnership([avatarId], user, 'update');
-
-    const avatar = await this.fileServerService.getFileInfo(avatarId);
-    if (!avatar) throw new EntityNotFoundException();
-
-    // Add file reference before updating avatar
-    await this.fileServerService.updateFileOwnership({
-      fileIds: [avatarId],
-      createdBy: user._id.toString(),
-      ref: {
-        itemId: user._id,
-        itemType: 'user'
-      }
-    });
-
-    await this.userService.updateAvatar(user, avatar);
+    // Validated and claimed inside updateAvatar — see the cover endpoint above
+    // for why the checks live there. The reference is taken before the profile
+    // points at the image, and released again if the swap fails, so no
+    // half-applied update can leave an avatar the sweeper would collect.
+    const avatar = await this.userService.updateAvatar(user, avatarId);
     return DataResponse.ok({
       success: true,
       url: avatar.url

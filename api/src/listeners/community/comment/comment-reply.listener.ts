@@ -3,6 +3,7 @@ import { COMMENT_CHANNELS, COMMENT_OBJECT_TYPES } from 'src/common/constants/com
 import { QueueEvent, QueueMessageService } from 'src/kernel';
 import { EVENT } from 'src/kernel/constants';
 import { CommentService } from 'src/services/community/comment/comment.service';
+import { CommentStatsCoalescerService } from 'src/services/socket/comment-stats-coalescer.service';
 
 const REPLY_COMMENT_CHANNEL = 'REPLY_COMMENT_CHANNEL';
 
@@ -12,7 +13,8 @@ export class ReplyCommentListener {
 
   constructor(
     private readonly queueMessageService: QueueMessageService,
-    private readonly commentService: CommentService
+    private readonly commentService: CommentService,
+    private readonly commentStatsCoalescerService: CommentStatsCoalescerService
   ) {
     this.queueMessageService.subscribe(
       COMMENT_CHANNELS.COMMENT,
@@ -31,6 +33,11 @@ export class ReplyCommentListener {
         commentId,
         event.eventName === EVENT.CREATED ? 1 : -1
       );
+
+      // After the increment, so the snapshot the flush reads already includes
+      // it. This is what moves "Expand N replies" for viewers with the thread
+      // collapsed, without sending them the reply itself.
+      await this.commentStatsCoalescerService.markDirty(commentId);
     } catch (e) {
       this.logger.error(`Failed to handle reply comment: ${e.message}`, e.stack);
     }

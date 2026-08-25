@@ -1,13 +1,13 @@
 'use client';
 
 import { PostForm } from '@components/content/post/post-form';
+import { toast } from '@douyin-clone/shared-toast';
 import { IPost } from '@interfaces/post';
 import { showErrorMessage } from '@lib/utils';
 import { update, uploadPhoto, uploadTeaser, uploadThumbnail, uploadVideo } from '@services/post.service';
 import { FileUploadItem, uploadFilesInParallel, UploadProgress } from '@utils/upload-utils';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'react-toastify';
 
 interface Props {
   post: IPost;

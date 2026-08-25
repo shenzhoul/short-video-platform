@@ -8,6 +8,7 @@ import type {
 import { MESSAGE_SOCKET_EVENT } from '@interfaces/message';
 import type { CursorInfo } from '@interfaces/pagination';
 import {
+  getConversation as getConversationRequest,
   getMessageUnreadCount,
   markAllMessagesRead,
   markConversationRead as markConversationReadRequest,
@@ -55,6 +56,8 @@ interface MessageContextValue {
   markConversationRead: (conversationId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   getConversation: (conversationId: string) => IConversation | undefined;
+  /** Re-reads one conversation, for permission changes the socket does not push. */
+  refreshConversation: (conversationId: string) => Promise<void>;
   /**
    * Subscribe to arriving messages. Returns an unsubscribe function.
    *
@@ -438,6 +441,35 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
     [conversations]
   );
 
+  /**
+   * Re-read one conversation from the server and replace its row.
+   *
+   * Needed because permission can change without a message being sent — a block
+   * or a restrict rewrites what this pair may do, and nothing in the message
+   * socket flow fires for it. Rather than invent a second push channel for a
+   * rare, user-initiated action, the action refetches the row it just changed.
+   */
+  const refreshConversation = useCallback(async (conversationId: string) => {
+    if (!conversationId) return;
+    try {
+      const response = await getConversationRequest(conversationId);
+      const conversation: IConversation = response?.data;
+      if (!conversation?._id) return;
+
+      setConversations((current) => {
+        const index = current.findIndex((item) => item._id === conversation._id);
+        if (index === -1) return current;
+        const next = [...current];
+        next[index] = conversation;
+        return next;
+      });
+    } catch {
+      // The row keeps its previous permission until something else refreshes
+      // it. The server decides on send regardless, so a stale row is a cosmetic
+      // problem rather than a way around the rule.
+    }
+  }, []);
+
   const value = useMemo<MessageContextValue>(() => ({
     currentUserId,
     conversations,
@@ -456,12 +488,13 @@ export function MessageProvider({ children }: { children: React.ReactNode }) {
     markConversationRead,
     markAllRead,
     getConversation,
+    refreshConversation,
     subscribeToMessages,
     rememberMessage
   }), [
     currentUserId, conversations, unread, loading, loadingMore, error, hasMore, keyword,
     ensureLoaded, loadMore, retry, setKeyword, openConversationWith,
-    markConversationRead, markAllRead, getConversation, subscribeToMessages,
+    markConversationRead, markAllRead, getConversation, refreshConversation, subscribeToMessages,
     rememberMessage
   ]);
 

@@ -1,6 +1,12 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { resolveMentionedUserIds } from '@lib/post-mentions';
+import {
+  messageForUploadError,
+  POST_PHOTO_UPLOAD_TYPE,
+  uploadPolicyFor
+} from '@lib/upload-policy';
 import { showErrorMessage } from '@lib/utils';
 import {
   create as createPost,
@@ -18,13 +24,23 @@ import {
 import { consumePendingPostPhotoFiles } from '@services/post-photo-handoff.service';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 export const MAX_GRAPHIC_FILES = 12;
-const MAX_GRAPHIC_FILE_SIZE = 50 * 1024 * 1024;
 const MAX_PARALLEL_GRAPHIC_UPLOADS = 3;
-const SUPPORTED_GRAPHIC_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff', '.raw'];
 let graphicFileSequence = 0;
+
+/**
+ * Every image here is uploaded as a `post-photo`, so that is the policy it is
+ * judged by — the same table the API and the file server read.
+ *
+ * What this replaces was a 50MB cap and an extension list containing `.bmp`,
+ * `.tif`, `.tiff` and `.raw`, none of which the image pipeline has ever
+ * decoded. So the composer accepted files at two and a half times the server's
+ * limit, in formats it would always refuse, and only said so after each one had
+ * finished uploading.
+ */
+const GRAPHIC_UPLOAD_TYPE = POST_PHOTO_UPLOAD_TYPE;
+const GRAPHIC_POLICY = uploadPolicyFor(GRAPHIC_UPLOAD_TYPE);
 
 type PostGraphicCreateAccessState = 'checking' | 'allowed' | 'redirecting';
 
@@ -37,10 +53,23 @@ export interface GraphicFileItem {
   uploadState: PostGraphicDraftUploadState;
 }
 
+/**
+ * Whether a picked file could be a post photo, judged synchronously.
+ *
+ * Only the declared MIME, because this also runs inside a `useState`
+ * initialiser that cannot await anything. That is fine for its job: the byte
+ * sniff, the pixel budget and the frame count are the file server's, and this is
+ * the early "that is not going to work" — the same reason `accept` exists.
+ *
+ * A file with no `type` is let through rather than refused: some platforms
+ * report nothing, and the server settles it from the bytes.
+ */
 const isSupportedGraphic = (file: File) => (
-  (file.type.startsWith('image/') && file.type !== 'image/gif')
-  || SUPPORTED_GRAPHIC_EXTENSIONS.some(extension => file.name.toLowerCase().endsWith(extension))
+  !file.type || (GRAPHIC_POLICY?.allowedMimeTypes.includes(file.type.toLowerCase()) ?? false)
 );
+
+/** The byte limit from the policy, so the composer and the server agree. */
+const MAX_GRAPHIC_FILE_SIZE = GRAPHIC_POLICY?.maxBytes ?? 0;
 
 const createGraphicItems = (files: File[], offset = 0): GraphicFileItem[] => files.map((file, index) => ({
   id: `${file.name}-${file.size}-${file.lastModified}-${offset + index}-${graphicFileSequence++}`,
@@ -368,8 +397,18 @@ export function usePostGraphicCreate(userId: string) {
   const validateFiles = useCallback((files: File[]) => {
     const unsupported = files.filter(file => !isSupportedGraphic(file));
     const oversized = files.filter(file => isSupportedGraphic(file) && file.size > MAX_GRAPHIC_FILE_SIZE);
-    if (unsupported.length) toast.error('Only supported image files can be added. GIF is not supported.');
-    if (oversized.length) toast.error('Each image must be 50MB or smaller.');
+    // The policy's own wording, so the message a picker shows and the message
+    // the server would have sent are the same sentence.
+    if (unsupported.length) {
+      toast.error(messageForUploadError(GRAPHIC_POLICY?.codes.format)
+        || 'Only supported image files can be added.');
+    }
+    if (oversized.length) {
+      toast.error(messageForUploadError(GRAPHIC_POLICY?.codes.fileTooLarge)
+        || 'That image file is too large.');
+    }
+    // The survivors are kept. One oversized photo out of twelve must not
+    // discard the eleven that were fine.
     return files.filter(file => isSupportedGraphic(file) && file.size <= MAX_GRAPHIC_FILE_SIZE);
   }, []);
 

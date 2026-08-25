@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import { defaultSettings, PublicSettings } from '@lib/utils';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -11,7 +12,6 @@ import {
   useMemo,
   useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 export interface IMainLayoutContext {
   publicSettings: Partial<typeof defaultSettings>;

@@ -19,9 +19,9 @@ The message icon beside the bell carries its own, separate red indicator with it
 | Type | Trigger | Recipient | Grouping | Opens |
 |---|---|---|---|---|
 | `post_like` | A post is liked | Post owner | One aggregate per post | Post detail |
-| `comment_like` | A comment is liked | Comment author | One aggregate per comment | Containing post |
-| `post_comment` | A post receives a comment | Post owner | Individual, then adaptive aggregate | Post detail |
-| `comment_reply` | A thread participant receives a reply | Person being answered | Individual, then adaptive aggregate | Containing post |
+| `comment_like` | A comment is liked | Comment author | One aggregate per comment | The liked comment |
+| `post_comment` | A post receives a comment | Post owner | Individual, then adaptive aggregate | The comment |
+| `comment_reply` | A thread participant receives a reply | Person being answered | Individual, then adaptive aggregate | The reply, in its thread |
 | `follow` | A creator is followed | Followed creator | One reusable row per follower with cooldown | Actor profile |
 
 Self-interactions are suppressed inside `NotificationService`. Shares update statistics only and do not create interaction notifications because share delivery belongs to messaging.
@@ -129,6 +129,9 @@ touch the interaction it described, the actor, or any other recipient's notifica
 - Filter changes reset cursor state, discard superseded responses, and fetch the category from the API.
 - Realtime rows are inserted only when they belong to the active category.
 - Rows navigate to actor profiles or `/?modal_id=<postId>` and never issue a read mutation.
+- A row whose subject is a comment — `post_comment`, `comment_reply`, `comment_mention` and `comment_like` — navigates to `/?modal_id=<postId>&modal_tab=comments&target_comment_id=<commentId>`, so the reader lands on the comment they were told about rather than at the top of the post. A liked comment is no exception: the like is about that comment, so it opens it. The link survives a page refresh because the ids live in the URL, and when the target is a reply the app opens its parent thread to reach it.
+- The six interaction types carry a badge over the actor's avatar: a like disc for `post_like`/`comment_like`, a comment disc for `post_comment`/`comment_reply`, and a mention disc for the two mention types. A follow shows no badge — its wording and follow-back control already say what happened — and neither does a type the client does not recognise. No badge means no disc at all, never an empty circle.
+- Comment-scoped rows quote the referenced comment, except `comment_like`: quoting your own comment back at you adds nothing the row does not already say, and the comment is one click away.
 - Each row carries a `…` menu with **Delete notification**. The row disappears immediately, its unread count is released, and the id is remembered briefly so a realtime update still in flight cannot resurrect it. A failed delete leaves the row exactly as it was.
 
 ### UI contract

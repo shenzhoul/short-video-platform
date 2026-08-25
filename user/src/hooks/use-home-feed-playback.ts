@@ -2,6 +2,7 @@
 
 import { getPopupVideo, getPostIdFromPopupVideoId } from '@components/content/post/home-feed-media';
 import type { PostVideoDetailTab } from '@components/content/post/post-video-detail-panel';
+import { toast } from '@douyin-clone/shared-toast';
 import { IPost } from '@interfaces/post';
 import {
   PopupPipState,
@@ -14,7 +15,6 @@ import { applyPostInteractionPatch } from '@lib/post-interactions';
 import { findOne } from '@services/post.service';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 import { PostInteractionChangeHandler } from './use-post-interactions';
 import { useVideoPlaybackContinuity } from './use-video-playback-continuity';

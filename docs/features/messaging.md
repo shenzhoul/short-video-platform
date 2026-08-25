@@ -1,11 +1,11 @@
 ---
 title: Direct Messaging
-description: Private one-to-one messages with follow-based send permission, delivered in realtime to a right-side workspace, a post-detail entry point and a dedicated page.
+description: Private one-to-one messages with request-based consent, block and restrict, shared posts, delivered in realtime to a right-side workspace, a post-detail entry point and a dedicated page.
 audience: [user, creator, developer-agent]
 domain: community
 status: active
-updated: 2026-08-19
-tags: [message, conversation, realtime, socket, follow, permission, unread, media]
+updated: 2026-08-21
+tags: [message, conversation, realtime, socket, follow, permission, unread, media, block, restrict, share]
 ---
 
 # Direct Messaging
@@ -40,44 +40,31 @@ Closing the workspace returns it to the conversation list. The header icon means
 
 ## Messaging permission
 
-Permission has two levels.
+Permission has two independent layers, and keeping them apart is the point.
 
-**Mutual followers** - A follows B *and* B follows A - message each other freely.
+**Flags** are what a person controls about their own inbox: `block` and
+`restrict`. They sit above everything else.
 
-**Everyone else** goes through a **message request**. The initiator may send one message and then waits. The recipient **replying** accepts the request, and from then on *both* may message freely. Reading it does not accept it - looking at a request is not agreeing to it.
+**Consent** is whether this pair has agreed to talk at all.
 
 ```text
-SEND MESSAGE
-     |
-     v
-Currently mutual followers? ----YES----> SEND (request flow does not apply)
-     |
-     NO
-     |
-     v
-Request already accepted? ------YES----> SEND (both sides free)
-     |
-     NO
-     |
-     v
-Is anyone waiting?
-     |
- +---+--------------------+
- |                        |
-NOBODY              SOMEONE IS
- |                        |
- v                        v
-SEND the request     Is it me?
- |                    |        |
- v                   YES       NO
-sender waits          |         |
-                    BLOCK    SEND -> request ACCEPTED
-                                     both sides free
+blocked?  ->  restricted?  ->  accepted?  ->  mutual follow?  ->  first request?  ->  refuse
 ```
 
-The waiting state belongs to a **sender**, not to the conversation: the person who received a request must always be able to answer it.
+Evaluated in that order on every send, by the server. Nothing about it is
+cached, and the client's copy is advisory.
 
-### After acceptance
+### Consent
+
+**Mutual followers** — A follows B *and* B follows A — message each other freely.
+
+**Everyone else** goes through a **message request**. The initiator may send one
+message and then waits. The recipient **replying** accepts the request, and from
+then on *both* may message freely. Reading it does not accept it — looking at a
+request is not agreeing to it.
+
+A shared post counts as a message here, so a stranger's share is their one
+request.
 
 ```text
 A -> B      request sent, A waits
@@ -85,65 +72,104 @@ A -> B      blocked
 B -> A      allowed; request ACCEPTED
 A -> B      allowed
 A -> B      allowed        <- no turn-taking
-B -> A      allowed
-B -> A      allowed
 ```
 
-There is no alternating one-message-each rule once the request is answered.
+### Acceptance is durable
 
-### Relationship changes
+An accepted conversation stays open **whether or not the two still follow each
+other**. Unfollowing changes what you see in your feed; it does not withdraw an
+agreement to talk.
 
-Permission is re-evaluated on every send from the live follow relation.
+Earlier this worked the other way, and it was wrong in both directions:
 
-```text
-MUTUAL                              NON-MUTUAL, ACCEPTED
-  |                                     |
-  | one side unfollows                  | they follow each other
-  v                                     v
-RESTRICTED, no request pending        MUTUAL
-  |                                     |
-  v                                     v
-next sender gets one request       unrestricted; any pending
-message; a reply accepts again     request state is cleared
-```
+- it was impossible to explain — the same two people could talk on Monday and be
+  back under the one-message rule on Tuesday because of an unrelated unfollow;
+- it was inconsistent — a pair who had never followed each other kept their
+  acceptance forever, since there was no follow to lose. So the only people the
+  rule ever restrained were people who *had* followed each other.
 
-- **Mutual to non-mutual.** History is preserved; only permission changes. Acceptance is **reset**, so freedom that came from a follow does not outlive it. The next sender gets one request message, and a reply accepts it again.
-- **Non-mutual to mutual while waiting.** The waiting sender is released immediately.
-- Reading never accepts a request. Only a reply does.
+Consent is recorded **whenever both people have spoken**, including while they
+were mutual followers. A reply is a reply; that the follow relation happened to
+allow it at the time does not make it less of one. Without this, a pair who had
+been talking for months dropped back to the one-message rule the first time
+either of them unfollowed — and the live rule disagreed with the migration
+backfill, which reads exactly the same evidence.
+
+A pair whose permission came only from a mutual follow, with traffic in one
+direction only, is different: nothing was ever accepted there, so losing the
+follow leaves an ordinary unanswered conversation and the next sender gets one
+request message.
+
+### Stopping someone
+
+Because consent no longer evaporates on unfollow, there are two explicit
+controls instead:
+
+| | Direction | Effect |
+|---|---|---|
+| **Restrict** | one-way | The restricted person can no longer send to you. You can still write to them. |
+| **Block** | both ways | Neither may send, whoever set it. |
+
+Both sit **above** consent and above mutual follow. Following each other does not
+lift a restriction, and answering a restricted person does not readmit them —
+only an explicit Unrestrict or Unblock does. That is deliberate: a control that
+undoes itself when you reply is not a control.
+
+Restricted and blocked senders see the *same* message. Telling somebody which of
+the two happened would tell them they were singled out, which is precisely what
+a quiet control exists to avoid. The API sends distinct codes
+(`RECIPIENT_RESTRICTED`, `USER_BLOCKED`) for the client to branch on; only the
+display text is shared.
+
+Unfollowing does **not** restrict anyone automatically. `mute` is not
+implemented.
 
 ### How it is stored
 
-Two fields on the conversation:
+Two fields on the conversation, and one row per flag:
 
 ```ts
 Conversation.pendingSenderId: ObjectId | null  // who sent the unanswered request
 Conversation.requestAccepted: boolean          // has it been answered?
+
+UserRelationship { userId, targetId, type: 'block' | 'restrict' }
 ```
 
-Which gives four states:
+Which gives the states the API reports as `requestState`:
 
 | State | Meaning |
 |---|---|
-| `mutual` | derived from the live follow relation; overrides everything below |
-| `idle` | non-mutual, unanswered, nobody waiting - one request may be sent |
+| `blocked` | one side blocked the other; nothing may be sent |
+| `restricted` | the other side restricted this user |
+| `accepted` | the request was answered; both sides free, regardless of follows |
+| `mutual` | derived live from the follow relation |
 | `waiting` | the initiator has spent their one message |
-| `accepted` | the request was answered; both sides free |
+| `idle` | unanswered, nobody waiting — one request may be sent |
 
-`requestState` is exposed on the conversation payload so both clients can tell "free because we follow each other" from "free because the request was answered" - they look the same to a composer but behave differently the moment a follow changes.
+One row per `(userId, targetId, type)`, enforced by a **unique** index. Without
+it a double-clicked Block writes two rows and a later Unblock removes only one,
+leaving somebody blocked with no control left to undo it. Setting a flag is
+idempotent — a repeat call is a no-op, and two simultaneous calls resolve to one
+row rather than an error. A mutual block is two rows, which is correct: they are
+different people's decisions.
 
-Specifically **not** stored: a persisted `isMutualFollow` (follow state is read live, so it can never go stale), and no message count - `messages.length > 1` and `totalMessages === 1` both break on deleted messages, paginated history, media retries, and history from a period when the pair was mutual.
+Flags live in their own `user_relationships` collection rather than in
+`reactions` beside follows. A block must never be discoverable by the person it
+is set on, and storing it where reaction listings are queried would make that a
+matter of remembering to filter it out everywhere.
 
-`requestAccepted` is not an "unlocked forever" flag precisely because of the reset below.
-
-### The unfollow reset
-
-`FollowService.unfollow` publishes a `deleted` follow event on the reaction channel. `MessageFollowListener` picks it up and resets that pair's conversation to `idle` - `requestAccepted: false`, `pendingSenderId: null`.
-
-Driven by an event rather than called directly: the message domain already depends on the follow domain, so the reverse call would be a cycle. The conversation is located by its canonical `hashKey`, so an unrelated unfollow cannot disturb anyone else, and no message is ever deleted.
+Specifically **not** stored: a persisted `isMutualFollow` (follow state is read
+live, so it can never go stale), and no message count — `messages.length > 1`
+and `totalMessages === 1` both break on deleted messages, paginated history,
+media retries, and history from a period when the pair was mutual.
 
 ### Concurrency
 
-`MessagePermissionService.claimSendSlot` performs up to three conditional single-document updates, tried in order - accept, already-accepted, send-the-request. Each is atomic on its own, which is what makes concurrent sends safe without a transaction:
+`MessagePermissionService.claimSendSlot` reads the flags first — a block is a
+wall, not a slot to be claimed — then performs up to three conditional
+single-document updates, tried in order: accept, already-accepted, send-the-
+request. Each is atomic on its own, which is what makes concurrent sends safe
+without a transaction:
 
 ```js
 // 1. the other participant is waiting: this send answers, and accepts
@@ -152,20 +178,30 @@ findOneAndUpdate(
   { $set: { requestAccepted: true, pendingSenderId: null } }
 )
 
-// 3. nobody waiting: send the one request message
+// 4. nobody waiting: send the one request message
 findOneAndUpdate(
   { _id, requestAccepted: { $ne: true }, pendingSenderId: null },
   { $set: { pendingSenderId: sender } }
 )
 ```
 
-Six simultaneous first messages: only one can match step 3, because the first match writes `pendingSenderId`. Two simultaneous replies: both are allowed - after acceptance everyone is free - but only one performs the acceptance transition. After acceptance, any number of concurrent sends pass through step 2 without contention.
+Six simultaneous first messages: only one can match the last step, because the
+first match writes `pendingSenderId`. Two simultaneous replies: both are allowed
+— after acceptance everyone is free — but only one performs the acceptance.
 
-A single bounded retry covers one narrow race: both participants send a first message at the same instant, one wins step 3, and the loser is then treated as answering rather than refused.
+A single bounded retry covers one narrow race: both participants send a first
+message at the same instant, one wins, and the loser is then treated as
+answering rather than refused.
 
-**Claim ordering and compensation.** The claim is taken *before* the insert - inserting first would let two concurrent sends both write a message before either claim resolved. The cost is compensation: `releaseSendSlot` undoes whichever transition the claim made (`request-sent` or `request-accepted`), each guarded on the state that claim produced, so a slow rollback cannot overwrite a newer legitimate transition.
+**Claim ordering and compensation.** The claim is taken *before* the insert —
+inserting first would let two concurrent sends both write a message before
+either claim resolved. The cost is compensation: `releaseSendSlot` undoes
+whichever transition the claim made, each guarded on the state that claim
+produced, so a slow rollback cannot overwrite a newer legitimate transition.
 
-Attachment ownership is validated **before** the claim, so a rejected file never costs the sender their one request message.
+Attachment ownership, and a shared post's availability, are validated **before**
+the claim, so a rejected file or an unshareable post never costs the sender
+their one request message.
 
 ## Conversations
 
@@ -301,9 +337,154 @@ The restriction notice sits directly above the composer, because it explains wha
 
 The notice follows `requestState`, never the follow relation. Those are not the same thing: after a request is answered the two people may still not follow each other, and a notice keyed on "are they mutual followers" stayed on screen forever describing a rule that no longer applied. When the recipient replies, the acceptance reaches the replier in the send response and the original sender over the `conversation:updated` socket event, so the notice clears on both sides without a reload.
 
+## System notices
+
+A conversation can hold a notice nobody sent. Today there is exactly one: when
+two people start following each other, the thread says
+
+> You follow each other. You can now start chatting.
+
+It appears the moment the relation becomes mutual — not when the first person
+follows — arrives over the socket for both sides without a reload, and persists
+like any other row in the thread. If the pair have no conversation yet, one is
+created for it.
+
+Rendered as a centred grey notice with the other person's avatar, not as a
+bubble: it has no side, no sender name and none of a message's actions.
+
+### It is not a message, and consent never counts it
+
+Stored as `type: 'system'` with `systemEvent: 'mutual_follow'` and
+**`senderId: null`**. It does not borrow either participant's identity, which
+matters more than it looks: `lastSenderId` is what the consent rules read to
+decide whether a send is a reply, so a notice attributed to somebody could
+accept a message request nobody answered.
+
+Concretely, the notice does **not**:
+
+- spend either person's single message request;
+- set `requestAccepted`;
+- count as a reply, or as evidence the two have spoken both ways;
+- write `lastSenderId` — it stays pointing at the last real message;
+- raise an unread badge for either side;
+- bypass a block. A blocked pair get no notice at all.
+
+Only user-authored messages ever decide consent.
+
+### Exactly one per conversation (2026-08-21)
+
+A conversation gets **at most one** mutual-follow notice, for its entire
+lifetime. Once it has been said, it is not said again:
+
+- unfollowing and following again does not earn a second one;
+- neither does a restrict/unrestrict or block/unblock cycle;
+- neither do reloads, socket reconnects, retries or a double-clicked button.
+
+The earlier notice stays as history. Blocking or restricting later does not
+remove or hide it.
+
+This replaces the original per-follow rule, which keyed the notice on the two
+follow records. Deleting a follow and re-creating it produced new ids and
+therefore a new key, so a pair who fell out and made up — or the far more common
+"restricted, re-followed, unrestricted" — ended up being told twice in the same
+thread. The key is now `mutual_follow:<conversationId>`, which follow churn
+cannot move, and the service also checks the thread for an existing notice so
+rows written under the old key are recognised.
+
+If a pair become mutual **while** a block or restriction is in force, no notice is
+written and nothing is spent; when the flag is lifted, and only if the
+conversation has never been told, exactly one notice appears.
+
+The index behind it is unique and **partial**, restricted to string keys — see
+*Why ordinary messages carry no key* below for why that is a correctness
+requirement rather than a preference.
+
+**Operators:** a database that ran the older rule can hold duplicates.
+`api/scripts/dedupe-mutual-follow-notices.js` reports what it would change and
+only writes with `--apply`. It keeps the oldest notice per conversation, removes
+the later ones, rewrites the survivor's key, and repoints any conversation
+preview that referenced a removed row — at that message's own timestamp, so no
+conversation jumps to the top of anybody's list. It never touches text messages,
+shared posts, consent, or follow/block/restrict records.
+
+```bash
+cd api
+node scripts/dedupe-mutual-follow-notices.js           # report only
+node scripts/dedupe-mutual-follow-notices.js --apply   # repair
+```
+
+### Why ordinary messages carry no key (2026-08-21)
+
+An ordinary message — text, image, or a shared post — stores **no**
+`systemEventKey` and no `systemEvent`. The fields are not set to `null`; they are
+absent from the document entirely, and the difference is not cosmetic.
+
+`systemEventKey` was originally declared with `default: null`, so Mongoose wrote
+the field on every message. The uniqueness index was `unique + sparse`, and a
+sparse index skips documents where a field is *missing* but still indexes one
+holding an explicit `null`. The first ordinary message in the database therefore
+claimed `{ systemEventKey: null }`, and every message written after it collided
+with that single entry:
+
+```text
+E11000 duplicate key error collection: douyin-clone.messages
+index: uniq_systemEventKey dup key: { systemEventKey: null }
+```
+
+The visible symptom was that a conversation worked exactly once. The first
+message in a thread sent; the second failed — including replying to a shared post
+someone had just sent you, and sending in a thread that had just shown the
+mutual-follow notice.
+
+Two independent guards now prevent it. The schema gives the field no default and
+strips it from any non-system message before saving, so an ordinary message
+cannot carry it. The index is partial —
+`partialFilterExpression: { systemEventKey: { $type: 'string' } }` — so even a
+field that somehow held `null` would not participate in the constraint.
+
+**Operators:** an existing database still holds the stray fields and the old
+index. `api/scripts/repair-message-system-event-keys.js` reports what it would
+change and only writes with `--apply`. It removes the two fields from non-system
+messages and replaces the index; it deletes nothing — no user message, no shared
+post, no valid notice, and no conversation state.
+
+```bash
+cd api
+node scripts/repair-message-system-event-keys.js           # report only
+node scripts/repair-message-system-event-keys.js --apply   # repair
+```
+
+A fresh database needs none of this: `yarn dev` creates the partial index
+directly from the schema.
+
+Following again after an unfollow creates *new* follow records, so it is a new
+transition and gets its own notice, which is the intended behaviour.
+
+Reading follow state never writes one: the notice is driven by the `created`
+event `FollowService` publishes only for a genuinely new relation.
+
+### The wording
+
+Stored nowhere. The row carries the event; the sentence is resolved from
+`messages.mutual_follow_notice` per reader, so it follows their language rather
+than whichever language the background job ran in. The conversation list derives
+its own label — "You can now message each other" — the same way it derives
+`[Photo]` and `[Post]`, so an enum name can never reach the list.
+
 ## Message content
 
-`text`, `image`, `video`. Nothing else.
+`text`, `image`, `video`, `post`. Nothing else.
+
+A `post` message is a **shared post** — see [Post sharing](./post-sharing.md).
+It carries a `postId` and nothing more. The card the recipient sees is resolved
+from the post on every read, so a post that is later deleted, hidden or whose
+author is suspended stops rendering everywhere at once, including in history
+somebody scrolls back to. The message itself stays: it is real history, and the
+card simply becomes "Post unavailable".
+
+The conversation list shows `[Post]` for such a row, never the post's caption —
+the caption belongs to somebody else's content and can be withdrawn, and the
+preview must not become the one place it survives.
 
 Media uploads through the existing file pipeline and the message is created only once the file has an id — a message row pointing at an upload that never completed would render as a permanently broken bubble. The composer shows uploading progress, then a sending state, and a failed send keeps its bubble in a `failed` state with retry and dismiss rather than silently discarding what somebody typed.
 
@@ -373,8 +554,9 @@ It is purely additive and idempotent — `createIndex` is a no-op for an identic
 ## Roles
 
 - **Guests** see nothing. Every route is authenticated and the workspace renders nothing without a session.
-- **Users and creators** are treated identically. There is no subscription, payment or verification gate on messaging — only the follow relationship.
-- **Admins** have no message moderation surface. Direct messages are private and no admin UI reads them.
+- **Users and creators** are treated identically. There is no subscription, payment or verification gate on messaging — only the follow relationship, the request/accept flow, and each person's own block and restrict flags.
+- Anyone can **Restrict** or **Block** the other person from the conversation's `⋯` menu. Restrict is one-way and quiet: the restricted person is simply refused, and is never told which of the two happened. Block stops both directions. Only the matching Unrestrict or Unblock in the same menu gives the permission back — replying, following, or being followed does not.
+- **Admins** have no message moderation surface, and no way to see who has blocked or restricted whom. Direct messages are private and no admin UI reads them.
 - **Operators** need no configuration. Messaging depends on no third-party service, no API key and no setting; it uses the existing MongoDB, Redis, socket and file-server infrastructure.
 
 ## Security

@@ -6,12 +6,14 @@ import {
 } from '@nestjs/websockets';
 import { ExtendedSocket } from 'src/@types/extended-socket';
 import {
+  COMMENT_ROOM,
   POST_ROOM,
   SOCKET_CHANNELS,
   SOCKET_EVENTS
 } from 'src/common/constants/community';
 import { QueueMessageService } from 'src/kernel';
 import { AuthService } from 'src/services/identity/auth/auth.service';
+import { CommentRoomService } from 'src/services/socket/comment-room.service';
 import { PostRoomService } from 'src/services/socket/post-room.service';
 import { SocketUserService } from 'src/services/socket/socket-user.service';
 
@@ -27,6 +29,7 @@ export class WsUserConnectedGateway
     private readonly authService: AuthService,
     private readonly socketUserService: SocketUserService,
     private readonly postRoomService: PostRoomService,
+    private readonly commentRoomService: CommentRoomService,
     private readonly queueMessageService: QueueMessageService
   ) { }
 
@@ -51,6 +54,27 @@ export class WsUserConnectedGateway
     if (!payload?.postId) return { left: false };
     await this.postRoomService.leave(client, payload.postId);
     return { left: true, postId: payload.postId };
+  }
+
+  /**
+   * Subscribe this socket to one comment thread's replies, while it is expanded.
+   *
+   * Scoped to the threads actually open rather than every thread on the post:
+   * that is what keeps a post with thousands of threads from delivering all of
+   * them to somebody reading one.
+   */
+  @SubscribeMessage(COMMENT_ROOM.JOIN)
+  async handleCommentJoin(client: ExtendedSocket, payload: { commentId?: string }) {
+    if (!payload?.commentId) return { joined: false };
+    const joined = await this.commentRoomService.join(client, payload.commentId);
+    return { joined, commentId: payload.commentId };
+  }
+
+  @SubscribeMessage(COMMENT_ROOM.LEAVE)
+  async handleCommentLeave(client: ExtendedSocket, payload: { commentId?: string }) {
+    if (!payload?.commentId) return { left: false };
+    await this.commentRoomService.leave(client, payload.commentId);
+    return { left: true, commentId: payload.commentId };
   }
 
   /**

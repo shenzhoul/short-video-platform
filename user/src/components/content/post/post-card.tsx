@@ -29,6 +29,7 @@
  */
 
 import { PostActions, PostMenu } from '@components/content/post';
+import { toast } from '@douyin-clone/shared-toast';
 import { usePostDetails } from '@hooks/use-content';
 import { useUserOnlineStatus } from '@hooks/use-user-online-status';
 import { linkifyText } from '@lib/html-helper';
@@ -37,7 +38,6 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { toast } from 'react-toastify';
 import { IPost } from 'src/interfaces';
 import { useProfile } from 'src/providers/profile.provider';
 

@@ -34,7 +34,7 @@ import {
 import { DataResponse } from "src/kernel";
 import { PostPhotoDraftsPayload, PostVideoDraftPayload } from "src/payloads/content/post";
 import { ContentFileService, ContentService } from "src/services/content";
-import { FileServerService } from "src/services/shared/file-server";
+import { FileServerService, UploadPolicyService } from "src/services/shared/file-server";
 import { __t } from "src/utils/translation";
 
 @Injectable()
@@ -45,7 +45,8 @@ export class ContentFileController {
   constructor(
     private readonly fileServerService: FileServerService,
     private readonly contentService: ContentService,
-    private readonly contentFileService: ContentFileService
+    private readonly contentFileService: ContentFileService,
+    private readonly uploadPolicyService: UploadPolicyService
   ) { }
   // Post file upload URL generation
 
@@ -112,11 +113,20 @@ export class ContentFileController {
       );
     }
 
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'post-photo' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('post-photo', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateImageUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'post-photo',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: true,
@@ -205,11 +215,20 @@ export class ContentFileController {
       );
     }
 
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'post-teaser' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('post-teaser', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateVideoUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'post-teaser',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: true,
@@ -296,11 +315,20 @@ export class ContentFileController {
       );
     }
 
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'post-video' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('post-video', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateVideoUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'post-video',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: true,
@@ -359,11 +387,20 @@ export class ContentFileController {
     @Body() body: { filename: string; fileSize?: number },
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'message-photo' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('message-photo', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateImageUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'message-photo',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: true,
@@ -374,6 +411,89 @@ export class ContentFileController {
         },
         metadata: {
           category: 'message',
+          fileType: 'photo',
+          uploadedBy: user._id
+        },
+        createdBy: user.isAdmin ? 'admin' : user._id
+      });
+
+      return DataResponse.ok(uploadData);
+    } catch (error) {
+      throw new HttpException(
+        __t('errors.failed_to_generate_upload_url', { reason: error.message }),
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
+   * Upload URL for the one image a comment may carry.
+   *
+   * Its own endpoint rather than a reuse of the message or post one, for the
+   * same reason those are separate from each other: the post endpoint gates on
+   * creator verification, which is wrong for a comment anyone may leave, and it
+   * generates a blur placeholder a comment has no use for.
+   *
+   * The `comment-photo` type is the durable marker that says what this upload
+   * was for. Attachment checks it, and the abandoned-upload sweeper sweeps by
+   * it, so it must not be inferred from request-only metadata that image
+   * processing may normalise away.
+   */
+  @Post('comment/photo/upload')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @UseGuards(AuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Get comment photo upload URL',
+    description: 'Generate a secure upload URL for the single image a comment may carry. Available to any authenticated user. The file is uploaded unattached; it becomes part of a comment only when that comment is created, and is swept away by the unused-file job if it never is.'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        filename: { type: 'string', description: 'Original filename for the photo', example: 'photo.jpg' },
+        fileSize: { type: 'number', description: 'Size of the file in bytes (required for TUS uploads)', example: 2048576 }
+      },
+      required: ['filename']
+    }
+  })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Upload URL generated successfully', type: DataResponse })
+  @ApiResponse({ status: HttpStatus.UNAUTHORIZED, description: 'User not authenticated' })
+  async getCommentPhotoUploadUrl(
+    @Body() body: { filename: string; fileSize?: number },
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, so an oversized picture costs one
+    // small request instead of a transfer that was always going to be thrown
+    // away. The declared size is a claim, which is why the file server checks
+    // the bytes that actually arrive as well.
+    //
+    // The gate reads the comment-photo policy, so this still raises
+    // COMMENT_IMAGE_FILE_TOO_LARGE with a 413 — the composer's three messages
+    // are unchanged. What is different is that the limit now comes from the
+    // registry rather than from a constant imported here, so it cannot drift
+    // from what the file server enforces.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('comment-photo', body.fileSize);
+
+    try {
+      const uploadData = await this.fileServerService.generateImageUploadUrl({
+        filename: body.filename,
+        fileSize: body.fileSize,
+        type: 'comment-photo',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
+        acl: 'public-read',
+        processingOptions: {
+          generateThumbnail: true,
+          generateBlurImage: false,
+          quality: 85,
+          imageFormat: 'webp',
+          immediateProcess: true
+        },
+        metadata: {
+          category: 'comment',
           fileType: 'photo',
           uploadedBy: user._id
         },
@@ -420,11 +540,20 @@ export class ContentFileController {
     @Body() body: { filename: string; fileSize?: number },
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'message-video' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('message-video', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateVideoUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'message-video',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: true,
@@ -479,6 +608,21 @@ export class ContentFileController {
   ): Promise<DataResponse<PostPhotoDraftDiscardDto>> {
     const result = await this.contentFileService.discardPostPhotoDrafts(fileIds, user);
     return DataResponse.ok(result);
+  }
+
+  @Delete('comment/photo/draft/:fileId')
+  @UseGuards(AuthGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({
+    summary: 'Discard an unsent comment image',
+    description: 'Deletes an owned, still-unattached comment image and its physical files. Safe to call twice, and deliberately a no-op once the image belongs to a comment — a cleanup request that arrives late must never strip the picture from a comment that was already posted.'
+  })
+  async discardCommentImageDraft(
+    @Param('fileId') fileId: string,
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<{ fileId: string; deleted: boolean }>> {
+    return DataResponse.ok(await this.contentFileService.discardCommentImageDraft(fileId, user));
   }
 
   @Get('post/video/draft/:fileId')
@@ -577,11 +721,20 @@ export class ContentFileController {
       );
     }
 
+    // Refused before an upload URL exists, and before a pending file
+    // record does: the registry says what a 'post-thumbnail' may be, and a
+    // declared size already over the limit is a transfer nobody wants.
+    // The file server weighs what actually arrives under the same policy.
+    const uploadPolicy = this.uploadPolicyService.assertPublicUpload('post-thumbnail', body.fileSize);
+
     try {
       const uploadData = await this.fileServerService.generateImageUploadUrl({
         filename: body.filename,
         fileSize: body.fileSize,
         type: 'post-thumbnail',
+        // Bound to the durable record, so this upload keeps the limits that
+        // were in force when its token was issued.
+        uploadLimits: this.uploadPolicyService.limitsForRecord(uploadPolicy),
         acl: 'public-read',
         processingOptions: {
           generateThumbnail: false,

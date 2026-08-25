@@ -114,7 +114,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
   return (
     <>
       <div
-        className="home-feed-scrollbar relative h-full min-h-0 flex-1 overflow-hidden bg-(--page-bg) text-white"
+        className="relative h-full min-h-0 flex-1 overflow-hidden bg-(--page-bg) text-white"
         onWheel={handleWheel}
       >
         <PostVideoStage

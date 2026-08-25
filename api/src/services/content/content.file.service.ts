@@ -165,6 +165,44 @@ export class ContentFileService {
   }
 
   /**
+   * Discard a comment image the author decided not to send.
+   *
+   * The whole point of the ownership and reference checks here is that this
+   * endpoint is reachable by a client that is out of date. A cleanup request
+   * that arrives *after* the comment was created must not take the image out of
+   * a published comment, so a file that has been referenced is left alone and
+   * reported as not deleted rather than treated as an error — the caller's
+   * intent (this draft should not survive) is already satisfied.
+   *
+   * Idempotent by construction: a file that is already gone resolves to nothing
+   * and returns the same answer as one this call removed.
+   */
+  public async discardCommentImageDraft(
+    fileId: string,
+    user: UserDto | AuthUserDto
+  ): Promise<{ fileId: string; deleted: boolean }> {
+    const [file] = await this.fileServerService.findByIds([fileId]);
+
+    // Already gone. Repeating the request is not an error.
+    if (!file) return { fileId, deleted: false };
+
+    const isOwner = file.createdBy?.toString() === user._id.toString();
+    if (!user.isAdmin && !isOwner) {
+      throw new ForbiddenException(__t('errors.comment_image_access_denied'));
+    }
+    if (file.type !== 'comment-photo') {
+      throw new ForbiddenException(__t('errors.comment_image_invalid_type'));
+    }
+    // Attached to a comment now, so it is no longer a draft. A late cleanup
+    // must never strip the image from a comment somebody has already posted.
+    if (file.refItems?.length) return { fileId, deleted: false };
+
+    // The shared lifecycle: tombstone, physical file, derivatives, retryable.
+    const result = await this.fileServerService.deleteManyByIds([fileId]);
+    return { fileId, deleted: result.deleted === 1 };
+  }
+
+  /**
    * Validates file ownership and returns the validated files
    *
    * This optimized version reduces duplicate database queries by returning the files

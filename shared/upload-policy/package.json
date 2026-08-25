@@ -1,0 +1,19 @@
+{
+  "name": "@douyin-clone/upload-policy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Public upload limits and error contract, shared verbatim by the API, the file server and the web client.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "sideEffects": false
+}

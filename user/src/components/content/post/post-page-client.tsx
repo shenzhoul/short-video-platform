@@ -22,13 +22,13 @@
 'use client';
 
 import PostCard from '@components/content/post/post-card';
+import { toast } from '@douyin-clone/shared-toast';
 import { IPost } from '@interfaces/post';
 import { showErrorMessage } from '@lib/utils';
 import { deletePost } from '@services/post.service';
 import { useRouter } from 'next/navigation';
 import { FC, useState } from 'react';
 import { AiOutlineArrowLeft } from 'react-icons/ai';
-import { toast } from 'react-toastify';
 import { useProfile } from 'src/providers/profile.provider';
 
 interface PostPageClientProps {

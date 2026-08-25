@@ -172,6 +172,22 @@ export class UserDto extends BaseUserDto {
     };
   }
 
+  /**
+   * Replace the denormalised follow counters with counted ones.
+   *
+   * Used on profile responses, where the number is read side by side with the
+   * list it summarises. The stored counters stay as they are — they are still
+   * what list and sort surfaces use — but a profile never shows a number that
+   * can disagree with the list a click away.
+   */
+  public setFollowCounts(counts: { followers: number; followings: number }) {
+    this.stats = {
+      ...(this.stats || {}),
+      followers: counts.followers,
+      followings: counts.followings
+    } as any;
+  }
+
   private getResponseStats(): ICreatorStats {
     const stats = this.stats || ({} as Record<string, any>);
 

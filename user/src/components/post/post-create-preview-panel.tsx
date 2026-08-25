@@ -3,6 +3,7 @@
 import { Tooltip } from '@components/ui/tooltip';
 import type { PostCoverRatio } from '@hooks/use-post-create';
 import { usePostVideoUpload } from '@hooks/use-post-video-upload';
+import { CREATOR_VIDEO_ACCEPT } from '@lib/creator-publish';
 import { useState } from 'react';
 import { MusicIcon, QuestionOutlinedIcon } from 'src/icons';
 
@@ -148,7 +149,7 @@ export default function PostCreatePreviewPanel({
                 className="hidden"
                 ref={fileInputRef}
                 type="file"
-                accept="video/*,.hevc,.mov"
+                accept={CREATOR_VIDEO_ACCEPT}
                 onChange={handleFileChange}
               />
               <button

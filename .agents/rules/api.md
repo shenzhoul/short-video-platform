@@ -57,6 +57,141 @@ These rules apply to `api/` and to equivalent NestJS code in `file-server/`.
   collision as an idempotent no-op, or an unrelated conflict gets reported as
   success.
 
+## File Attachments
+
+- A file reference on a domain document is attached **after** the owning row is
+  written, never before. `refItems` empty is the draft state the unused-file
+  sweeper collects, so referencing first turns a failed insert into an orphan
+  nothing will reclaim.
+- **That inverts when the row already exists.** Swapping a file pointer on a live
+  row — an avatar, a cover — must reference the new file **first**. The rule
+  underneath both is *never leave a published row pointing at an unreferenced
+  file*: for a new row that means row first, for a pointer swap it means
+  reference first, because the sweeper would otherwise delete an image the
+  profile is already serving. See `BaseUserService.attachProfileImageReference`.
+- **Check that the reference landed.** `updateFileOwnership` reports how many
+  records it matched and always writes `updatedAt`, so `updated: 0` means the
+  file does not exist — and never will carry a reference. Discarding that return
+  publishes a row pointing at something the sweeper collects. Fail the request
+  instead; keeping the previous file is recoverable, a broken row is not.
+- **A grep for `addRef` does not prove a file is unreferenced.**
+  `updateFileOwnership({ ref })` attaches one too and that search never sees it.
+  Confirm with one aggregate over the `files` collection before filing or acting
+  on a missing-reference claim.
+- **Take the replaced id from the swap, never from a pre-read.** Repointing a
+  document at a new file is one
+  `findOneAndUpdate(..., { returnDocument: 'before' })`, and the old file is read
+  out of *that* result. With a separate read first, two concurrent replacements
+  both believe they displaced the original: both delete it, and the intermediate
+  file is left **referenced** and therefore invisible to the sweeper — an orphan
+  nothing can ever collect. Re-read the current pointers before deleting, too:
+  one file can be referenced by two fields of the same document.
+- **Compensate forward, not backward.** Without a shared transaction, order each
+  step so its failure lands somewhere recoverable, and compensate only the steps
+  before the document is correct. Once the row is written and published, a
+  storage failure afterwards is never a reason to roll it back — drop the old
+  file's reference so the sweeper finishes the job, and let the audit script
+  catch the rest. Compensation must not throw: it runs while another failure is
+  already being reported.
+- **Detach on clear, not only on replace.** Anywhere a file pointer is set to
+  null — account deletion, unsetting a cover — remove the reference too, or the
+  file is stranded in the one state nothing collects.
+- Re-check ownership, the durable upload `type`, and that the file is still
+  unreferenced before attaching. Never trust request metadata for the type —
+  image processing normalises it away — and never trust the client's word for
+  who owns it.
+- Reject a file whose processing failed. The record survives a failed decode, and
+  attaching one produces a row pointing at an image that was never produced.
+- A discard endpoint must be idempotent and must **refuse** to delete a file that
+  has since been referenced: a cleanup request racing a successful create would
+  otherwise strip the attachment from a published row.
+- Register every new upload `type` in `cleanup-unused-files.job.ts`. Client-side
+  cleanup is an optimisation; the sweeper is what makes a crashed browser or a
+  dropped connection survivable.
+- **Every durable upload type names its own policy, and there is no default.**
+  `shared/upload-policy` is the registry (`getUploadPolicy(type)`), read by the
+  API, the file server and the web client. Both possible defaults are wrong: one
+  that means "the strictest policy in the system" quietly re-scopes every
+  existing upload the first time a feature tightens, and one that means "no
+  limits" is what left post photos, avatars, covers and every video unguarded
+  for as long as it existed. A type with no policy is **refused**
+  (`UNSUPPORTED_UPLOAD_TYPE`) — a typo like `post-phto` must never resolve to
+  something wider than the type it misspells, and a forgotten registration must
+  be a loud 400 rather than an unvalidated file on disk.
+- **Never validate a video with an image validator.** They answer different
+  questions: an audio file renamed `.mp4` is a *valid MP4*, and only counting the
+  non-`attached_pic` video streams catches it. Video needs its own service, its
+  own probe and its own codes — reusing `INVALID_IMAGE_FORMAT` for a video tells
+  the client something untrue about what it sent.
+- **A container that probes cleanly is not a video that exists.** A faststart MP4
+  truncated to a third of its length reports a full duration and a healthy stream
+  from its header; the failure only surfaces in the transcode, on a queue,
+  minutes later. Decode a frame near the *end* (`-ss <duration-2s> -frames:v 1
+  -xerror`), which costs an index seek rather than a full decode. Say plainly
+  that it is not a full integrity proof.
+- **Never whitelist a codec because `ffprobe` can read it.** MPEG-2 probes
+  perfectly and is still refused: the bar is that the pipeline can transcode it
+  and a browser can play the result.
+- Resolve that policy from **server-written, durable data** — the `type` on the
+  record the API created, not the metadata the uploader sent alongside the bytes.
+  Client metadata selecting a policy means the client can opt out of a limit by
+  relabelling, and can impose one on somebody else's upload type. Test both
+  directions.
+- Answer each tier in its own vocabulary. A rejection code scoped to one feature
+  (`COMMENT_*`) must not be raised for an upload that has nothing to do with that
+  feature; the client matching it is asking a narrower question than the one you
+  are answering.
+- One refusal, one code, and never one code for two different refusals. A file
+  that is too many **bytes** and a file that is too many **pixels** are separate
+  problems with separate advice: a 30000x30000 PNG can be 200KB, and a 600x400
+  photograph can be 11MB. Give each its own stable code and its own status —
+  413 belongs to the byte limit and nothing else — and let the client match on
+  the code, never on the message text. See
+  `.agents/skills/file-service-integration/SKILL.md` for the comment-image
+  contract.
+- Public limits that a client also enforces belong in a shared, dependency-free
+  package (`shared/upload-policy`), not in a constant copied into each app. The
+  server stays the authority — the client's copy is early feedback and is never
+  a reason to skip a server check — but both must be reading the same number.
+  Yarn v1 *copies* `file:` dependencies, so add a contract spec comparing the
+  installed module against the repo source or the copies will drift silently.
+- A pixel budget guards memory, not CPU. Per-frame work is roughly linear in
+  frame count and nearly independent of frame size, so an animation of thousands
+  of tiny frames passes every byte and pixel limit while spending real CPU. Bound
+  frame count *and* playing time, and when you measure the cost report CPU time
+  as well as RSS — RSS is exactly what the pixel budget already protects.
+- `sharp().metadata()` reads a header and stops. A truncated file still states
+  good dimensions and passes every size check, and the failure surfaces later as
+  a row pointing at an image that was never produced. Force a full decode
+  (`failOn: 'error'`, then `.stats()`) before accepting the file, and **assert
+  that the check agrees with the processing pipeline**. A cheaper probe that
+  resizes down does not: libjpeg scales during the DCT, reads a fraction of the
+  scanlines, never reaches the truncation, and accepts a file the pipeline then
+  refuses — which is exactly the unrenderable record the check was added to
+  prevent. `.stats()` streams, so a 40-megapixel decode costs CPU and essentially
+  no RSS.
+- Never forward a decoder's error text to a client. Return wording the service
+  wrote and log what the library said.
+- **Bound expensive validation with a concurrency gate, not with hope.** A 60MP
+  decode is seconds of CPU and an FFmpeg probe is a child process, and TUS
+  completions arrive whenever transfers happen to finish — nothing in the request
+  path bounds the fan-out on its own. Gate it, make the *wait* bounded too (a
+  full gate should answer "busy" rather than parking a request forever), and
+  release the slot in a `finally`: a rejection is the common case for a
+  validator, so a limiter that leaks a slot per refusal seizes up after N bad
+  files. Give every child process a timeout, SIGKILL it when it overruns, and cap
+  how much of its output you keep in memory.
+- **Never forward a probe's or decoder's error text to a client.** "moov atom not
+  found" is a fact about a demuxer, not advice for whoever picked the file. Log
+  what the library said; return wording the service wrote.
+- Decide what an uploaded file **is** from its bytes, never from the extension,
+  the declared MIME, or the `accept` attribute — every one of those is chosen by
+  whoever uploads, and renaming `clip.mp4` to `clip.png` changes all of them at
+  once. Bound the decoded size as well as the byte size, and apply that bound
+  through the decoder (`limitInputPixels`) so an oversized image is refused when
+  it is opened rather than after it is in memory. See
+  `.agents/skills/file-service-integration/SKILL.md`.
+
 ## Queues And Sockets
 
 - Put jobs under `api/src/jobs/<domain>/`.

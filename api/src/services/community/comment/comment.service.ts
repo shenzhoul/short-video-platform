@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model, SortOrder } from "mongoose";
 import { EVENT } from "src/kernel/constants";
@@ -16,6 +16,16 @@ import { ReactionService } from "src/services/community/reaction/reaction.servic
 import { BaseUserService } from "src/services/identity";
 import { __t } from "src/utils/translation";
 import { InvalidCommentLevelException } from "src/common/exceptions/comment/invalid-level.exception";
+import { InvalidCommentImageException } from "src/common/exceptions/comment/invalid-comment-image.exception";
+import { FileServerService } from "src/services/shared/file-server";
+
+/**
+ * The durable upload target a comment image must have been created with.
+ *
+ * Checked against the stored `type` rather than request metadata, because image
+ * processing normalises the latter away.
+ */
+const COMMENT_IMAGE_UPLOAD_TYPE = 'comment-photo';
 
 /**
  * Comment Service
@@ -62,8 +72,11 @@ export class CommentService {
     @InjectModel(Comment.name) private readonly CommentModel: Model<CommentDocument>,
     private readonly queueMessageService: QueueMessageService,
     private readonly baseUserService: BaseUserService,
-    private readonly reactionService: ReactionService
+    private readonly reactionService: ReactionService,
+    private readonly fileServerService: FileServerService
   ) { }
+
+  private readonly logger = new Logger(CommentService.name);
   /**
   * find comment by ID
   * @param id
@@ -71,7 +84,9 @@ export class CommentService {
   */
   public async findById(id: string | ObjectId): Promise<CommentDto | null> {
     const item = await this.CommentModel.findById(id);
-    return CommentDto.fromModel(item);
+    const dto = CommentDto.fromModel(item);
+    if (dto) await this.attachImages([dto], [item]);
+    return dto;
   }
 
   /**
@@ -107,6 +122,9 @@ export class CommentService {
       ? [comment, rootDocument]
       : [comment];
     const dtos = documents.map((document) => CommentDto.fromModel(document));
+    // The notification card renders through this path, so an image has to be
+    // resolved here too or a deep link would show the comment without it.
+    await this.attachImages(dtos, documents);
 
     // One batched author lookup for both, mirroring how `search` populates.
     const users = await this.baseUserService.findByIds(documents.map((d) => d.createdBy));
@@ -157,6 +175,7 @@ export class CommentService {
     const dto = CommentDto.fromModel(comment);
     const [author] = await this.baseUserService.findByIds([comment.createdBy]);
     if (author) dto.setUser(new UserDto(author));
+    await this.attachImages([dto], [comment]);
 
     return dto;
   }
@@ -355,6 +374,7 @@ export class CommentService {
       UIds.length ? this.baseUserService.findByIds(UIds) : [],
       user && commentIds.length ? this.reactionService.findByUserIdAndObjectId(user._id, commentIds, REACTION_TYPES.LIKE) : []
     ]);
+    await this.attachImages(comments, items);
     comments.forEach((comment: CommentDto) => {
       const userComment = users.find((u) => u._id.toString() === comment.createdBy.toString());
       const liked = reactions.find((reaction) => reaction.objectId.toString() === comment._id.toString());
@@ -420,9 +440,114 @@ export class CommentService {
     return users.map(user => new ObjectId(user._id));
   }
 
+  /**
+   * Resolve the attached images for a page of comments, in one lookup.
+   *
+   * Batched deliberately: a page of twenty comments must not become twenty file
+   * lookups. Comments with no image cost nothing, which is the overwhelming
+   * majority.
+   *
+   * A comment whose file no longer resolves simply renders without an image
+   * rather than with a broken one — the file may have been swept, withdrawn, or
+   * deleted with another resource.
+   */
+  private async attachImages(comments: CommentDto[], models: any[]): Promise<void> {
+    const byComment = new Map<string, string>();
+    models.forEach((model) => {
+      const imageId = model?.imageId?.toString();
+      if (imageId) byComment.set(model._id.toString(), imageId);
+    });
+    if (!byComment.size) return;
+
+    try {
+      const files = await this.fileServerService.findByIds([...new Set(byComment.values())]);
+      const fileById = new Map(files.map((file: any) => [file._id.toString(), file]));
+      comments.forEach((comment) => {
+        const imageId = byComment.get(comment._id.toString());
+        if (imageId) comment.setImage(fileById.get(imageId));
+      });
+    } catch (error: any) {
+      // The comments themselves are readable and must still be returned; a
+      // file-server hiccup costs the pictures, not the conversation.
+      this.logger.error(`Failed to resolve comment images: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * Confirm the caller may attach this image, and hand back the file.
+   *
+   * Four things have to be true, and none of them can be taken from the request:
+   *
+   *  - the file exists;
+   *  - it was uploaded by this user, so nobody can attach somebody else's;
+   *  - it was uploaded *as a comment image*, checked against the durable `type`
+   *    rather than request metadata that image processing may normalise away —
+   *    this is what stops an avatar or a post video being passed off as one;
+   *  - it is still unreferenced, so one upload cannot be attached to several
+   *    comments and a cleanup for one cannot take the image out of another.
+   *
+   * The file server decides what an image *is*, by inspecting the bytes during
+   * processing. A rejected upload never produces a record, so a video renamed
+   * `.jpg` has no id to send here in the first place.
+   */
+  private async resolveCommentImage(
+    imageId: string | undefined,
+    user: UserDto | AuthUserDto
+  ): Promise<any | null> {
+    if (!imageId) return null;
+
+    const [file] = await this.fileServerService.findByIds([imageId]);
+    if (!file) throw new EntityNotFoundException(__t('errors.comment_image_not_found'));
+
+    const isOwner = file.createdBy?.toString() === user._id.toString();
+    if (!user.isAdmin && !isOwner) {
+      throw new ForbiddenException(__t('errors.comment_image_access_denied'));
+    }
+    if (file.type !== COMMENT_IMAGE_UPLOAD_TYPE) {
+      throw new ForbiddenException(__t('errors.comment_image_invalid_type'));
+    }
+    if (file.refItems?.length) {
+      throw new ForbiddenException(__t('errors.comment_image_already_attached'));
+    }
+
+    // The file server decodes every upload and deletes what it cannot read, so
+    // a video renamed `.jpg` normally has no record to reach this point at all.
+    // Neither the extension nor the declared MIME type is evidence of anything,
+    // and this is the last place that can tell.
+    //
+    // Still checked here because a record can survive a failure that happened
+    // *after* validation — a crash mid-processing, or an older file written
+    // before content validation existed. Attaching one produces a comment
+    // pointing at an image that was never produced, which renders as a broken
+    // box for every reader.
+    if ((file as any).status === 'error' || (file as any).processingError) {
+      throw new InvalidCommentImageException();
+    }
+
+    // An upload that has not finished processing has no dimensions yet, so a
+    // comment created now would reserve no space and shift the thread when the
+    // picture finally loaded. The composer waits for this; a direct API caller
+    // is told to.
+    const processing = (file as any).processingStatus;
+    if (processing && !['completed', 'skipped'].includes(processing)) {
+      throw new InvalidCommentImageException(__t('errors.comment_image_not_ready'));
+    }
+
+    return file;
+  }
+
   public async createUserComment(payload: CommentCreatePayload, user: UserDto | AuthUserDto): Promise<CommentDto> {
     const comment: Record<string, any> = { ...payload };
+    // Never persisted: it exists only so the class-level "text or image" rule
+    // has something to hang off.
+    delete comment.hasContent;
     comment.mentionedUserIds = await this.resolveMentionedUserIds(payload.mentionedUserIds);
+
+    // Checked before anything is written, so a refused image never leaves a
+    // comment behind. Returns the file so the response can render the image
+    // without a second lookup.
+    const imageFile = await this.resolveCommentImage(payload.imageId, user);
+    if (!imageFile) delete comment.imageId;
 
     // Validate and set comment level
     let level = 0;
@@ -447,7 +572,48 @@ export class CommentService {
     comment.updatedAt = new Date();
 
     const newComment = await this.CommentModel.create(comment);
+
+    // Referenced only after the comment exists.
+    //
+    // The order is what keeps the two stores consistent without a shared
+    // transaction. Referencing first would make a failed insert leave a file
+    // nothing points at; this way the file is only claimed once there is
+    // something to claim it.
+    //
+    // A failure here is **not** survivable as a success. The comment would name
+    // an image the file server does not know is in use, and the unused-file
+    // sweeper would eventually reclaim it — leaving a published comment pointing
+    // at a file that no longer exists. So the comment is rolled back and the
+    // request fails, rather than reporting a comment that is not yet whole.
+    //
+    // A process death in this window cannot be compensated from here, and is
+    // repaired instead by `CommentImageIntegrityService`, which runs before
+    // every sweep.
+    if (imageFile) {
+      try {
+        await this.fileServerService.addRefToMultipleFiles([imageFile._id.toString()], {
+          itemId: newComment._id,
+          itemType: 'comment'
+        });
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to reference comment image ${imageFile._id}; rolling the comment back: ${error.message}`,
+          error.stack
+        );
+        await this.CommentModel.deleteOne({ _id: newComment._id }).catch((rollbackError) => {
+          // Best effort, and it must not mask the cause. The integrity pass
+          // repairs whatever this leaves behind.
+          this.logger.error(
+            `Failed to roll back comment ${newComment._id}: ${rollbackError.message}`,
+            rollbackError.stack
+          );
+        });
+        throw error;
+      }
+    }
+
     const dto = CommentDto.fromModel(newComment);
+    dto.setImage(imageFile);
     // The author is attached BEFORE publishing, not after.
     //
     // Subscribers receive the serialised DTO at publish time, so setting the
@@ -553,14 +719,47 @@ export class CommentService {
       commentIds = [...commentIds, ...replyIds];
     }
 
+    // The images of everything about to go, collected while the rows still
+    // exist. Read before the delete because afterwards there is nothing left to
+    // read them from.
+    const imageIds = (await this.CommentModel
+      .find({ _id: { $in: commentIds }, imageId: { $exists: true } })
+      .select({ imageId: 1 })
+      .lean())
+      .map((row: any) => row.imageId?.toString())
+      .filter(Boolean);
+
     // Delete reactions before their comment targets, then remove the thread in
     // one batch. The normal comment event below still updates the live post.
     await this.reactionService.deleteReactionsByTargets('comment', commentIds);
     await this.CommentModel.deleteMany({ _id: { $in: commentIds } });
 
+    // Media last, and through the shared file lifecycle rather than a private
+    // unlink: that path tombstones the record, removes the derivatives and the
+    // physical file, and is safe to repeat.
+    //
+    // A failure here is deliberately not fatal. The comment is already gone, so
+    // the image is unreferenced — which is exactly the state the sweeper
+    // collects. Failing the request would leave the caller thinking the comment
+    // survived when it did not.
+    if (imageIds.length) {
+      await this.fileServerService.deleteManyByIds(imageIds).catch((error) => {
+        this.logger.error(
+          `Failed to delete comment images ${imageIds.join(', ')}: ${error.message}`,
+          error.stack
+        );
+      });
+    }
+
+    // Carries no image: the file has been withdrawn, and a live delete event
+    // holding its URL would hand every viewer a link to something that no
+    // longer exists.
+    const deletedDto = CommentDto.fromModel(comment);
+    delete deletedDto.image;
+
     await this.queueMessageService.publish(COMMENT_CHANNELS.COMMENT, {
       eventName: EVENT.DELETED,
-      data: CommentDto.fromModel(comment)
+      data: deletedDto
     });
     return { deleted: true };
   }
@@ -658,6 +857,7 @@ export class CommentService {
       user && commentIds.length ? this.reactionService.findByUserIdAndObjectId(user._id, commentIds, REACTION_TYPES.LIKE) : []
     ]);
 
+    await this.attachImages(commentDtos, items);
     // Populate comment data with user and reaction information
     commentDtos.forEach((comment: CommentDto) => {
       const userComment = users.find((u) => u._id.toString() === comment.createdBy.toString());

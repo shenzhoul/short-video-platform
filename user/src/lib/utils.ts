@@ -1,6 +1,6 @@
+import { toast } from '@douyin-clone/shared-toast';
 import { clearToken } from '@services/auth.service';
 import { signOut } from 'next-auth/react';
-import { toast } from 'react-toastify';
 
 export const defaultSettings = {
   siteName: 'Douyin-Clone',

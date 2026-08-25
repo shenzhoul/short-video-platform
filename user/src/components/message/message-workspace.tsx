@@ -10,6 +10,7 @@ import { useSession } from 'next-auth/react';
 import { FiChevronLeft, FiExternalLink, FiX } from 'react-icons/fi';
 
 import ConversationList from './conversation-list';
+import MessageThreadActions from './message-thread-actions';
 import MessageThreadPanel from './message-thread-panel';
 
 /**
@@ -119,6 +120,7 @@ export default function MessageWorkspace() {
                       <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-(--text-strong)">
                         {participant?.name || participant?.username || 'Conversation'}
                       </span>
+                      <MessageThreadActions conversation={conversation} />
                       {openPageLink}
                       {closeButton}
                     </div>

@@ -67,6 +67,7 @@ export class FileInternalController {
         contentType: payload.contentType,
         processingOptions: payload.processingOptions,
         metadata: payload.metadata,
+        uploadLimits: payload.uploadLimits,
         createdBy: payload.createdBy,
         updatedBy: payload.updatedBy
       });
@@ -102,6 +103,7 @@ export class FileInternalController {
         acl: payload.acl,
         processingOptions: payload.processingOptions,
         metadata: payload.metadata,
+        uploadLimits: payload.uploadLimits,
         createdBy: payload.createdBy || null,
         updatedBy: payload.updatedBy || null
       });
@@ -223,6 +225,34 @@ export class FileInternalController {
       return DataResponse.ok({ message: 'Reference added successfully' });
     } catch (error) {
       return DataResponse.error(error.message || 'Failed to add reference');
+    }
+  }
+
+  /**
+   * Remove a reference from a file
+   *
+   * The compensating half of `add-ref`. A caller that claimed a file and then
+   * failed to finish the operation uses this to hand it back to the sweeper,
+   * rather than leaving a reference nothing points at.
+   *
+   * @param fileId - File ID
+   * @param payload - Reference information
+   * @returns Whether a reference was removed
+   */
+  @Post(':fileId/remove-ref')
+  @HttpCode(HttpStatus.OK)
+  async removeRef(
+    @Param('fileId') fileId: string,
+    @Body() payload: { itemId: string; itemType: string }
+  ) {
+    try {
+      const result = await this.fileService.removeRef(fileId, {
+        itemId: new ObjectId(payload.itemId),
+        itemType: payload.itemType
+      });
+      return DataResponse.ok({ message: 'Reference removed successfully', ...result });
+    } catch (error) {
+      return DataResponse.error(error.message || 'Failed to remove reference');
     }
   }
 

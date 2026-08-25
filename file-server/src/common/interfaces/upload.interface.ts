@@ -64,6 +64,14 @@ export interface ISignedUploadRequest {
   contentType?: string;
   processingOptions?: IFileProcessingOptions;
   metadata?: Record<string, any>;
+  /**
+   * Effective limits from the API, bound to the durable record.
+   *
+   * Clamped to this service's hard ceilings before use — see
+   * `resolveUploadPolicy`. Numbers from another process are still numbers from
+   * another process.
+   */
+  uploadLimits?: Record<string, number>;
   createdBy?: string;
   updatedBy?: string;
 }

@@ -54,7 +54,15 @@ interface UseCommentsReturn {
   total: number;
   hasMore: boolean;
   createComment: (
-    data: { content: string; objectId?: string; objectType?: 'post' | 'comment' },
+    data: {
+      content: string;
+      objectId?: string;
+      objectType?: 'post' | 'comment';
+      imageId?: string;
+      mentionedUserIds?: string[];
+      replyToUserId?: string;
+      replyToName?: string;
+    },
     creator?: any
   ) => Promise<IComment | void>;
   /**
@@ -138,6 +146,9 @@ export const useComments = ({
       objectType?: 'post' | 'comment';
       replyToUserId?: string;
       replyToName?: string;
+      /** The already-uploaded image this comment carries, if any. */
+      imageId?: string;
+      mentionedUserIds?: string[];
     },
     creator?: any
   ) => {

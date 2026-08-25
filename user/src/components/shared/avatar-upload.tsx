@@ -16,7 +16,6 @@
  *   size="lg"
  *   cropOptions={{ aspect: 1, width: 400, height: 400 }}
  *   cropShape="round"
- *   limitSizeMB={10}
  * />
  *
  * Features:
@@ -30,16 +29,24 @@
  */
 
 import ImageCropModal from '@components/ui/image-crop-modal';
+import { toast } from '@douyin-clone/shared-toast';
 import { useFileUpload } from '@hooks/use-file-upload-server';
+import { acceptAttributeFor, AVATAR_UPLOAD_TYPE, describeRejectedUpload } from '@lib/upload-policy';
 import { userService } from '@services/user.service';
 import {
   ChangeEvent, useEffect, useRef, useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 // won't allow heic, heif images - they cannot preview in non-Safari browsers
-const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif', 'image/tiff', 'image/tif'];
-const acceptTypes = '.jpg,.jpeg,.png,.webp,.avif,.tiff,.tif';
+/**
+ * What the picker advertises, from the avatar policy.
+ *
+ * The hand-written list this replaces offered TIFF, which the image
+ * pipeline has never decoded — so the picker invited a file the server was
+ * always going to refuse. A hint either way: `accept` is bypassed by
+ * choosing "All files" and ignored outright on some platforms.
+ */
+const acceptTypes = acceptAttributeFor(AVATAR_UPLOAD_TYPE);
 
 interface LocalUploadResult {
   fileId: string;
@@ -50,7 +57,6 @@ interface LocalUploadResult {
 
 interface AvatarUploadProps {
   previewUrl?: string;
-  limitSizeMB?: number;
   accept?: string;
   autoStart?: boolean;
   onStartUpload?: (file: File) => void;
@@ -68,7 +74,6 @@ interface AvatarUploadProps {
 
 function AvatarUpload({
   previewUrl = '',
-  limitSizeMB = 50,
   accept = acceptTypes,
   autoStart = true,
   onStartUpload = () => { },
@@ -90,16 +95,29 @@ function AvatarUpload({
 
   const { state, uploadFile } = useFileUpload({
     endpoint: '/identity/files/user/avatar/upload',
+    // The durable type the API writes onto the record, so the picker holds the
+    // file to exactly the limits the upload will be judged by.
+    uploadType: AVATAR_UPLOAD_TYPE,
     uploadOptions: {},
     showSuccessMessage: false,
-    maxSizeMB: limitSizeMB,
-    allowedTypes,
     onUploadStart: (f) => {
       if (onStartUpload) onStartUpload(f);
     },
     onUploadSuccess: async (result) => {
-      // call API to update immediately
-      const avatarResponse = await userService.updateAvatar(result.fileId);
+      // The bytes arriving is not the avatar changing — the API still has to
+      // claim the file and repoint the profile, and it refuses (409) rather than
+      // publish an avatar the unused-file sweeper would delete. This callback is
+      // invoked without being awaited, so a rejection here would surface as an
+      // unhandled promise and the person would be left looking at their old
+      // picture with nothing said. Catch it and say so.
+      let avatarResponse;
+      try {
+        avatarResponse = await userService.updateAvatar(result.fileId);
+      } catch (error: any) {
+        toast.error(error?.message || error?.data?.message || 'Could not update your avatar. Please try again.');
+        return;
+      }
+
       const updatedAvatar = avatarResponse?.data || {};
       const nextAvatarUrl = updatedAvatar.url || result.fileInfo?.url;
       toast.success('Avatar updated successfully');
@@ -126,15 +144,23 @@ function AvatarUpload({
     xl: 'w-40 h-40'
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
     e.stopPropagation();
 
     const selected = e.target.files?.[0];
     if (!selected) return;
 
-    if (selected.size > (limitSizeMB * 1024 * 1024)) {
-      toast.error(`File size exceeds ${limitSizeMB}MB limit.`);
+    // Judged against the avatar policy, not against a per-caller number. What
+    // is uploaded is the *cropped* JPEG rather than this file, so this is the
+    // early warning — "that picture is far too big to work with" — and the hook
+    // checks the crop again before it sends anything.
+    const rejection = await describeRejectedUpload(selected, AVATAR_UPLOAD_TYPE);
+    if (rejection) {
+      toast.error(rejection);
+      // Cleared so picking the same file again re-fires `change`. Without this,
+      // a second attempt at the corrected file does nothing at all.
+      e.target.value = '';
       return;
     }
 

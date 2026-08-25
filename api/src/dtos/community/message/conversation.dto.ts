@@ -79,6 +79,20 @@ export class ConversationDto {
   @Expose()
   restrictionReason: string | null;
 
+  /**
+   * The viewer's own flags on the other person.
+   *
+   * Only the viewer's own direction is exposed: it drives their Unblock and
+   * Unrestrict actions. The reverse direction is deliberately absent — a
+   * restricted person must not be able to read that they were restricted, and
+   * shipping it "for the UI" is how that leaks.
+   */
+  @Expose()
+  blockedByMe: boolean;
+
+  @Expose()
+  restrictedByMe: boolean;
+
   public static fromModel(model: any): ConversationDto | null {
     if (!model) return null;
 
@@ -104,6 +118,8 @@ export class ConversationDto {
     this.requestState = state.requestState;
     this.awaitingReplyFrom = state.awaitingReplyFrom;
     this.restrictionReason = state.restrictionReason;
+    this.blockedByMe = state.blockedByMe;
+    this.restrictedByMe = state.restrictedByMe;
   }
 
   /** The other participant's id, from `viewerId`'s point of view. */

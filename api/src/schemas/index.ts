@@ -36,5 +36,6 @@ export * from './content';
 // Community schemas
 export * from './community/comment';
 export * from './community/message';
+export * from './community/relationship';
 export * from './community/notification';
 export * from './community/reaction';

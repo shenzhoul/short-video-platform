@@ -1,11 +1,11 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import type { CursorInfo } from '@interfaces/pagination';
 import { IPost, PostInteractionPatch } from '@interfaces/post';
 import { applyPostInteractionPatchToPosts } from '@lib/post-interactions';
 import { likedPosts as getLikedPosts, unlikePosts as unlikePostsService } from '@services/post.service';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 
 interface UseLikedPostsOptions {
   enabled: boolean;

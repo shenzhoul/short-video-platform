@@ -1,4 +1,5 @@
 import { APIRequest } from './api-request';
+import { uploadFile, UploadProgress } from './file-upload.service';
 
 export class CommentService extends APIRequest {
   /**
@@ -15,6 +16,38 @@ export class CommentService extends APIRequest {
    */
   search(contentType: string, contentId: string, query: { [key: string]: any } = {}) {
     return this.get(this.buildUrl(`/social/${contentType}/${contentId}/comments`, query));
+  }
+
+  /**
+   * Upload the one image a comment may carry, resolving to its file id.
+   *
+   * Goes through the shared upload pipeline rather than posting the bytes with
+   * the comment, so a large picture transfers with progress and the comment
+   * itself stays a small JSON request.
+   */
+  async uploadImage(file: File, onProgress?: (progress: UploadProgress) => void) {
+    const result = await uploadFile('/content/files/comment/photo/upload', file, {}, onProgress);
+    if (!result.success) {
+      // The server's stable code travels with the error. Without it the
+      // composer cannot tell "that is not an image" — which is the author's
+      // problem and has a specific message — from a dropped connection, which
+      // is not and does not.
+      const failure: Error & { code?: string } = new Error(result.error || 'Image upload failed');
+      failure.code = result.errorCode;
+      throw failure;
+    }
+    return result;
+  }
+
+  /**
+   * Discard an uploaded image the author decided not to send.
+   *
+   * Best effort by design: the server refuses to touch a file that has since
+   * become part of a comment, and an abandoned upload this never reaches is
+   * collected by the unused-file sweeper instead.
+   */
+  discardImage(fileId: string) {
+    return this.del(`/content/files/comment/photo/draft/${fileId}`);
   }
 
   /**
@@ -63,3 +96,5 @@ export const updateComment = (commentId: string, payload: any) => commentService
 export const deleteComment = (commentId: string) => commentService.delete(commentId);
 export const resolveCommentTarget = (commentId: string) => commentService.resolveTarget(commentId);
 export const fetchHotComment = (postId: string) => commentService.hotComment(postId);
+export const uploadCommentImage = (file: File, onProgress?: (progress: UploadProgress) => void) => commentService.uploadImage(file, onProgress);
+export const discardCommentImage = (fileId: string) => commentService.discardImage(fileId);

@@ -1,6 +1,7 @@
 'use client';
 
 import type { GraphicFileItem } from '@hooks/use-post-graphic-create';
+import { CREATOR_PHOTO_ACCEPT } from '@lib/creator-publish';
 import { useRef } from 'react';
 
 import PostCreateSendAssistant from './post-create-send-assistant';
@@ -42,7 +43,7 @@ export default function PostGraphicPreviewPanel({
             ref={inputRef}
             type="file"
             multiple
-            accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff"
+            accept={CREATOR_PHOTO_ACCEPT}
             className="hidden"
             onChange={event => {
             onReplaceFiles?.(Array.from(event.target.files || []));

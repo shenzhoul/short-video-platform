@@ -1,5 +1,4 @@
 import './globals.css';
-import 'react-toastify/dist/ReactToastify.css';
 import './main.css';
 import './responsive.css';
 

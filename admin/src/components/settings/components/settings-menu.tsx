@@ -9,7 +9,11 @@ interface SettingsMenuProps {
 }
 
 const menuItems = [
-  { key: 'site', label: 'General' }
+  { key: 'site', label: 'General' },
+  // Upload limits live in the ordinary settings collection and render through
+  // the same generic form as every other group — they are `number` settings with
+  // `meta.min` / `meta.max`, so no bespoke component is needed here.
+  { key: 'upload-limits', label: 'Upload limits' }
 ];
 
 export const SettingsMenu: React.FC<SettingsMenuProps> = ({ selectedTab }) => {

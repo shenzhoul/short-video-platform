@@ -68,6 +68,14 @@ Load the matching repo skill before changing specialized areas:
 
 This repo is indexed under `.code-review-graph/`, served by the `code-review-graph` MCP server declared in `.mcp.json`. Prefer these tools over grep for structural questions such as definitions, callers/callees, impact, and system tracing. Use `rg` for literal text and file discovery. See `.agents/rules/shared.md` for the tool names and query patterns. The index does not auto-update; refresh it when `list_graph_stats_tool` reports a stale `Last updated`.
 
+## Browser Verification Screenshots
+
+Every screenshot from browser verification goes into the one fixed folder `output/screenshots/` at the
+repo root (`mkdir -p output/screenshots`), never a system temp directory or the Claude scratchpad.
+Name files in order by scenario (`01-before.png`, `02-after.png`, `03-dark-theme.png`). All of
+`/output/` is git-ignored — never stage a screenshot, and never touch an earlier task's shots. Full
+rules, including what to keep and what the final report must state, are in the root `AGENTS.md`.
+
 ## Minimum Delivery Bar
 
 - Research the nearest existing implementation before adding a new feature.

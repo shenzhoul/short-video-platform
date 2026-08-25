@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ObjectId } from 'mongodb';
 import { Model, SortOrder } from 'mongoose';
 import { PAGINATION_DEFAULTS, USER_STATUS } from 'src/common/constants';
-import { MESSAGE_PREVIEW_LENGTH } from 'src/common/constants/community';
+import { MESSAGE_PREVIEW_LENGTH, MESSAGE_TYPES } from 'src/common/constants/community';
 import { applyCursorPagination } from 'src/common/utils/pagination.util';
 import { ConversationDto } from 'src/dtos/community/message';
 import { UserDto } from 'src/dtos/identity/user';
@@ -20,11 +20,20 @@ import {
   UserDocument
 } from 'src/schemas';
 import { FollowService } from 'src/services/community/follow';
+import { RelationshipState, UserRelationshipService } from 'src/services/community/relationship';
 import { BaseUserService } from 'src/services/identity/user/base-user.service';
 import { __t } from 'src/utils/translation';
 
 import { ConversationParticipantService } from './conversation-participant.service';
 import { MessagePermissionService, MessagePermissionState } from './message-permission.service';
+
+/** No flags set — the state a pair has until one of them sets one. */
+const EMPTY_RELATIONSHIP_STATE: RelationshipState = {
+  blockedByMe: false,
+  blockedMe: false,
+  restrictedByMe: false,
+  restrictedMe: false
+};
 
 /**
  * Owns direct conversations: identity of a pair, the list a user sees, and the
@@ -45,7 +54,8 @@ export class ConversationService {
     private readonly baseUserService: BaseUserService,
     private readonly followService: FollowService,
     private readonly permissionService: MessagePermissionService,
-    private readonly participantService: ConversationParticipantService
+    private readonly participantService: ConversationParticipantService,
+    private readonly relationshipService: UserRelationshipService
   ) {}
 
   /**
@@ -238,9 +248,13 @@ export class ConversationService {
     });
 
     const otherIds = [...otherIdByConversation.values()];
-    const [participants, mutualIds] = await Promise.all([
+    // Batched, not per row: a reader with twenty conversations would otherwise
+    // cost twenty follow lookups and twenty relationship lookups to render one
+    // page of the list.
+    const [participants, mutualIds, relationshipMap] = await Promise.all([
       this.baseUserService.findByIds(otherIds),
-      this.followService.getMutualFollowerIdSet(userId, otherIds)
+      this.followService.getMutualFollowerIdSet(userId, otherIds),
+      this.relationshipService.getStateMap(userId, otherIds)
     ]);
     const participantMap = new Map(participants.map(item => [item._id.toString(), item]));
 
@@ -258,7 +272,8 @@ export class ConversationService {
       dto.setPermission(this.permissionService.describe(
         conversation,
         userId,
-        otherId ? mutualIds.has(otherId.toString()) : false
+        otherId ? mutualIds.has(otherId.toString()) : false,
+        (otherId && relationshipMap.get(otherId.toString())) || EMPTY_RELATIONSHIP_STATE
       ));
 
       results.push(dto);
@@ -305,6 +320,35 @@ export class ConversationService {
     );
   }
 
+  /**
+   * Record a system notice as the conversation's latest activity.
+   *
+   * Sets the preview type and the activity time, and pointedly **not**
+   * `lastSenderId`: that field is read by the consent rules to decide whether a
+   * send is a reply, so a notice writing to it could accept a message request
+   * nobody answered. It keeps pointing at the last real message.
+   *
+   * `lastMessage` is cleared rather than filled with wording. The row's label is
+   * derived from `lastMessageType` on the client, exactly as `[Photo]` and
+   * `[Post]` are, which keeps it translatable and keeps an enum name out of the
+   * conversation list.
+   */
+  public async applySystemNotice(
+    conversationId: string | ObjectId,
+    createdAt: Date
+  ): Promise<void> {
+    await this.conversationModel.updateOne(
+      { _id: toObjectId(conversationId) },
+      {
+        $set: {
+          lastMessage: '',
+          lastMessageType: MESSAGE_TYPES.SYSTEM,
+          lastMessageCreatedAt: createdAt
+        }
+      }
+    );
+  }
+
   /** Build the full payload for one conversation, including live permission. */
   public async decorateOne(
     conversation: any,
@@ -328,7 +372,9 @@ export class ConversationService {
           canSend: false,
           requestState: 'idle',
           awaitingReplyFrom: null,
-          restrictionReason: null
+          restrictionReason: null,
+          blockedByMe: false,
+          restrictedByMe: false
         })
     ]);
 

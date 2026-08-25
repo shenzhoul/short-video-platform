@@ -28,7 +28,7 @@ jest.mock('@services/comment.service', () => ({
 
 const viewer = { _id: 'owner-1', username: 'me', name: 'Me' };
 jest.mock('@providers/profile.provider', () => ({ useProfile: () => ({ current: viewer }) }));
-jest.mock('react-toastify', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
+jest.mock('@douyin-clone/shared-toast', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 jest.mock('src/socket/use-socket-listener', () => ({ useSocketListener: () => undefined }));
 
 function comment(overrides: Record<string, any> = {}) {

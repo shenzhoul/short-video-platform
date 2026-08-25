@@ -269,12 +269,71 @@ export const POST_ROOM = {
 export const POST_ROOM_EVENTS = {
   /** A new top-level comment was created on the post. */
   COMMENT_CREATED: 'post:comment_created',
-  /** A new reply was created inside one of the post's threads. */
+  /**
+   * A new reply was created inside one of the post's threads.
+   *
+   * Carries the parent id and the parent's reply count, never the reply itself.
+   * Everyone watching the post is told a thread grew — which is all the
+   * collapsed "Expand N replies" control needs — while the reply body goes only
+   * to {@link COMMENT_ROOM_EVENTS.REPLY_CREATED}, in the thread room, where
+   * somebody is actually reading it.
+   */
   REPLY_CREATED: 'post:reply_created',
   /** A comment or reply was removed. */
   COMMENT_DELETED: 'post:comment_deleted',
   /** Coalesced absolute snapshot of the post's shared counters. */
-  STATS_UPDATED: 'post:stats_updated'
+  STATS_UPDATED: 'post:stats_updated',
+  /**
+   * Coalesced absolute snapshot of one comment's own counters.
+   *
+   * One event for both counters rather than a separate like event and reply
+   * event: they are coalesced through the same set, so a comment taking likes
+   * and replies at once costs one frame instead of two, and the client has a
+   * single place that applies counters by id.
+   */
+  COMMENT_STATS_UPDATED: 'post:comment_stats_updated'
+} as const;
+
+/**
+ * Server -> a single user's own sockets.
+ *
+ * Not a room in the Socket.IO sense: `SocketUserService.emitToUsers` addresses
+ * every socket that user currently has open, which is what makes a count land on
+ * all of their tabs at once.
+ */
+export const USER_STATS_EVENTS = {
+  /**
+   * Coalesced absolute snapshot of one user's follow counters.
+   *
+   * Sent only to the user the numbers belong to. Following counts are not
+   * public live data — a stranger watching a profile has no business receiving a
+   * frame every time that person gains a follower — so this is deliberately
+   * per-user rather than a profile room.
+   */
+  FOLLOW_STATS_UPDATED: 'user:follow_stats_updated'
+} as const;
+
+/**
+ * The room carrying one comment thread's replies.
+ *
+ * Separate from the post room on purpose. A post can hold thousands of threads,
+ * and a viewer is reading at most a handful of them; sending every reply on the
+ * post to everyone watching it would put the bulk of the traffic in front of
+ * people with the thread collapsed. Joining is therefore scoped to the threads
+ * actually expanded, and leaving is tied to collapsing them.
+ */
+export const COMMENT_ROOM = {
+  /** Room name for the viewers of one expanded thread. */
+  name: (commentId: string) => `comment:${commentId}:replies`,
+  /** Client -> server: start/stop receiving one thread's replies. */
+  JOIN: 'comment/join',
+  LEAVE: 'comment/leave'
+} as const;
+
+/** Server -> comment thread room events. */
+export const COMMENT_ROOM_EVENTS = {
+  /** A new reply, in full, for the thread rooms that have it open. */
+  REPLY_CREATED: 'comment:reply_created'
 } as const;
 
 /**
@@ -296,7 +355,21 @@ export const POST_STATS_POLICY = {
    * single tick into an unbounded burst of emits. Anything above the cap stays
    * in the set and is picked up by the next flush.
    */
-  MAX_POSTS_PER_FLUSH: 200
+  MAX_POSTS_PER_FLUSH: 200,
+
+  /**
+   * Ceiling on comments drained per flush. Separate from the post ceiling
+   * because one post can have many comments moving at once, so the two sets
+   * drain at genuinely different volumes.
+   */
+  MAX_COMMENTS_PER_FLUSH: 500,
+
+  /**
+   * Ceiling on users drained per follow-stats flush. Lower than the others: each
+   * one costs two counting queries, and the audience for each snapshot is a
+   * single person's own sessions rather than a room.
+   */
+  MAX_USERS_PER_FOLLOW_FLUSH: 200
 } as const;
 
 /**
@@ -307,6 +380,63 @@ export const POST_STATS_POLICY = {
  * counter. No reply weighting and no time decay in v1.
  */
 export const HOT_COMMENT_MIN_LIKES = 3;
+
+// ===== POST SHARE CONSTANTS =====
+
+/** Queue channel used to make a share's counter update durable. */
+export const SHARE_CHANNELS = {
+  SHARE: 'SHARE_CHANNELS.SHARE'
+} as const;
+
+/**
+ * Share domain events.
+ *
+ * `record-requested` is an outbox entry, not a notification: the shared message
+ * already exists, and this says the distinct-sharer row still has to be written.
+ * Published only when the inline attempt failed, so the happy path costs no job.
+ */
+export const SHARE_EVENTS = {
+  RECORD_REQUESTED: 'share:record-requested'
+} as const;
+
+// ===== USER RELATIONSHIP CONSTANTS =====
+
+/**
+ * One-way flags a user sets on another user.
+ *
+ * Deliberately separate from follows. A follow is about seeing someone's
+ * content; these are about what somebody may send you, and conflating them is
+ * what made "unfollow to stop the messages" the only tool available.
+ *
+ * - `block`    — hard stop, symmetric in effect: neither may message the other.
+ * - `restrict` — one-way, quiet: the restricted person cannot send any more.
+ *
+ * `mute` is intentionally absent; nothing in the product produces it yet.
+ */
+/** Queue channel carrying block/restrict changes for other domains to react to. */
+export const RELATIONSHIP_CHANNELS = {
+  RELATIONSHIP: 'RELATIONSHIP_CHANNELS.RELATIONSHIP'
+} as const;
+
+/**
+ * Relationship domain events.
+ *
+ * Only the clearing of a flag is published. Setting one takes permissions away,
+ * and nothing needs to react to that; lifting one can make an announcement true
+ * that was refused while the flag was up.
+ */
+export const RELATIONSHIP_EVENTS = {
+  CLEARED: 'relationship:cleared'
+} as const;
+
+export const RELATIONSHIP_TYPES = {
+  BLOCK: 'block',
+  RESTRICT: 'restrict'
+} as const;
+
+export const RELATIONSHIP_TYPE_LIST = Object.values(RELATIONSHIP_TYPES);
+
+export type RelationshipType = (typeof RELATIONSHIP_TYPES)[keyof typeof RELATIONSHIP_TYPES];
 
 // ===== DIRECT MESSAGE CONSTANTS =====
 
@@ -320,10 +450,58 @@ export const HOT_COMMENT_MIN_LIKES = 3;
 export const MESSAGE_TYPES = {
   TEXT: 'text',
   IMAGE: 'image',
-  VIDEO: 'video'
+  VIDEO: 'video',
+  /**
+   * A post shared into the conversation.
+   *
+   * Carries only `postId`. The card is rendered from the post read back at
+   * request time, never from a copy taken when it was shared: a post that was
+   * deleted, hidden or whose author was suspended must stop rendering, and a
+   * snapshot in the message would keep showing content that has been withdrawn.
+   */
+  POST: 'post',
+  /**
+   * A notice the system itself put in the thread — nobody sent it.
+   *
+   * Carries `systemEvent` rather than text, so the wording stays translatable
+   * and is resolved per reader instead of frozen in whichever language the
+   * event happened to fire in.
+   */
+  SYSTEM: 'system'
 } as const;
 
 export const MESSAGE_TYPE_LIST = Object.values(MESSAGE_TYPES);
+
+/**
+ * The types the composer may ask for.
+ *
+ * `post` is excluded on purpose: a shared post is created by the share endpoint,
+ * which resolves the post and checks that both people may see it. Letting the
+ * composer name the type would allow a message to claim to be a shared post
+ * while carrying no post at all.
+ */
+/**
+ * Notices the system can place in a conversation.
+ *
+ * Deliberately its own field rather than one message type per event: the
+ * renderer branches on `type === 'system'` once, and a future notice is a new
+ * value here instead of a new branch everywhere a message is drawn.
+ */
+export const MESSAGE_SYSTEM_EVENTS = {
+  /** The two participants now follow each other, so the thread is open. */
+  MUTUAL_FOLLOW: 'mutual_follow'
+} as const;
+
+export const MESSAGE_SYSTEM_EVENT_LIST = Object.values(MESSAGE_SYSTEM_EVENTS);
+
+export type MessageSystemEvent =
+  (typeof MESSAGE_SYSTEM_EVENTS)[keyof typeof MESSAGE_SYSTEM_EVENTS];
+
+export const MESSAGE_COMPOSER_TYPE_LIST = [
+  MESSAGE_TYPES.TEXT,
+  MESSAGE_TYPES.IMAGE,
+  MESSAGE_TYPES.VIDEO
+] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
 
@@ -335,6 +513,14 @@ export const MESSAGE_CHANNELS = {
 /** Message domain events published on {@link MESSAGE_CHANNELS}. */
 export const MESSAGE_EVENTS = {
   CREATED: 'message:created',
+  /**
+   * A system notice was added to a conversation.
+   *
+   * Separate from `CREATED` because it has no sender: the delivery path for a
+   * user's message reads one, and quietly reusing it would mean inventing a
+   * sender for something nobody sent.
+   */
+  SYSTEM_CREATED: 'message:system-created',
   READ: 'message:read'
 } as const;
 

@@ -490,7 +490,9 @@ describe('existing comment behaviour is unchanged', () => {
   it('appends an emoji to what is already written', async () => {
     renderForm();
     await userEvent.type(textarea(), 'nice');
-    await userEvent.click(screen.getAllByRole('button')[1]);
+    // Addressed by its label rather than its position: the toolbar gained an
+    // image button, and a positional selector silently pointed at that instead.
+    await userEvent.click(screen.getByRole('button', { name: 'Add an emoji' }));
 
     const emoji = await screen.findByText('😀');
     await userEvent.click(emoji);

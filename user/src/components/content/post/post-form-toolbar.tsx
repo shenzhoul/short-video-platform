@@ -118,7 +118,7 @@ export function PostFormToolbar({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1 p-2 scrollbar-thin">
+      <div className="flex items-center gap-1 p-2">
         <ToolbarButton
           active={postType === 'photo'}
           disabled={disabled}

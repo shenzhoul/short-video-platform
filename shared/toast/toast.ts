@@ -86,6 +86,9 @@ export const toast: SharedToastApi = {
   warning(message: ToastMessage, options?: ToastOptionsInput) {
     return reactToast.warning(message, withContainer(options));
   },
+  warn(message: ToastMessage, options?: ToastOptionsInput) {
+    return reactToast.warning(message, withContainer(options));
+  },
   info(message: ToastMessage, options?: ToastOptionsInput) {
     return reactToast.info(message, withContainer(options));
   },

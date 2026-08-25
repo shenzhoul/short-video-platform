@@ -24,6 +24,8 @@
   --text-faint: rgba(22, 24, 35, .34);
   --text-disabled: rgba(22, 24, 35, .3);
   --text-inverse: #fff;
+  --scrollbar-thumb: rgba(22, 24, 35, .24);
+  --scrollbar-thumb-hover: rgba(22, 24, 35, .42);
   --bg-inverse: #161823;
   --bg-modal: rgba(249, 249, 250, 1);
   --border: rgba(22, 24, 35, .1);
@@ -36,6 +38,28 @@
   --btn-bg: rgba(37, 38, 50, .08);
   --btn-bg-hover: rgba(37, 38, 50, .12);
   --shadow-popover: 0 14px 36px rgba(22, 24, 35, .12);
+
+  /*
+   * MEDIA OVERLAY SURFACE
+   *
+   * The Post Detail panel is a dark surface in *both* themes, the way the video
+   * it sits beside is. These tokens name that surface so anything rendered on it
+   * can be styled semantically without reaching for raw `white`.
+   *
+   * Deliberately declared once and never redefined under `[data-theme]`: a token
+   * that flipped here would paint a near-white panel behind text the surrounding
+   * panel keeps white. That is exactly what made the notification card
+   * unreadable in light mode — it used the page's `--surface-soft`, which flips,
+   * inside a panel that does not.
+   *
+   * Use these only inside a surface that is genuinely theme-independent. Ordinary
+   * page chrome should keep using `--surface-*` / `--text-*`.
+   */
+  --overlay-surface-soft: #343542;
+  --overlay-surface-hover: #3d3e4b;
+  --overlay-text-strong: rgba(255, 255, 255, 1);
+  --overlay-text-muted: rgba(255, 255, 255, .6);
+  --overlay-border-faint: rgba(255, 255, 255, .08);
   --primary-soft: #f5f2fa;
   --input-panel-bg: #f9f9fa;
   --input-panel-divider: #e4e4e6;
@@ -82,6 +106,8 @@ html[data-theme=dark] {
   --text-faint: rgba(255, 255, 255, .34);
   --text-disabled: rgba(255, 255, 255, .3);
   --text-inverse: #000;
+  --scrollbar-thumb: rgba(255, 255, 255, .24);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, .42);
   --bg-inverse: #fff;
   --bg-modal: rgba(37, 38, 50, 1);
   --border: rgba(255, 255, 255, .08);
@@ -244,62 +270,47 @@ body {
   background: transparent;
 }
 
-.home-feed-scrollbar {
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
-  scrollbar-width: thin;
-}
-
-@supports selector(::-webkit-scrollbar) {
-  .home-feed-scrollbar {
-    scrollbar-width: thin;
-  }
-}
-
-.home-feed-scrollbar::-webkit-scrollbar {
-  width: 4px;
-}
-
-.home-feed-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.home-feed-scrollbar::-webkit-scrollbar-thumb {
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.24);
-}
-
-.home-feed-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.42);
-}
-
 /**
- * Scrollbar for the message surfaces.
+ * The scrollbar, everywhere.
  *
- * Separate from `.home-feed-scrollbar`, whose thumb is hardcoded white for the
- * dark feed. The message workspace sits on the page surface in both themes, so
- * its thumb is derived from the text colour instead and stays visible on a
- * light background.
+ * One treatment applied globally rather than a class each scrollable surface
+ * has to remember: a container that forgets it gets the browser's default bar,
+ * which is twice as wide and a different colour, and the mismatch is visible
+ * the moment two of them sit side by side — the feed's slim bar next to a
+ * chunky grey one in a panel beside it.
+ *
+ * Firefox reads `scrollbar-width`/`scrollbar-color`, WebKit and Blink read the
+ * pseudo-elements; both are declared so the bar matches across engines. The
+ * thumb comes from a token so it stays visible in the light theme, where a
+ * white thumb would disappear against the page.
  */
-.message-scrollbar {
-  scrollbar-color: var(--text-faint) transparent;
+* {
   scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.message-scrollbar::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 4px;
+  /* Horizontal bars get the same weight as vertical ones. */
+  height: 4px;
 }
 
-.message-scrollbar::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.message-scrollbar::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   border-radius: 9999px;
-  background: var(--text-faint);
+  background: var(--scrollbar-thumb);
 }
 
-.message-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--text-disabled);
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* A corner between two bars would otherwise render as an opaque grey square. */
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /**

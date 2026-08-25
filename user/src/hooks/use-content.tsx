@@ -1,6 +1,6 @@
+import { toast } from '@douyin-clone/shared-toast';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useEffectEvent, useState } from 'react';
-import { toast } from 'react-toastify';
 import { IPost } from 'src/interfaces';
 import { findOne } from 'src/services/post.service';
 

@@ -9,7 +9,9 @@ import {
 } from 'react';
 
 import type { UseMessageThreadResult } from '../../hooks/use-message-thread';
+import { useOpenSharedPost } from '../../hooks/use-open-shared-post';
 import MessageBubble from './message-bubble';
+import MessageSystemNotice from './message-system-notice';
 
 interface MessageThreadViewProps {
   conversation?: IConversation;
@@ -80,6 +82,7 @@ function buildRows(messages: IMessage[], pending: IPendingMessage[]): ThreadRow[
  */
 export default function MessageThreadView({ conversation, thread }: MessageThreadViewProps) {
   const { currentUserId } = useMessages();
+  const openSharedPost = useOpenSharedPost();
   const {
     messages, pending, loading, loadingMore, error, hasMore, loadOlder, retry,
     dismissPending, retryPending
@@ -154,7 +157,7 @@ export default function MessageThreadView({ conversation, thread }: MessageThrea
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain message-scrollbar px-3 py-3 @min-[36rem]:px-8 @min-[36rem]:py-5"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 @min-[36rem]:px-8 @min-[36rem]:py-5"
     >
       {loadingMore ? (
         <div className="flex h-8 items-center justify-center">
@@ -199,12 +202,25 @@ export default function MessageThreadView({ conversation, thread }: MessageThrea
             );
           }
 
+          // A system notice is nobody's message: it gets no side, no sender and
+          // none of a bubble's actions.
+          if (row.message.type === MESSAGE_TYPE.SYSTEM) {
+            return (
+              <MessageSystemNotice
+                key={row.key}
+                message={row.message}
+                avatar={avatar}
+              />
+            );
+          }
+
           return (
             <MessageBubble
               key={row.key}
               message={row.message}
               outgoing={row.message.senderId === currentUserId}
               avatar={avatar}
+              onOpenPost={openSharedPost}
             />
           );
         })}

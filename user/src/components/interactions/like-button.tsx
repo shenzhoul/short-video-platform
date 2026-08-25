@@ -2,6 +2,7 @@
 
 import Button from '@components/ui/button';
 import { Tooltip } from '@components/ui/tooltip';
+import { toast } from '@douyin-clone/shared-toast';
 import { thousandToK } from '@lib/index';
 import { showErrorMessage } from '@lib/utils';
 import { toggleReaction } from '@services/reaction.service';
@@ -9,7 +10,6 @@ import { useMutation } from '@tanstack/react-query';
 import { ReactNode, useEffect, useState } from 'react';
 import { AiFillHeart, AiOutlineHeart } from 'react-icons/ai';
 import { FiBookmark } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 import { useProfile } from 'src/providers/profile.provider';
 
 type IconType = 'liked' | 'wishlist';
@@ -71,10 +71,20 @@ export default function LikeButton({
   const [totalLikes, setTotalLikes] = useState(initialTotalLikes);
   const [animating, setAnimating] = useState(false);
 
+  // Two effects rather than one, and the split is load-bearing.
+  //
+  // A live total arriving because *somebody else* liked this content changes
+  // only `initialTotalLikes`. Resetting both together would then also reset
+  // `isLiked` back to the value this content was fetched with — silently
+  // un-filling the heart of a viewer who had just liked it themselves, whenever
+  // a stranger liked the same comment.
   useEffect(() => {
     setIsLiked(initialIsLiked);
+  }, [initialIsLiked]);
+
+  useEffect(() => {
     setTotalLikes(initialTotalLikes);
-  }, [initialIsLiked, initialTotalLikes]);
+  }, [initialTotalLikes]);
 
   const likeMutation = useMutation({
     mutationFn: async () => {

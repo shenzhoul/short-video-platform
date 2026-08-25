@@ -31,7 +31,7 @@ jest.mock('@providers/profile.provider', () => ({
   useProfile: () => ({ current: viewer })
 }));
 
-jest.mock('react-toastify', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
+jest.mock('@douyin-clone/shared-toast', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
 function comment(overrides: Record<string, any> = {}) {
   return {
@@ -145,19 +145,29 @@ describe('notification target is context, not part of the ordering', () => {
     expect(context).toHaveTextContent('From your notification');
   });
 
-  it('shows root and reply together for a reply target', async () => {
-    const root = comment({ _id: 'c-root', content: 'Root of the thread' });
+  it('shows the root with the target reply inside its own thread', async () => {
+    const root = comment({ _id: 'c-root', content: 'Root of the thread', totalReply: 1 });
     const reply = comment({
       _id: 'c-reply', content: 'The actual reply', objectId: 'c-root', objectType: 'comment'
     });
     mockResolveTarget.mockResolvedValue({ data: { found: true, comment: reply, root } });
+    // The thread is opened automatically for a reply target, so the replies
+    // endpoint is what actually renders the target.
+    mockSearchComments.mockImplementation((objectType: string) => Promise.resolve(
+      objectType === 'comment'
+        ? page([reply])
+        : page([comment({ _id: 'c-other', content: 'Unrelated' })])
+    ));
 
     renderComments('c-reply');
 
     const context = await screen.findByTestId('comment-target-context');
     // The root alone would not explain what was replied to.
     expect(context).toHaveTextContent('Root of the thread');
-    expect(context).toHaveTextContent('The actual reply');
+    // The reply is reached through the ordinary thread, not a separate copy, so
+    // there is one of it on screen rather than two that can drift apart.
+    await waitFor(() => expect(context).toHaveTextContent('The actual reply'));
+    expect(context.querySelectorAll('[data-comment-id="c-reply"]')).toHaveLength(1);
   });
 
   it('uses the aggregate fallback when the newest event is gone', async () => {

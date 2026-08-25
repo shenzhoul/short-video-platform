@@ -1,4 +1,4 @@
-import { HttpException, Injectable, Logger } from "@nestjs/common";
+import { HttpException, HttpStatus, Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -33,6 +33,14 @@ import { IFileUploadOptions } from "src/common/lib/file";
 import { FileManagerService } from "src/services/file/file-manager.service";
 import { fromPosixPath, isUrl } from "src/kernel/helpers/string.helper";
 import { StorageService } from "src/services/file/storage.service";
+import { ImageContentValidationService } from "src/services/file/image-content-validation.service";
+import {
+  resolveUploadPolicy,
+  UNSUPPORTED_UPLOAD_TYPE_CODE,
+  UNSUPPORTED_UPLOAD_TYPE_MESSAGE,
+  UNSUPPORTED_UPLOAD_TYPE_STATUS
+} from "src/services/file/upload-policy";
+import { VideoContentValidationService } from "src/services/file/video-content-validation.service";
 
 /**
  * File Service
@@ -60,7 +68,9 @@ export class FileService {
     private readonly configService: AppConfigService,
     private readonly fileMediaValidationService: FileMediaValidationService,
     private readonly fileManagerService: FileManagerService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly imageContentValidationService: ImageContentValidationService,
+    private readonly videoContentValidationService: VideoContentValidationService
   ) { }
 
   /**
@@ -137,7 +147,7 @@ export class FileService {
 
     const fileId = new ObjectId();
     const {
-      mediaType, type, filename, acl, contentType, processingOptions, metadata, createdBy, updatedBy
+      mediaType, type, filename, acl, contentType, processingOptions, metadata, uploadLimits, createdBy, updatedBy
     } = request;
 
     // Generate file path based on type and media type
@@ -169,6 +179,9 @@ export class FileService {
       metadata: {
         ...metadata,
         processingOptions,
+        // The effective limits the API resolved for this upload, bound to the
+        // record so the policy cannot move underneath a transfer in progress.
+        uploadLimits,
         originalFilename: filename
       },
       createdBy: createdBy || null,
@@ -393,6 +406,78 @@ export class FileService {
   }
 
   /**
+   * Refuse an upload whose durable type nothing in the registry claims.
+   *
+   * The old code guessed the media kind from the record's `mediaType`, from
+   * whether the type string happened to contain "photo", and finally from the
+   * MIME — and anything that matched none of those was processed with no content
+   * validation at all. That is what let a whole tier of uploads through
+   * unchecked, and a typo (`post-phto`) was indistinguishable from a type
+   * somebody simply had not registered.
+   *
+   * Now the durable `type` is the only input, the registry is the only table,
+   * and an unknown answer is a refusal rather than a guess. It gets its own code
+   * because it is not the uploader's mistake — the file may be perfectly good;
+   * the record's type is wrong, which is ours.
+   */
+  private unsupportedUploadType(pendingFile: any): HttpException {
+    this.logger.error(
+      `No upload policy is registered for type "${pendingFile?.type}" `
+      + `(file ${pendingFile?._id}). Refusing rather than validating nothing.`
+    );
+    return new HttpException(
+      {
+        message: UNSUPPORTED_UPLOAD_TYPE_MESSAGE,
+        error: UNSUPPORTED_UPLOAD_TYPE_CODE,
+        statusCode: UNSUPPORTED_UPLOAD_TYPE_STATUS,
+        reason: 'this upload type is not supported'
+      },
+      UNSUPPORTED_UPLOAD_TYPE_STATUS
+    );
+  }
+
+  /**
+   * Erase every trace of an upload the policy refused.
+   *
+   * A rejected file must not survive as a record in any state. Leaving one in
+   * `error` would keep a row that nothing can ever use, that the unused-file
+   * sweeper has no reason to touch, and that a client could still name in a
+   * request — so it is deleted outright rather than marked.
+   *
+   * Ordering matters: the bytes go first. If this process dies midway, an
+   * orphaned file with no record is collected by the sweeper, whereas a record
+   * with no bytes is a row that points at nothing and looks valid.
+   *
+   * Every step is individually guarded. A rejection must not turn into a 500
+   * because a temporary file was already gone — the outcome the caller sees has
+   * to stay "this is not an image".
+   */
+  private async purgeRejectedUpload(fileId: string, tusFilePath: string): Promise<void> {
+    for (const candidate of [tusFilePath, `${tusFilePath}.json`]) {
+      try {
+        if (candidate && fs.existsSync(candidate)) fs.unlinkSync(candidate);
+      } catch (error) {
+        this.logger.warn(`Could not remove rejected upload file ${candidate}: ${error?.message || error}`);
+      }
+    }
+
+    // Removes any derivative the pipeline may already have written. Reuses the
+    // errored-file cleanup so rejected uploads and failed ones are swept the
+    // same way rather than by two routines that can drift apart.
+    try {
+      await this.cleanupErroredFile(fileId);
+    } catch (error) {
+      this.logger.warn(`Could not remove rejected upload derivatives for ${fileId}: ${error?.message || error}`);
+    }
+
+    try {
+      await this.FileModel.deleteOne({ _id: new ObjectId(fileId) });
+    } catch (error) {
+      this.logger.error(`Could not remove rejected upload record ${fileId}: ${error?.message || error}`);
+    }
+  }
+
+  /**
    * Process a completed TUS upload
    *
    * @param tusId - TUS upload ID
@@ -432,13 +517,87 @@ export class FileService {
       throw new EntityNotFoundException(`TUS file not found: ${tusFilePath}`);
     }
 
-    // Validate media type consistency for image and video files
-    if (pendingFile.mediaType && ['image', 'video', 'audio'].includes(pendingFile.mediaType)) {
-      this.fileMediaValidationService.validateMediaTypeConsistency(
-        pendingFile.mediaType,
-        correctedMimeType,
-        pendingFile.originalName,
-        tusFilePath // Pass TUS file path for cleanup on validation failure
+    // Which rules apply is decided by the durable `type` on the record, written
+    // by the API when it issued the upload URL — never by the TUS metadata the
+    // uploader sent. Relabelling an upload cannot opt out of its own policy, and
+    // cannot impose someone else's on it.
+    //
+    // No policy means no validation, so no policy means refuse. There is
+    // deliberately no permissive fallback: an unregistered type is a bug on our
+    // side and it surfaces here rather than uploading unchecked.
+    const policy = resolveUploadPolicy(pendingFile);
+    if (!policy) {
+      await this.purgeRejectedUpload(pendingFile._id.toString(), tusFilePath);
+      throw this.unsupportedUploadType(pendingFile);
+    }
+
+    // Two validations, and a rejection from either must leave nothing behind.
+    //
+    // The first compares one claim against another: the media type the caller
+    // selected against the MIME the caller sent. Renaming a video to `.png`
+    // satisfies both, so it cannot be the only check.
+    //
+    // The second reads the bytes, which is the only account of the file that
+    // its uploader did not write. It also replaces the declared type with the
+    // real one, so the record and everything derived from it describe the file
+    // rather than the request.
+    try {
+      if (pendingFile.mediaType && ['image', 'video', 'audio'].includes(pendingFile.mediaType)) {
+        this.fileMediaValidationService.validateMediaTypeConsistency(
+          pendingFile.mediaType,
+          correctedMimeType,
+          pendingFile.originalName,
+          tusFilePath // Pass TUS file path for cleanup on validation failure
+        );
+      }
+
+      if (policy.mediaKind === 'image') {
+        const verified = await this.imageContentValidationService
+          .assertDecodableImage(tusFilePath, pendingFile.originalName, policy);
+        correctedMimeType = verified.mimeType;
+      } else {
+        // A video is never handed to the image validator, and never was — before
+        // this it was not validated at all. `ffprobe` is the only thing that can
+        // say whether a container actually holds a video stream, so an audio
+        // file renamed to `.mp4` used to pass every check and fail minutes later
+        // in the transcode, on a queue, long after its uploader had gone.
+        const verified = await this.videoContentValidationService
+          .assertPlayableVideo(tusFilePath, pendingFile.originalName, policy);
+        correctedMimeType = verified.mimeType;
+      }
+    } catch (error) {
+      // A refused upload used to survive as a record in `error` state: a row
+      // nothing could ever use, that the unused-file sweeper had no reason to
+      // collect, and that a client could still name in a request. It is deleted
+      // outright instead.
+      await this.purgeRejectedUpload(pendingFile._id.toString(), tusFilePath);
+
+      // A rejection that already carries a code is passed through untouched:
+      // "not a picture", "too many pixels" and "too long" are different answers
+      // and the composer shows a different message for each.
+      //
+      // Anything else reaching here is the media-type check, which has no code
+      // of its own, so it is restated as a format rejection — which is what it
+      // is.
+      const body = typeof error?.getResponse === 'function' ? error.getResponse() : error?.response;
+      if (body?.error) throw error;
+
+      // Restated in the resolved policy's vocabulary: a post photo must not be
+      // refused with a comment code, a video must not be refused with an image
+      // one, and the message is the policy's own rather than the raw text of
+      // whatever threw.
+      const formatCode = policy.codes.format;
+      const formatStatus = policy.statuses[formatCode] || HttpStatus.BAD_REQUEST;
+      throw new HttpException(
+        {
+          message: policy.messages[formatCode] || 'That file is not supported.',
+          error: formatCode,
+          statusCode: formatStatus,
+          reason: policy.mediaKind === 'image'
+            ? 'the file is not a supported image'
+            : 'the file is not a supported video'
+        },
+        formatStatus
       );
     }
 
@@ -632,6 +791,50 @@ export class FileService {
         }
       }
     );
+  }
+
+  /**
+   * Remove a reference from a file
+   *
+   * The inverse of `addRef`, and the compensating half of an attach that could
+   * not be completed. A file with no references left is what
+   * `removeUnusedFilesByTypes` collects, so dropping the reference is also how a
+   * caller hands a file back to the sweeper when it cannot delete it itself.
+   *
+   * Matching is exact on both `itemId` and `itemType`: a file referenced by two
+   * different items must lose only the one being detached.
+   *
+   * @param fileId - ID of the file to detach
+   * @param ref - The exact reference to remove
+   * @returns Whether a reference was actually removed
+   * @example
+   * ```typescript
+   * await fileService.removeRef(fileId, {
+   *   itemId: new ObjectId('507f1f77bcf86cd799439011'),
+   *   itemType: 'user'
+   * });
+   * ```
+   */
+  public async removeRef(
+    fileId: ObjectId | string,
+    ref: {
+      itemId: ObjectId;
+      itemType: string;
+    }
+  ): Promise<{ removed: boolean }> {
+    const result = await this.FileModel.updateOne(
+      { _id: fileId },
+      {
+        $pull: {
+          refItems: {
+            itemId: ref.itemId,
+            itemType: ref.itemType
+          }
+        }
+      }
+    );
+
+    return { removed: result.modifiedCount > 0 };
   }
 
   /**

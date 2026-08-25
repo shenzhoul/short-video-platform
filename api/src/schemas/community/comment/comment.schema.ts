@@ -52,6 +52,27 @@ export class Comment {
   totalLike: number;
 
   /**
+   * The one image attached to this comment, if any.
+   *
+   * A file-server reference, never the bytes — a base64 body here would bloat
+   * every comment page and every socket frame that carries one.
+   *
+   * Optional and, deliberately, carrying **no default**. A `default: null` makes
+   * Mongoose persist the field on every comment ever written, which is both
+   * wasted space on the overwhelming majority that have no image and the exact
+   * shape that turned an index into an outage on `messages`. Absent means "no
+   * image"; there is no null to distinguish.
+   *
+   * Singular rather than an array because the product allows exactly one. An
+   * array would invite a second and force the rule to be defended at every read.
+   */
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    required: false
+  })
+  imageId?: ObjectId;
+
+  /**
    * Nesting level of the comment
    * - 0 = top-level comment, 1 = reply to comment
    * - Restricted to 0 or 1 to keep threads shallow for performance

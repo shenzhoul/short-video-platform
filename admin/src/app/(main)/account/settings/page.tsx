@@ -49,7 +49,18 @@ export default function AdminAccountSettingsPage() {
   };
 
   const onAvatarUploaded = async ({ response }: any) => {
-    await userService.updateAvatar(user?._id || '', response.data._id);
+    // The upload finishing is not the avatar changing: the API claims the file
+    // for the user before repointing the profile, and refuses rather than
+    // publish an avatar the unused-file sweeper would delete. Without this
+    // catch the refusal is an unhandled rejection and the page reloads showing
+    // the old picture with no explanation.
+    try {
+      await userService.updateAvatar(user?._id || '', response.data._id);
+    } catch (error: any) {
+      message.error(error?.message || 'Failed to update avatar, please try again!');
+      return;
+    }
+
     message.success('Avatar updated successfully');
     queryClient.invalidateQueries({ queryKey: ['user', user?._id] });
     queryClient.invalidateQueries({ queryKey: ['me'] });

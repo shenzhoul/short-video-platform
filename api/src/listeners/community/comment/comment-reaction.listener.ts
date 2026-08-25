@@ -5,6 +5,7 @@ import { REACTION_CHANNELS, REACTION_TARGET_TYPES, REACTION_TYPES } from 'src/co
 import { QueueEvent, QueueMessageService } from 'src/kernel';
 import { EVENT } from 'src/kernel/constants';
 import { Comment, CommentDocument } from 'src/schemas/community/comment';
+import { CommentStatsCoalescerService } from 'src/services/socket/comment-stats-coalescer.service';
 
 const REACTION_COMMENT_TOPIC = 'REACTION_COMMENT_TOPIC';
 
@@ -14,7 +15,8 @@ export class ReactionCommentListener {
 
   constructor(
     @InjectModel(Comment.name) private readonly CommentModel: Model<CommentDocument>,
-    private readonly queueMessageService: QueueMessageService
+    private readonly queueMessageService: QueueMessageService,
+    private readonly commentStatsCoalescerService: CommentStatsCoalescerService
   ) {
     this.queueMessageService.subscribe(
       REACTION_CHANNELS.REACTION,
@@ -40,6 +42,13 @@ export class ReactionCommentListener {
           break;
         default: break;
       }
+
+      // Marked here, after the counter has actually moved, rather than from a
+      // second subscriber on the same channel. Two independent subscribers have
+      // no ordering between them, so the mark could land first and a flush in
+      // that gap would publish the pre-increment total as final — with no
+      // further mutation coming to correct it.
+      await this.commentStatsCoalescerService.markDirty(objectId);
     } catch (e) {
       this.logger.error(`Failed to handle react comment: ${e.message}`, e.stack);
     }

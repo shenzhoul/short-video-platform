@@ -2,17 +2,18 @@
 
 import { formatCompactCount } from '@components/content/post/home-feed-media';
 import CreatorProfileBio from '@components/creator/creator-profile-bio';
-import CreatorProfileFollowerFollowing, { FollowListTabKey } from '@components/creator/creator-profile-follower-following';
+import type { FollowListTabKey } from '@components/creator/creator-profile-follower-following';
 import ProfileMessageButton from '@components/message/profile-message-button';
 import CoverUpload from '@components/shared/cover-upload';
 import HoverRevealPanel from '@components/ui/hover-reveal-panel';
 import SearchInput from '@components/ui/search-input';
 import ToggleSwitch from '@components/ui/toggle-switch';
+import { toast } from '@douyin-clone/shared-toast';
 import { useFollowCreator } from '@hooks/use-follow-creator';
+import { useFollowStats } from '@hooks/use-follow-stats';
 import { ICreator } from '@interfaces/creator';
-import { useEffect, useState } from 'react';
+import { useFollowListModal } from '@providers/follow-list.provider';
 import { FiAlertTriangle, FiGrid, FiLink } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 import { DownloadIcon, EditIcon, HelpCircleIcon, MaleIcon, MoreIcon } from 'src/icons';
 
 import { CreatorProfileCurrentUser } from './creator-profile-types';
@@ -124,22 +125,30 @@ export default function CreatorProfileHeader({
   onPreviewCoverChange,
   onPreviewCoverBgColorChange
 }: CreatorProfileHeaderProps) {
-  const [openFollowModal, setOpenFollowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<FollowListTabKey>('following');
-  const isOwnProfile = currentUser?._id === creator._id;
-  const [followerCount, setFollowerCount] = useState(creator.stats?.followers || 0);
-  const [followingCount, setFollowingCount] = useState(creator.stats?.followings || 0);
   const likeCount = creator.stats?.totalLikes || 0;
   const followState = useFollowCreator(creator._id, Boolean(creator.isFollowed));
 
-  useEffect(() => {
-    setFollowerCount(creator.stats?.followers || 0);
-    setFollowingCount(creator.stats?.followings || 0);
-  }, [creator._id, creator.stats?.followers, creator.stats?.followings]);
+  // Seeded from the profile response, which counts the follow rows themselves,
+  // and kept current by live snapshots. The account dropdown reads the very same
+  // hook, so the two places a person sees their own totals cannot disagree.
+  //
+  // Live frames only ever arrive for the signed-in user, which is correct:
+  // another creator's counters are not this viewer's to watch.
+  const { followersCount: followerCount, followingCount, applyDelta } = useFollowStats({
+    userId: creator._id,
+    initial: {
+      followersCount: creator.stats?.followers || 0,
+      followingCount: creator.stats?.followings || 0
+    }
+  });
 
+  // The one modal for the whole app, mounted beside the page. Opening it from
+  // here and from the account dropdown reaches the same instance rather than
+  // two copies that would then need keeping in step.
+  const { openFollowList: openSharedFollowList } = useFollowListModal();
   const openFollowList = (tab: FollowListTabKey) => {
-    setActiveTab(tab);
-    setOpenFollowModal(true);
+    // The creator whose profile this is — not the viewer.
+    openSharedFollowList({ subjectUserId: creator._id, initialTab: tab });
   };
 
   const shareFriends: ShareFriend[] = [
@@ -270,27 +279,6 @@ export default function CreatorProfileHeader({
               </span>
             </p>
             <CreatorProfileBio bio={previewBio} />
-            <CreatorProfileFollowerFollowing
-              open={openFollowModal}
-              onClose={() => setOpenFollowModal(false)}
-              activeTab={activeTab}
-              onActiveTabChange={setActiveTab}
-              userId={creator._id}
-              isOwnProfile={isOwnProfile}
-              followingTotal={followingCount}
-              followerTotal={followerCount}
-              onViewerFollowingDelta={(delta) => {
-              // A follow/unfollow performed in the modal changes the viewer's own following total,
-              // which is only what this header shows when the viewer owns this profile.
-              if (!isOwnProfile) return;
-              setFollowingCount(current => Math.max(0, current + delta));
-            }}
-              onFollowerRemoved={() => setFollowerCount(current => Math.max(0, current - 1))}
-              onTotalsResolved={(tab, total) => {
-              if (tab === 'following') setFollowingCount(total);
-              else setFollowerCount(total);
-            }}
-            />
           </div>
           {/*
           Capped to its own content rather than a fixed 470px.
@@ -350,8 +338,17 @@ export default function CreatorProfileHeader({
                   type="button"
                   onClick={async () => {
                     const wasFollowed = followState.isFollowed;
-                    await followState.toggleFollow();
-                    setFollowerCount(current => Math.max(0, current + (wasFollowed ? -1 : 1)));
+                    const step = wasFollowed ? -1 : 1;
+                    // Optimistic, because this creator's live snapshot goes to
+                    // them and not to us. Rolled back if the request fails, so a
+                    // refused follow cannot leave an invented number on screen.
+                    applyDelta({ followersCount: step });
+                    try {
+                      await followState.toggleFollow();
+                    } catch (error) {
+                      applyDelta({ followersCount: -step });
+                      throw error;
+                    }
                   }}
                   disabled={followState.following}
                   className={`rounded-xl min-w-22 h-8.25 m-o mr-2 text-[14px] font-medium leading-5.5 cursor-pointer inline-flex py-1.5 px-4 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed

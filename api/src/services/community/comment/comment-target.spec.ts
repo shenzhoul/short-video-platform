@@ -25,7 +25,10 @@ function createSubject(options: { documents?: any[] } = {}) {
     CommentModel as any,
     { publish: jest.fn() } as any,
     baseUserService as any,
-    {} as any
+    {} as any,
+    // No image on these fixtures, so the lookup is never reached; present
+    // because the service now resolves attached images.
+    { findByIds: jest.fn().mockResolvedValue([]) } as any
   );
 
   return { service, CommentModel, baseUserService };

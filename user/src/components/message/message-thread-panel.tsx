@@ -51,7 +51,6 @@ export default function MessageThreadPanel({
       <MessageComposer
         canSend={thread.canSend}
         sending={thread.sending}
-        awaitingReplyFrom={thread.awaitingReplyFrom}
         onSend={thread.send}
       />
     </div>

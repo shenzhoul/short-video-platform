@@ -33,14 +33,19 @@
 
 'use client';
 
+import { CommentImagePreview, ReplaceImageDialog } from '@components/comment/comment-image-attachment';
 import { Emotions } from '@components/shared';
+import { toast } from '@douyin-clone/shared-toast';
+import {
+  COMMENT_IMAGE_ACCEPT_ATTRIBUTE, describeInvalidImageContent, useCommentImage
+} from '@hooks/use-comment-image';
 import { useTextareaMentions } from '@hooks/use-textarea-mentions';
 import { IComment, ICreateComment } from '@interfaces/comment';
 import { resolveMentionedUserIds } from '@lib/post-mentions';
 import { isMobileDevice } from '@utils/device';
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { FiAtSign, FiSend, FiSmile } from 'react-icons/fi';
+import { FiAtSign, FiImage, FiSend, FiSmile } from 'react-icons/fi';
 import { IUser } from 'src/interfaces';
 
 import MentionPicker from './mention-picker';
@@ -59,7 +64,14 @@ type CommentSubmitData = ICreateComment & {
 type IProps = {
   objectId: string;
   objectType?: CommentObjectType;
-  onSubmit?: (comment: CommentSubmitData) => void;
+  /**
+   * Hands the comment to whoever owns the list.
+   *
+   * Resolving to `null` means it was not created, and the composer keeps the
+   * text and the image so the author can try again. `undefined` is treated as
+   * success, so a caller that reports nothing behaves as it always did.
+   */
+  onSubmit?: (comment: CommentSubmitData) => void | Promise<IComment | null | void>;
   creator: IUser;
   requesting?: boolean;
   isReply?: boolean;
@@ -129,15 +141,89 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
     enabled: isLoggedIn
   });
 
+  const commentImage = useCommentImage();
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  // The candidate waiting on the replacement decision. Held here rather than
+  // attached, so declining leaves the composer exactly as it was.
+  const [pendingReplacement, setPendingReplacement] = useState<File | null>(null);
+  const [replacing, setReplacing] = useState(false);
+
+  /**
+   * Choosing a file.
+   *
+   * With nothing attached this simply attaches. With an image already there it
+   * asks first — replacing is destructive to a choice the author already made.
+   */
+  const handleImagePicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Reset immediately so picking the *same* file again still fires a change.
+    event.target.value = '';
+    if (!file) return;
+
+    // Judged on its actual first bytes, not on its name or the MIME the browser
+    // guessed from the extension — both of which change when somebody renames a
+    // video to `.png`.
+    //
+    // Reported before anything else happens: before a preview, before an
+    // upload, and before a dialog asks whether to replace the current image
+    // with a file that was never going to be accepted. Nothing is uploaded, so
+    // no record exists to clean up and the image already attached is untouched.
+    const invalid = await describeInvalidImageContent(file);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+
+    if (!commentImage.image) {
+      const attached = await commentImage.attach(file);
+      if (attached.error) toast.error(attached.error);
+      return;
+    }
+
+    setPendingReplacement(file);
+  };
+
+  const cancelReplacement = () => {
+    setPendingReplacement(null);
+    // Nothing was uploaded for the candidate, so there is nothing to discard —
+    // the old image and the text are untouched.
+    imageInputRef.current?.focus();
+  };
+
+  const confirmReplacement = async () => {
+    if (!pendingReplacement || replacing) return;
+    setReplacing(true);
+    try {
+      const previous = commentImage.image;
+      const next = await commentImage.attach(pendingReplacement);
+      if (next.error || !next.fileId) {
+        // The replacement failed, so the original stays. Nothing was discarded.
+        toast.error(next.error || 'That image could not be uploaded.');
+        if (previous) commentImage.replaceWith(previous);
+        return;
+      }
+      // Only now is the old one let go — and `replaceWith` discards it from the
+      // server as well as revoking its preview.
+      if (previous && previous.fileId !== next.fileId) {
+        void commentImage.discard(previous.fileId);
+        commentImage.revoke(previous.previewUrl);
+      }
+    } finally {
+      setReplacing(false);
+      setPendingReplacement(null);
+    }
+  };
+
   const onFinish = async (values: ICreateComment) => {
     if (!isLoggedIn || !onSubmit) return;
     const data = values;
     const trimmedContent = data.content?.trim() || '';
+    const attached = commentImage.image;
 
-    // Validate minimum length (1 character after trimming)
-    if (!trimmedContent || trimmedContent.length < 1) {
-      return;
-    }
+    // A comment needs something in it. Text or an image will do; neither will
+    // not, and an upload still running is not yet an image.
+    if (!trimmedContent && !attached?.fileId) return;
+    if (attached?.uploading || attached?.error) return;
 
     // Update content with trimmed value
     data.content = trimmedContent;
@@ -151,13 +237,26 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
       ...data,
       objectId,
       objectType,
+      ...(attached?.fileId ? { imageId: attached.fileId } : {}),
       ...(mentionedUserIds.length ? { mentionedUserIds } : {})
     };
+
+    // The composer is cleared only once the comment exists.
+    //
+    // It used to clear first and post afterwards, which reads as optimistic but
+    // is not: a failed request left the author with an empty box, no text and
+    // no picture, and nothing to retry with. Their image had already been
+    // uploaded, so the only trace of the attempt was a file they could not see.
+    const created = await onSubmit?.(submitData);
+    if (created === null) return;
+
     reset();
+    // Released rather than removed: the file now belongs to the comment, and
+    // discarding it here is exactly the late cleanup the server refuses.
+    commentImage.release();
     if (textareaRef.current) {
       textareaRef.current.style.height = '35px';
     }
-    onSubmit?.(submitData);
   };
 
   const onEmojiClick = (emoji: string) => {
@@ -198,6 +297,97 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
     focus: () => textareaRef.current?.focus()
   }));
 
+  /**
+   * The action group, rendered in whichever row currently owns it.
+   *
+   * One definition, two positions: inline with the text when nothing is
+   * attached, and in the row beneath it when something is. Defining it twice
+   * would be two things to keep identical.
+   */
+  const renderToolbar = () => (
+    // Kept in a single element so the row they live in can move — inline with
+    // the text when there is no attachment, into the row beneath it when there
+    // is — without the buttons themselves changing. Spacing is a `gap` on the
+    // group rather than a margin on each button, so reordering or adding one
+    // cannot leave a hole.
+    <div
+      className={`flex shrink-0 items-center gap-2 ${commentImage.image ? 'pb-2' : 'ml-2'}`}
+      data-testid="comment-toolbar"
+    >
+      <input
+        ref={imageInputRef}
+        type="file"
+              // The same whitelist the server enforces, so the picker offers
+              // what will actually be accepted. Still only a hint — the bytes
+              // are what decide, and they are checked on both sides.
+        accept={COMMENT_IMAGE_ACCEPT_ATTRIBUTE}
+        className="sr-only"
+        onChange={handleImagePicked}
+        disabled={!isLoggedIn}
+        aria-label="Attach an image"
+        data-testid="comment-image-input"
+      />
+      <button
+        type="button"
+        onClick={() => imageInputRef.current?.click()}
+        aria-label="Attach an image"
+        data-testid="comment-image-button"
+        className="cursor-pointer text-white/45 transition hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!isLoggedIn}
+      >
+        <FiImage size={21} />
+      </button>
+
+      {/* Mention Button — opens the same picker as typing @ */}
+      <button
+        type="button"
+              // Keeps focus and the caret in the textarea, so the click neither
+              // blurs it nor loses the insertion point for a mid-text mention.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+                // A keyboard user reaches this button by tabbing, which already
+                // blurred the textarea and scheduled a close. Cancelling it here
+                // covers that path too, rather than relying on focus alone.
+                cancelPendingClose();
+                mentions.openMentionPicker();
+              }}
+        aria-label="Mention someone"
+        className="cursor-pointer text-white/45 hover:text-white/80"
+        disabled={!isLoggedIn}
+      >
+        <FiAtSign size={21} />
+      </button>
+
+      {/* Emoji Picker Button */}
+      <button
+        type="button"
+        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+        aria-label="Add an emoji"
+        className="cursor-pointer text-white/45 hover:text-white/80"
+        disabled={!isLoggedIn}
+      >
+        <FiSmile size={22} />
+      </button>
+
+      {/* Submit Button */}
+      <button
+        type="submit"
+        aria-label="Post comment"
+              // Enabled by text or a settled image — and never while one is still
+              // uploading, which would post a comment referencing nothing.
+        disabled={
+                requesting
+                || !isLoggedIn
+                || Boolean(commentImage.image?.uploading)
+                || (!content.trim() && !commentImage.image?.fileId)
+              }
+        className="cursor-pointer text-white/45 transition hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <FiSend size={21} />
+      </button>
+    </div>
+  );
+
   return (
     <form onSubmit={handleSubmit(onFinish)} className="relative w-full">
       {mentions.isOpen && mentions.triggerType === 'user' ? (
@@ -236,10 +426,20 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
           </div>
         ) : null}
 
-        {/* Comment Input Area */}
+        {/*
+          One row until there is something to show underneath.
+
+          With no attachment this is the original single-line input: the text and
+          the actions share a row, and the composer keeps the height it has
+          always had. Only an attached image turns it into a column — text on
+          top, then the thumbnail and the actions sharing the row below — which
+          is the shape the reference design uses and costs one extra row rather
+          than three stacked blocks.
+        */}
         <div
           className={`
-          flex min-h-11 items-center px-3
+          flex min-h-11 px-3
+          ${commentImage.image ? 'flex-col' : 'items-center'}
           ${replyTarget ? 'bg-[rgba(255,255,255,.08)]' : ''}
         `}
         >
@@ -269,44 +469,15 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
         "
           />
 
-          {/* Mention Button — opens the same picker as typing @ */}
-          <button
-            type="button"
-            // Keeps focus and the caret in the textarea, so the click neither
-            // blurs it nor loses the insertion point for a mid-text mention.
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              // A keyboard user reaches this button by tabbing, which already
-              // blurred the textarea and scheduled a close. Cancelling it here
-              // covers that path too, rather than relying on focus alone.
-              cancelPendingClose();
-              mentions.openMentionPicker();
-            }}
-            aria-label="Mention someone"
-            className="ml-2 cursor-pointer text-white/45 hover:text-white/80"
-            disabled={!isLoggedIn}
-          >
-            <FiAtSign size={21} />
-          </button>
-
-          {/* Emoji Picker Button */}
-          <button
-            type="button"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className="ml-2 cursor-pointer text-white/45 hover:text-white/80"
-            disabled={!isLoggedIn}
-          >
-            <FiSmile size={22} />
-          </button>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={requesting || !isLoggedIn}
-            className="ml-3 cursor-pointer text-white/45 transition hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <FiSend size={21} />
-          </button>
+          {commentImage.image ? (
+            <div className="flex items-end justify-between gap-2">
+              <CommentImagePreview
+                image={commentImage.image}
+                onRemove={() => void commentImage.remove()}
+              />
+              {renderToolbar()}
+            </div>
+          ) : renderToolbar()}
         </div>
 
         {/* Click outside to close emoji picker */}
@@ -323,6 +494,13 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
           </>
         ) : null}
       </div>
+
+      <ReplaceImageDialog
+        open={Boolean(pendingReplacement)}
+        busy={replacing}
+        onCancel={cancelReplacement}
+        onConfirm={() => void confirmReplacement()}
+      />
     </form>
   );
 });

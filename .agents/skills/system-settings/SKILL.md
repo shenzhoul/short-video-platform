@@ -23,7 +23,23 @@ description: System setting lifecycle for Douyin Clone across API migration data
 - Invalidate or refresh the settings cache after writes.
 - Use the existing setting file-upload controller and file-server flow for file-backed values.
 - Add a new group to `admin/src/components/settings/components/settings-menu.tsx`.
+  The form itself is generic — `type: 'number'` renders an `InputNumber` that
+  reads `meta.min` / `meta.max` / `meta.step` — so a group of numeric settings
+  needs no new admin component.
 - Document the exact admin navigation and field labels.
+- **Validate a value before it is written, not after.** `SettingService.update`
+  is the one write path; a check there means a rejected value never reaches
+  storage and the previous one survives untouched. The admin form saves key by
+  key, so a failure part-way through must leave every key either updated or
+  unchanged — never blank.
+- **Generate a large group of settings from whatever already defines them.**
+  `api/migrations/data/upload-limit-settings.js` builds fifty-seven rows from the
+  upload-policy registry rather than listing them, so a seeded default cannot
+  drift from the number the code enforces. Hand-written seeds for a group that
+  large are a guarantee that one of them will eventually disagree.
+- **A missing setting must have a working fallback.** A blank database, a
+  half-run migration and a hand-edited row all have to behave. Fall back per
+  field to the code default rather than failing the whole feature.
 
 ## Verification
 

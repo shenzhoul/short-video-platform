@@ -103,12 +103,38 @@ function releasePreview(pending: IPendingMessage | undefined) {
   }
 }
 
-/** Turn a refused send into something worth showing the person who typed it. */
+const GENERIC_SEND_ERROR = 'Message could not be sent. Please try again.';
+
+/**
+ * Turn a refused send into something worth showing the person who typed it.
+ *
+ * Only *business* refusals are quoted back to the user. Those are the ones whose
+ * wording is the whole point — being restricted, being blocked, or having a
+ * message request still waiting for an answer — and the server writes them for
+ * exactly this purpose.
+ *
+ * Anything else is an internal fault, and its text is written for a developer,
+ * not for the person mid-conversation. The server no longer sends stack traces,
+ * but this is the seam where one actually reached the screen, so it does not
+ * hand the bubble an arbitrary server string again: a 5xx, an unknown status,
+ * or something that looks like a stack rather than a sentence all fall back to
+ * wording a reader can act on.
+ */
 function resolveSendError(error: any): string {
-  const status = error?.statusCode || error?.status;
-  const message = error?.message || error?.data?.message;
-  if (status === 403) return message || 'You can send one message until they reply.';
-  return message || 'Message could not be sent.';
+  const status = Number(error?.statusCode || error?.status) || 0;
+  const raw = error?.message || error?.data?.message;
+  const message = typeof raw === 'string' ? raw.trim() : '';
+
+  const looksInternal = !message
+    || /[\r\n]/.test(message)
+    || message.length > 200
+    || /\bat\s+\S+.*[(:]\d+[:)]/.test(message)
+    || /E11000|MongoServerError|node_modules/i.test(message);
+
+  const isBusinessRefusal = status >= 400 && status < 500;
+  if (!isBusinessRefusal || looksInternal) return GENERIC_SEND_ERROR;
+
+  return message;
 }
 
 /**

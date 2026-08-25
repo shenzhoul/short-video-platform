@@ -9,7 +9,14 @@ import {
   MESSAGE_TYPES
 } from 'src/common/constants/community';
 import { applyCursorPagination } from 'src/common/utils/pagination.util';
-import { MessageDto } from 'src/dtos/community/message';
+import {
+  MessageRecipientRestrictedException,
+  MessageRequestPendingException,
+  MessageUserBlockedException,
+  SharedPostDeletedException,
+  SharedPostNotAccessibleException
+} from 'src/common/exceptions/message';
+import { MessageDto, SharedPostDto } from 'src/dtos/community/message';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { UserDto } from 'src/dtos/identity/user';
 import { QueueMessageService } from 'src/kernel';
@@ -23,10 +30,14 @@ import { __t } from 'src/utils/translation';
 
 import { ConversationParticipantService } from './conversation-participant.service';
 import { ConversationService } from './conversation.service';
-import { MessagePermissionService, MessageRequestState } from './message-permission.service';
+import { MessagePermissionService, MessageRequestState, MessageSendClaim } from './message-permission.service';
+import { SharedPostService } from './shared-post.service';
+import { resolveSystemNoticeText } from './system-notice-text';
 
 /** Message body plus the conversation state the sender should see afterwards. */
 export interface SendMessageResult {
+  /** Which thread the message landed in — a share may have created it. */
+  conversationId?: ObjectId;
   message: MessageDto;
   /** Where the sender stands now: whether they may send again. */
   canSend: boolean;
@@ -53,6 +64,7 @@ export class MessageService {
     private readonly conversationService: ConversationService,
     private readonly participantService: ConversationParticipantService,
     private readonly permissionService: MessagePermissionService,
+    private readonly sharedPostService: SharedPostService,
     private readonly contentFileService: ContentFileService,
     private readonly fileServerService: FileServerService,
     private readonly queueMessageService: QueueMessageService
@@ -94,29 +106,108 @@ export class MessageService {
       ? await this.contentFileService.validateAndRetrieveOwnedFiles(fileIds, sender)
       : [];
 
+    return this.createAndDeliver(conversation, recipientId, sender, {
+      type: this.resolveType(payload, files),
+      text: payload.text || '',
+      fileIds,
+      files,
+      postId: null
+    });
+  }
+
+  /**
+   * Share a post into the direct conversation with one recipient.
+   *
+   * A share is an ordinary message that happens to carry a `postId`, so it goes
+   * through the same permission gate as anything else the sender types: mutual
+   * followers and accepted threads send freely, a stranger's share *is* their one
+   * request message, and a sender already waiting on a reply cannot send another.
+   *
+   * The post is validated before the claim, for the same reason attachments are:
+   * discovering the post is unshareable after taking the slot would burn the
+   * sender's single request on a message that was never written.
+   *
+   * The conversation is found or created here rather than by the client, so a
+   * share can start a thread that does not exist yet without the client being
+   * able to aim it at a conversation it is not part of.
+   */
+  public async sharePost(
+    postId: string | ObjectId,
+    recipientId: string | ObjectId,
+    sender: UserDto | AuthUserDto
+  ): Promise<SendMessageResult> {
+    const conversation = await this.conversationService.findOrCreateDirectConversation(
+      sender._id,
+      recipientId
+    );
+
+    const shareable = await this.sharedPostService.assertShareable(postId, sender._id, recipientId);
+    if (shareable.ok !== true) {
+      if (shareable.reason === 'deleted') throw new SharedPostDeletedException();
+      throw new SharedPostNotAccessibleException();
+    }
+
+    return this.createAndDeliver(conversation, toObjectId(recipientId), sender, {
+      type: MESSAGE_TYPES.POST,
+      text: '',
+      fileIds: [],
+      files: [],
+      postId: toObjectId(postId),
+      sharedPost: shareable.card
+    });
+  }
+
+  /**
+   * Claim, insert, fan out. The one path every message takes.
+   *
+   * Kept as a single private core so a shared post cannot accidentally acquire
+   * different permission behaviour from a typed message — the moment there are
+   * two send paths, one of them starts drifting.
+   *
+   * The claim happens before the insert: inserting first would let two
+   * concurrent sends both write a message before either claim resolved, which is
+   * the exact race the claim exists to prevent. If the insert then fails, the
+   * claim is released, otherwise the sender would be left waiting for a reply to
+   * a message that does not exist.
+   */
+  private async createAndDeliver(
+    conversation: { _id: ObjectId },
+    recipientId: ObjectId,
+    sender: UserDto | AuthUserDto,
+    input: {
+      type: string;
+      text: string;
+      fileIds: string[];
+      files: any[];
+      postId: ObjectId | null;
+      sharedPost?: SharedPostDto;
+    }
+  ): Promise<SendMessageResult> {
     const claim = await this.permissionService.claimSendSlot(
       conversation._id,
       sender._id,
       recipientId
     );
-    if (!claim.allowed) {
-      throw new ForbiddenException(__t('errors.message_awaiting_reply'));
-    }
+    if (!claim.allowed) throw this.refusalFor(claim);
+
+    const { fileIds } = input;
 
     try {
       const createdAt = new Date();
       const created = await this.messageModel.create({
         conversationId: conversation._id,
         senderId: toObjectId(sender._id),
-        type: this.resolveType(payload, files),
-        text: payload.text || '',
+        type: input.type,
+        text: input.text,
         fileIds: fileIds.map(id => toObjectId(id)),
+        postId: input.postId,
         createdAt,
         updatedAt: createdAt
       });
 
       const dto = MessageDto.fromModel(created);
-      dto.setFiles(files);
+      dto.setFiles(input.files);
+      if (input.sharedPost) dto.setSharedPost(input.sharedPost);
 
       await Promise.all([
         this.conversationService.applyLastMessage(conversation._id, {
@@ -161,6 +252,7 @@ export class MessageService {
       const waiting = claim.requestState === 'waiting';
       return {
         message: dto,
+        conversationId: conversation._id,
         canSend: !waiting,
         requestState: claim.requestState,
         awaitingReplyFrom: waiting ? 'me' : null
@@ -178,6 +270,20 @@ export class MessageService {
         });
       throw error;
     }
+  }
+
+  /**
+   * The error that matches a refusal.
+   *
+   * Distinct codes because the client's response differs: a pending request
+   * resolves itself when the other person answers, whereas a block or a restrict
+   * does not, and the composer should not invite a retry. The *text* of the last
+   * two is deliberately identical — see the exception classes.
+   */
+  private refusalFor(claim: MessageSendClaim): Error {
+    if (claim.restrictionReason === 'blocked') return new MessageUserBlockedException();
+    if (claim.restrictionReason === 'restricted') return new MessageRecipientRestrictedException();
+    return new MessageRequestPendingException();
   }
 
   /**
@@ -265,7 +371,7 @@ export class MessageService {
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
-    const data = await this.attachFiles(page);
+    const data = await this.decoratePage(page, user._id);
     const last = page[page.length - 1];
 
     return {
@@ -282,6 +388,38 @@ export class MessageService {
         cursorPaginationAvailable: true
       }
     } as PageableData<MessageDto>;
+  }
+
+  /**
+   * Everything a page of messages needs to render, resolved per reader.
+   *
+   * Shared-post cards depend on who is reading — the post's author may have
+   * blocked one participant and not the other — so this takes the viewer rather
+   * than decorating once for the conversation.
+   */
+  private async decoratePage(rows: any[], viewerId: string | ObjectId): Promise<MessageDto[]> {
+    const dtos = await this.attachFiles(rows);
+
+    // System notices carry an event, not wording. Resolving it here means the
+    // reader's language decides, and no component has to know the enum.
+    dtos.forEach(dto => {
+      if (dto.type !== MESSAGE_TYPES.SYSTEM) return;
+      dto.setSystemText(resolveSystemNoticeText(dto.systemEvent));
+    });
+
+    const postIds = dtos.map(dto => dto.postId).filter(Boolean) as ObjectId[];
+    if (!postIds.length) return dtos;
+
+    const cards = await this.sharedPostService.resolveMany(postIds, viewerId);
+    dtos.forEach(dto => {
+      if (!dto.postId) return;
+      dto.setSharedPost(
+        cards.get(dto.postId.toString())
+        || SharedPostDto.unavailable(dto.postId.toString(), 'deleted')
+      );
+    });
+
+    return dtos;
   }
 
   /**

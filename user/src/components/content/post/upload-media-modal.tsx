@@ -4,29 +4,38 @@ import { FileThumb } from '@components/shared/file-thumb';
 import Button from '@components/ui/button';
 import { CloseIcon } from '@components/ui/close-icon';
 import Modal from '@components/ui/modal';
-import { FILE_VALIDATION_PRESETS, validateFileSize } from '@utils/file-validation';
+import { toast } from '@douyin-clone/shared-toast';
+import {
+  acceptAttributeFor,
+  describeRejectedUpload,
+  POST_PHOTO_UPLOAD_TYPE,
+  POST_VIDEO_UPLOAD_TYPE,
+  uploadPolicyFor
+} from '@lib/upload-policy';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FiImage, FiVideo } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 
 type UploadMode = 'photo' | 'video';
 
-const MODE_CONFIG: Record<UploadMode, { label: string; accept: string; icon: typeof FiImage }> = {
+/**
+ * What each mode advertises and which policy it is judged by.
+ *
+ * The `accept` strings come from the policy rather than being written here. The
+ * hand-written ones offered `.tiff` and `.hevc`, neither of which the pipeline
+ * has ever accepted, so the picker invited files the server was always going to
+ * refuse.
+ */
+const MODE_CONFIG: Record<UploadMode, { label: string; uploadType: string; icon: typeof FiImage }> = {
   photo: {
     label: 'Photos',
-    accept: 'image/*,.heic,.heif,.avif,.tiff,.tif',
+    uploadType: POST_PHOTO_UPLOAD_TYPE,
     icon: FiImage
   },
   video: {
     label: 'Videos',
-    accept: 'video/*,.hevc,.mov',
+    uploadType: POST_VIDEO_UPLOAD_TYPE,
     icon: FiVideo
   }
-};
-
-const MODE_VALIDATION_PRESET: Record<UploadMode, keyof typeof FILE_VALIDATION_PRESETS> = {
-  photo: 'IMAGE',
-  video: 'VIDEO'
 };
 
 export interface UploadMediaModalProps {
@@ -65,18 +74,30 @@ export function UploadMediaModal({
 
   const config = MODE_CONFIG[mode];
   const Icon = config.icon;
-  const validationPreset = FILE_VALIDATION_PRESETS[MODE_VALIDATION_PRESET[mode]];
+  const accept = acceptAttributeFor(config.uploadType);
+  // Quoted from the policy so the label and the check can never disagree.
+  const maxSizeLabel = `${Math.round((uploadPolicyFor(config.uploadType)?.maxBytes ?? 0) / (1024 * 1024))}MB`;
 
   const handleAddFiles = useCallback(
-    (newFiles: File[]) => {
-      const validFiles = newFiles.filter(file => {
-        const result = validateFileSize(file, validationPreset.maxSizeMB);
-        if (!result.isValid && result.error) {
-          toast.error(result.error);
-          return false;
-        }
-        return true;
-      });
+    async (newFiles: File[]) => {
+      // Every file is judged on its own and the survivors are kept. One bad pick
+      // out of ten must not discard the nine that were fine — a whole selection
+      // lost to a single oversized photo is the failure this shape exists to
+      // avoid, and it is why the rejections are collected rather than thrown.
+      const judgements = await Promise.all(
+        newFiles.map(async file => ({ file, rejection: await describeRejectedUpload(file, config.uploadType) }))
+      );
+
+      const validFiles = judgements.filter(({ rejection }) => !rejection).map(({ file }) => file);
+      const rejected = judgements.filter(({ rejection }) => rejection);
+
+      // One toast per distinct reason rather than one per file: ten photos over
+      // the same limit is one thing to say, said once.
+      const reasons = Array.from(new Set(rejected.map(({ rejection }) => rejection as string)));
+      for (const reason of reasons) {
+        const count = rejected.filter(({ rejection }) => rejection === reason).length;
+        toast.error(count > 1 ? `${count} files were not added. ${reason}` : reason);
+      }
 
       if (!validFiles.length) return;
 
@@ -86,7 +107,7 @@ export function UploadMediaModal({
       const validLimit = maxFiles - localExistingFiles.length;
       setLocalSelectedFiles(prev => [...prev, ...validFiles].slice(0, validLimit));
     },
-    [localSelectedFiles, localExistingFiles, maxFiles, validationPreset.maxSizeMB]
+    [localSelectedFiles, localExistingFiles, maxFiles, config.uploadType]
   );
 
   const handleRemoveSelected = useCallback((index: number) => {
@@ -102,7 +123,7 @@ export function UploadMediaModal({
       const files = e.target.files;
       if (!files?.length) return;
       const newFiles = Array.from(files);
-      handleAddFiles(newFiles);
+      void handleAddFiles(newFiles);
       e.target.value = '';
     },
     [handleAddFiles]
@@ -114,7 +135,7 @@ export function UploadMediaModal({
       setIsDragging(false);
       const files = Array.from(e.dataTransfer.files);
       if (!files.length) return;
-      handleAddFiles(files);
+      void handleAddFiles(files);
     },
     [handleAddFiles]
   );
@@ -195,7 +216,7 @@ export function UploadMediaModal({
             ref={fileInputRef}
             type="file"
             multiple
-            accept={config.accept}
+            accept={accept}
             className="hidden"
             onChange={handleFileSelect}
           />
@@ -207,7 +228,7 @@ export function UploadMediaModal({
               {isDragging ? 'Drop files here' : 'Drag and drop or click to browse'}
             </p>
             <p className="text-xs text-gray-400">
-              {config.label} (Max {validationPreset.maxSizeMB}MB)
+              {config.label} (Max {maxSizeLabel})
             </p>
           </div>
         </div>

@@ -6,8 +6,16 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ObjectId } from 'mongodb';
 import { Model } from 'mongoose';
 import { FILE_REFERENCE_TYPES, USER_STATUS } from 'src/common/constants';
+import {
+  ProfileImageNotAttachableException,
+  ProfileImageNotFoundException,
+  ProfileImageNotOwnedException,
+  ProfileImageNotReadyException,
+  ProfileImageWrongTypeException
+} from 'src/common/exceptions/user';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { UserDto } from 'src/dtos/identity/user';
+import { EntityNotFoundException } from 'src/kernel';
 import { toObjectId } from 'src/kernel/helpers/string.helper';
 import {
   User
@@ -16,6 +24,30 @@ import { FileServerService } from 'src/services/shared/file-server';
 import { __t } from 'src/utils/translation';
 
 const USER_COLLECTION = 'users';
+
+/**
+ * The two durable upload types that may become a profile image, and the only
+ * values `resolveProfileImage` will accept for each field.
+ */
+type ProfileImageType = 'avatar' | 'cover';
+
+/**
+ * `createdBy` stamped on anything uploaded while authenticated as an admin.
+ * See `identity-file.controller.ts` — an admin setting somebody else's avatar
+ * produces a file owned by this string rather than by the profile's owner.
+ */
+const ADMIN_UPLOAD_OWNER = 'admin';
+
+/**
+ * Callers may pass a file id or a whole file record; the service refetches the
+ * record either way, because only the file server's copy is evidence.
+ */
+function readFileId(fileOrId: string | ObjectId | Record<string, any>): string | ObjectId {
+  if (fileOrId && typeof fileOrId === 'object' && '_id' in fileOrId) {
+    return (fileOrId as Record<string, any>)._id;
+  }
+  return fileOrId as string | ObjectId;
+}
 
 @Injectable()
 export class BaseUserService {
@@ -224,109 +256,343 @@ export class BaseUserService {
       { $set: anonymizedData }
     );
 
+    // The avatar pointer is cleared above, so its file would otherwise keep a
+    // reference no profile uses — the one state the sweeper can never collect
+    // and the audit script has to report. Released here instead. Best effort:
+    // the account is already anonymised and a storage failure must not undo it,
+    // and `scripts/audit-profile-image-refs.js` catches whatever is left.
+    if (user.avatarId) {
+      await this.releaseProfileImage(userId, toObjectId(user.avatarId));
+    }
+
     return true;
   }
 
-  public async updateAvatar(user: UserDto | AuthUserDto, file: Record<string, any>): Promise<void> {
-    const userId = toObjectId(user._id);
-    const currentUser = await this.getCollection().findOne(
-      { _id: userId },
-      { projection: { avatarId: 1 } }
-    );
-    const previousAvatarId = currentUser?.avatarId?.toString();
-    const nextAvatarId = file._id?.toString();
+  /**
+   * Re-check an offered profile image against the record the file server wrote.
+   *
+   * Nothing here is taken from the request. The uploader chooses the filename,
+   * the declared MIME type and the metadata, and image processing normalises
+   * much of that away — the durable `type` on the record is the only statement
+   * about what an upload was *for*, and `createdBy` the only statement about who
+   * made it. The controller-level ownership check stays where it is; this is the
+   * check that cannot be skipped by adding a fourth caller.
+   *
+   * @param fileId File server id offered by the caller
+   * @param targetUserId The profile the image would be attached to
+   * @param expectedType `avatar` or `cover` — the durable upload type required
+   * @param actor Who is performing the change; only an admin may attach a file
+   *   the admin tooling uploaded (`createdBy: 'admin'`) to somebody's profile
+   */
+  private async resolveProfileImage(
+    fileId: string | ObjectId,
+    targetUserId: ObjectId,
+    expectedType: ProfileImageType,
+    actor?: UserDto | AuthUserDto
+  ): Promise<Record<string, any>> {
+    const [file] = await this.fileServerService.findByIds([fileId as any]);
+    if (!file) throw new ProfileImageNotFoundException();
 
-    await this.getCollection().updateOne(
-      { _id: userId },
-      {
-        $set: {
-          avatarId: file._id,
-          avatar: file.url
-        }
-      }
-    );
-
-    if (!previousAvatarId || previousAvatarId === nextAvatarId) {
-      return;
+    // An `avatar` may only become an avatar and a `cover` only a cover. They
+    // carry different size and pixel limits and different processing, so
+    // accepting one for the other publishes an image nothing validated for the
+    // place it is being shown.
+    if (file.type !== expectedType) {
+      throw new ProfileImageWrongTypeException();
     }
 
-    try {
-      await this.fileServerService.deleteManyByIds([previousAvatarId]);
-    } catch (error) {
-      this.logger.warn(`Failed to delete replaced user avatar ${previousAvatarId}: ${error.message}`);
+    const createdBy = file.createdBy?.toString();
+    const isOwnedByTarget = createdBy === targetUserId.toString();
+    // `identity-file.controller.ts` stamps `createdBy: 'admin'` on anything an
+    // admin uploads, including an avatar an admin is setting for someone else.
+    // That is the only way a profile image legitimately belongs to a string
+    // rather than to the profile's owner, and only an admin may spend one.
+    const isAdminUpload = createdBy === ADMIN_UPLOAD_OWNER && !!actor?.isAdmin;
+    if (!isOwnedByTarget && !isAdminUpload) {
+      throw new ProfileImageNotOwnedException();
     }
+
+    // Already claimed by a different profile. Re-offering the image a profile
+    // already uses is allowed and idempotent; taking one out of somebody else's
+    // profile is not, and would leave that profile pointing at a file this
+    // request is about to delete.
+    const claimedElsewhere = (file.refItems || []).some(
+      (ref: any) => ref?.itemId?.toString() !== targetUserId.toString()
+    );
+    if (claimedElsewhere) {
+      throw new ProfileImageNotOwnedException();
+    }
+
+    // The record survives a failed decode, and an upload still in the queue has
+    // no dimensions yet. Either way the profile would point at an image that was
+    // never produced, which renders as a broken picture for every viewer.
+    const status = (file as any).status;
+    const processing = (file as any).processingStatus;
+    if (status === 'error' || (file as any).processingError) {
+      throw new ProfileImageNotReadyException();
+    }
+    if (processing && !['completed', 'skipped'].includes(processing)) {
+      throw new ProfileImageNotReadyException();
+    }
+
+    return file;
   }
 
   /**
-     * Update creator cover image
-     *
-     * ⚠️ MISSING FEATURE: No cleanup of previous cover image
-     * RECOMMENDATION: Add cleanup of old cover image like in updateWelcomeVideo()
-     *
-     * Updates a creator's profile cover image with proper file reference management.
-     * The cover image is displayed prominently on the creator's profile page.
-     *
-     * File Management:
-     * - Updates creator record with new cover image references
-     * - Adds file reference for ownership tracking
-     * - Links file to creator for cleanup management
-     * - Does NOT remove previous cover image (potential issue)
-     *
-     * @param user Creator updating their cover image
-     * @param file New cover image file
-     * @returns Promise resolving to the uploaded file
-     * @example
-     * ```typescript
-     * const coverFile = await fileServerService.upload(coverImageData);
-     * await creatorProfileService.updateCover(creator, coverFile);
-     * ```
-     *
-     * @media Manages creator profile cover image
-     * @file Handles file reference management and ownership
-     * @todo Add cleanup of previous cover image to prevent storage bloat
-     */
-  public async updateCover(user: UserDto | AuthUserDto, file: Record<string, any>) {
-    const userId = toObjectId(user._id);
-
-    const currentUser = await this.getCollection().findOne(
-      { _id: userId },
-      { projection: { coverId: 1 } }
-    );
-    const previousCoverId = currentUser?.coverId?.toString();
-    const nextCoverId = file._id?.toString();
-    const coverBgColor = file.metadata?.coverBgColor;
-
-    await this.getCollection().updateOne(
-      { _id: userId },
-      {
-        $set: {
-          coverId: file._id,
-          cover: file.url,
-          coverBgColor
-        }
-      }
-    );
-
-    await this.fileServerService.updateFileOwnership({
-      fileIds: [file._id],
-      createdBy: user._id,
+   * Claim a profile image for its owner before the profile points at it.
+   *
+   * `cleanup-unused-files.job.ts` decides what is abandoned purely from
+   * `refItems`, so the order here is the whole point. Pointing the user
+   * document at the file first leaves a window in which the profile is live but
+   * the image is unreferenced: a crash in that window publishes an avatar the
+   * sweeper deletes within hours, and the profile is left serving a URL whose
+   * bytes are gone. Referencing first inverts the failure into a leaked file
+   * nobody sees, which `scripts/audit-profile-image-refs.js` reclaims.
+   *
+   * Ownership is transferred in the same call so an admin setting a user's
+   * avatar leaves the file owned by that user rather than by the admin.
+   *
+   * @param userId Owner of the profile the image is being attached to
+   * @param fileId File server id of the avatar or cover being attached
+   * @throws ProfileImageNotAttachableException when no file record matched
+   */
+  private async attachProfileImageReference(
+    userId: ObjectId,
+    fileId: ObjectId
+  ): Promise<void> {
+    const result = await this.fileServerService.updateFileOwnership({
+      fileIds: [fileId],
+      createdBy: userId.toString(),
       ref: {
-        itemId: user._id,
+        itemId: userId,
         itemType: FILE_REFERENCE_TYPES.USER
       }
     });
 
-    if (!previousCoverId || previousCoverId === nextCoverId) {
-      return;
+    // The ownership update always writes `updatedAt`, so a matched record always
+    // reports as updated. Zero means nothing matched — a missing or already
+    // deleted file — and that file will never carry a reference.
+    if (!result?.updated) {
+      throw new ProfileImageNotAttachableException();
+    }
+  }
+
+  /**
+   * Undo a claim whose operation could not be completed.
+   *
+   * Reference first, bytes second, and the order matters even here: if the
+   * delete fails, an unreferenced file is exactly what the sweeper collects, so
+   * the worst case degrades into the normal cleanup path instead of a permanent
+   * orphan. Neither step may throw — this runs while another failure is already
+   * being reported, and replacing that error with this one would hide what
+   * actually went wrong.
+   */
+  private async releaseProfileImage(userId: ObjectId, fileId: ObjectId): Promise<void> {
+    try {
+      await this.fileServerService.removeRef(fileId, {
+        itemId: userId,
+        itemType: FILE_REFERENCE_TYPES.USER
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to release reference on profile image ${fileId} for user ${userId}: ${error.message}`
+      );
     }
 
     try {
-      await this.fileServerService.deleteManyByIds([previousCoverId]);
+      await this.fileServerService.deleteManyByIds([fileId]);
     } catch (error) {
-      this.logger.warn(`Failed to delete replaced user cover ${previousCoverId}: ${error.message}`);
+      // Left for the sweeper: the reference above is gone, so the file is
+      // already in the state that makes it collectable.
+      this.logger.warn(
+        `Failed to delete unused profile image ${fileId} for user ${userId}: ${error.message}`
+      );
+    }
+  }
+
+  /**
+   * Retire the image a swap replaced.
+   *
+   * Best effort by design. The profile is already correct at this point and must
+   * not be rolled back for a storage failure, so every outcome here is either
+   * success or something the audit script and the sweeper finish later:
+   * dropping the reference alone is enough to make the file collectable.
+   *
+   * The re-read is not redundant with the swap's own before-value. Two requests
+   * changing the same profile interleave, and a file can be a user's avatar and
+   * cover at once — this is the check that makes "never delete the image a
+   * profile is currently serving" true rather than merely likely.
+   */
+  private async retireReplacedProfileImage(userId: ObjectId, previousFileId: ObjectId): Promise<void> {
+    const current = await this.getCollection().findOne(
+      { _id: userId },
+      { projection: { avatarId: 1, coverId: 1 } }
+    );
+
+    const stillInUse = [current?.avatarId, current?.coverId]
+      .filter(Boolean)
+      .some((id: any) => id.toString() === previousFileId.toString());
+    if (stillInUse) return;
+
+    await this.releaseProfileImage(userId, previousFileId);
+  }
+
+  /**
+   * The one write path for both profile images.
+   *
+   * ```text
+   * validate the file → claim it → atomically swap the pointer → retire the old
+   * ```
+   *
+   * There is no shared transaction between the user document and the file
+   * server, so each step is ordered so that its failure lands somewhere
+   * recoverable:
+   *
+   *  - **Validation fails** — nothing has happened.
+   *  - **Claim fails** — nothing has happened; the file stays unreferenced and
+   *    the sweeper collects it.
+   *  - **Swap fails** — the claim is released and the new file deleted. The
+   *    profile and the image it was already showing are untouched.
+   *  - **Retiring the old file fails** — the profile keeps the new image, which
+   *    is correct and published. The old file is left for the audit script and
+   *    the sweeper; it is never a reason to roll a good profile back.
+   *
+   * The swap is a single `findOneAndUpdate`, and the file it replaced is read
+   * from *that operation's* before-image rather than from a separate read. This
+   * is what makes concurrent replacements safe: two requests each retire exactly
+   * the image they displaced, so the last writer's image survives with its
+   * reference and every loser is cleaned up. A pre-read would have both requests
+   * believe they replaced the same original, leaving the intermediate file
+   * referenced and uncollectable forever.
+   */
+  private async applyProfileImage(
+    user: UserDto | AuthUserDto,
+    fileId: string | ObjectId,
+    config: {
+      type: ProfileImageType;
+      idField: 'avatarId' | 'coverId';
+      urlField: 'avatar' | 'cover';
+      actor?: UserDto | AuthUserDto;
+    }
+  ): Promise<Record<string, any>> {
+    const userId = toObjectId(user._id);
+    const file = await this.resolveProfileImage(fileId, userId, config.type, config.actor || user);
+    const nextFileId = toObjectId(file._id);
+
+    await this.attachProfileImageReference(userId, nextFileId);
+
+    const update: Record<string, any> = {
+      [config.idField]: nextFileId,
+      [config.urlField]: file.url
+    };
+    // Only the cover carries a derived background colour, and only when image
+    // processing produced one.
+    if (config.type === 'cover') {
+      update.coverBgColor = (file as any).metadata?.coverBgColor;
+    }
+
+    let previous: Record<string, any> | null;
+    try {
+      previous = await this.swapProfileImagePointer(userId, update);
+    } catch (error) {
+      await this.releaseProfileImage(userId, nextFileId);
+      throw error;
+    }
+
+    // The user vanished between the claim and the swap. Nothing points at the
+    // file and nothing ever will.
+    if (!previous) {
+      await this.releaseProfileImage(userId, nextFileId);
+      throw new EntityNotFoundException(__t('errors.user_not_found'));
+    }
+
+    const previousFileId = previous[config.idField];
+    if (previousFileId && previousFileId.toString() !== nextFileId.toString()) {
+      await this.retireReplacedProfileImage(userId, toObjectId(previousFileId));
     }
 
     return file;
+  }
+
+  /**
+   * Swap one profile image pointer and return the document as it was before.
+   *
+   * `findOneAndUpdate` is atomic per document, so the before-image names exactly
+   * the file this request displaced even when several requests are in flight.
+   * Avatar and cover set different fields, so simultaneous changes to both
+   * compose rather than overwrite one another.
+   *
+   * The driver is mongodb 6, where `findOneAndUpdate` resolves to the document
+   * itself; the `value` unwrapping keeps this correct if a v5-style result ever
+   * appears, and the projection is narrow enough that a real user document
+   * cannot be mistaken for one.
+   */
+  private async swapProfileImagePointer(
+    userId: ObjectId,
+    update: Record<string, any>
+  ): Promise<Record<string, any> | null> {
+    const result: any = await this.getCollection().findOneAndUpdate(
+      { _id: userId },
+      { $set: update },
+      {
+        returnDocument: 'before',
+        projection: { avatarId: 1, coverId: 1 }
+      }
+    );
+
+    if (result && typeof result === 'object' && 'value' in result) {
+      return result.value;
+    }
+
+    return result;
+  }
+
+  /**
+   * Update a user's avatar.
+   *
+   * @param user The profile being changed
+   * @param fileId File server id of an `avatar` upload, or the file record
+   * @param actor Who is making the change, when that is not the profile's owner
+   *   — an admin setting somebody else's avatar. Defaults to the owner.
+   * @returns The file record now on the profile, so callers can respond with its
+   *   url without a second lookup.
+   * @throws ProfileImageNotFoundException, ProfileImageWrongTypeException,
+   *   ProfileImageNotOwnedException, ProfileImageNotReadyException,
+   *   ProfileImageNotAttachableException
+   */
+  public async updateAvatar(
+    user: UserDto | AuthUserDto,
+    fileId: string | ObjectId | Record<string, any>,
+    actor?: UserDto | AuthUserDto
+  ): Promise<Record<string, any>> {
+    return this.applyProfileImage(user, readFileId(fileId), {
+      type: 'avatar',
+      idField: 'avatarId',
+      urlField: 'avatar',
+      actor
+    });
+  }
+
+  /**
+   * Update a creator's profile cover.
+   *
+   * Same contract as `updateAvatar`; see `applyProfileImage` for the ordering
+   * and what happens at each failure point.
+   *
+   * @returns The file record now on the profile, so callers can respond with its
+   *   url and derived background colour without a second lookup.
+   */
+  public async updateCover(
+    user: UserDto | AuthUserDto,
+    fileId: string | ObjectId | Record<string, any>,
+    actor?: UserDto | AuthUserDto
+  ): Promise<Record<string, any>> {
+    return this.applyProfileImage(user, readFileId(fileId), {
+      type: 'cover',
+      idField: 'coverId',
+      urlField: 'cover',
+      actor
+    });
   }
 
   /**

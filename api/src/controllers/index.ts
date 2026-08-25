@@ -12,5 +12,6 @@ export * from './content';
 // Community controllers
 export { ConversationController } from './community/message/conversation.controller';
 export { MessageController } from './community/message/message.controller';
+export { UserRelationshipController } from './community/relationship/user-relationship.controller';
 export { NotificationController } from './community/notification.controller';
 export { SocialController } from './community/social.controller';

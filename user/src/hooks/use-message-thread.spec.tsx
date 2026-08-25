@@ -174,6 +174,81 @@ describe('useMessageThread', () => {
     expect(latest.pending[0].error).toContain('one message');
   });
 
+  /**
+   * What the sender is actually shown when a send fails.
+   *
+   * A stack trace once reached this bubble verbatim — MongoDB index names and
+   * absolute source paths, rendered in the chat. The server no longer sends one,
+   * but this is the seam where it landed, so it must not hand the bubble an
+   * arbitrary server string again.
+   */
+  describe('the wording of a failed send', () => {
+    const failWith = (error: any) => {
+      mockSendMessage.mockRejectedValue(error);
+    };
+
+    const sendAndRead = async () => {
+      render(<Probe conversationId="c1" />);
+      await waitFor(() => expect(mockSearchMessages).toHaveBeenCalled());
+      await act(async () => { await latest.send({ text: 'hi' }); });
+      return latest.pending[0].error as string;
+    };
+
+    it('never shows a database stack trace', async () => {
+      const crash: any = new Error([
+        'E11000 duplicate key error collection: douyin-clone.messages index: uniq_systemEventKey',
+        '    at InsertOneOperation.execute (D:\\Projects\\douyin-clone\\api\\node_modules\\mongodb\\lib\\operations\\insert.ts:79:13)',
+        '    at tryOperation (D:\\Projects\\douyin-clone\\api\\node_modules\\mongodb\\lib\\operations\\execute_operation.ts:290:26)'
+      ].join('\n'));
+      crash.statusCode = 500;
+      failWith(crash);
+
+      const shown = await sendAndRead();
+
+      expect(shown).toBe('Message could not be sent. Please try again.');
+      expect(shown).not.toContain('E11000');
+      expect(shown).not.toContain('uniq_systemEventKey');
+      expect(shown).not.toContain('node_modules');
+      expect(shown).not.toContain('D:\\Projects');
+    });
+
+    it('still explains a business refusal in the server own wording', async () => {
+      // Restrict, block and a pending request are exactly the cases where the
+      // wording is the point, so those must survive.
+      const refusal: any = new Error('You cannot message this person.');
+      refusal.statusCode = 403;
+      failWith(refusal);
+
+      expect(await sendAndRead()).toBe('You cannot message this person.');
+    });
+
+    it('falls back to friendly wording for an unexplained server failure', async () => {
+      const crash: any = new Error('Something went wrong, please recheck again!');
+      crash.statusCode = 500;
+      failWith(crash);
+
+      expect(await sendAndRead()).toBe('Message could not be sent. Please try again.');
+    });
+
+    it('falls back when there is no status at all, as a network failure has none', async () => {
+      failWith(new Error('Network request failed'));
+
+      expect(await sendAndRead()).toBe('Message could not be sent. Please try again.');
+    });
+
+    it('keeps the bubble retryable, so the person can simply try again', async () => {
+      const crash: any = new Error('boom');
+      crash.statusCode = 500;
+      failWith(crash);
+
+      await sendAndRead();
+
+      expect(latest.pending).toHaveLength(1);
+      // Still a failed bubble the person can retry, not a silently dropped one.
+      expect(latest.pending[0].status).toBe('failed');
+    });
+  });
+
   it('applies an incoming message and marks it read while the thread is open', async () => {
     render(<Probe conversationId="c1" />);
     await waitFor(() => expect(mockMarkRead).toHaveBeenCalledTimes(1));

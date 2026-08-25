@@ -57,3 +57,5 @@ Supplement with vendored general-purpose skills when the task calls for them:
 - Use `@douyin-clone/shared-toast` for toast notifications; do not import toast directly from `react-toastify` in feature code.
 - Add or update focused tests when rendering or component logic is important.
 - Run targeted tests while iterating, then `yarn lint` and `yarn build` before finishing.
+- Save every browser-verification screenshot to `output/screenshots/` at the repo root — never a temp
+  directory. See "Browser Verification Screenshots" in `../AGENTS.md` for naming and reporting rules.

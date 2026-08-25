@@ -36,7 +36,7 @@
 // Import all services from centralized index
 
 // Import guards
-import { FileServerService } from 'src/services/shared/file-server';
+import { FileServerService, UploadPolicyService } from 'src/services/shared/file-server';
 import { AuthGuard, RoleGuard } from './common/guards';
 import { WsUserConnectedGateway } from './gateways/socket/user-connected.gateway';
 
@@ -63,10 +63,18 @@ import {
   ConversationParticipantService,
   MessagePermissionService,
   MessageService,
+  MessageSystemNoticeService,
+  UserRelationshipService,
+  SharedPostService,
+  PostShareService,
   PostStatisticsService,
   CommunicationService,
   ContentPermissionService
 } from './services';
+import { CommentImageIntegrityService } from 'src/services/community/comment/comment-image-integrity.service';
+import { CommentRoomService } from 'src/services/socket/comment-room.service';
+import { CommentStatsCoalescerService } from 'src/services/socket/comment-stats-coalescer.service';
+import { FollowStatsCoalescerService } from 'src/services/socket/follow-stats-coalescer.service';
 import { PostRoomService } from 'src/services/socket/post-room.service';
 import { PostStatsCoalescerService } from 'src/services/socket/post-stats-coalescer.service';
 import { PostStatsFlushJob } from 'src/jobs/socket/post-stats-flush.job';
@@ -83,11 +91,17 @@ import {
 import { PostMediaService } from 'src/services/content/post/post-media.service';
 import { SearchService } from 'src/services/content/search';
 import { TagStatisticsService, TagTrendingService } from 'src/services/content/tag';
+import { FollowStatsListener } from 'src/listeners/community/follow-stats.listener';
 import { PostRoomListener } from 'src/listeners/community/post-room.listener';
 import { CommentContentListener, PostDeletionListener, ReactionAssetsListener } from 'src/listeners/content';
 import { CreatorDeletePostListener } from 'src/listeners/content/post';
 import { ReactionCommentListener, ReplyCommentListener } from 'src/listeners/community/comment';
-import { MessageDeliveryListener, MessageFollowListener } from 'src/listeners/community/message';
+import {
+  MessageDeliveryListener,
+  MessageMutualFollowListener,
+  MessageRelationshipClearedListener
+} from 'src/listeners/community/message';
+import { PostShareRecordListener } from 'src/listeners/community/share';
 import {
   NotificationCommentListener,
   NotificationDeliveryListener,
@@ -120,6 +134,7 @@ export const appProviders = [
 
   // File services
   FileServerService, // File server integration service
+  UploadPolicyService, // Per-type upload limits, enforced before an upload URL exists
   CleanupUnusedFilesJob,
   TagTrendingJob,
 
@@ -153,8 +168,16 @@ export const appProviders = [
   ConversationParticipantService,
   MessagePermissionService,
   MessageService,
+  SharedPostService,
+  MessageSystemNoticeService,
   MessageDeliveryListener,
-  MessageFollowListener,
+  MessageMutualFollowListener,
+  MessageRelationshipClearedListener,
+
+  // Block / restrict, and sharing a post into a message
+  UserRelationshipService,
+  PostShareService,
+  PostShareRecordListener,
 
   // Notification services and listeners
   NotificationService,
@@ -174,6 +197,7 @@ export const appProviders = [
   TagTrendingService,
   PostDeletionListener,
   PostRoomListener,
+  FollowStatsListener,
   CreatorDeletePostListener,
   PostStatisticsService,
 
@@ -184,6 +208,10 @@ export const appProviders = [
   PostStatsFlushJob,
   PostRoomService,
   PostStatsCoalescerService,
+  CommentImageIntegrityService,
+  CommentRoomService,
+  CommentStatsCoalescerService,
+  FollowStatsCoalescerService,
 
   // User services and listeners
   BaseUserService,

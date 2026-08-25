@@ -4,8 +4,8 @@ description: One-way creator follows, followed-creator discovery, and the Follow
 audience: [user, creator, developer-agent]
 domain: community
 status: active
-updated: 2026-08-13
-tags: [following, feed, creator, reaction]
+updated: 2026-08-22
+tags: [following, feed, creator, reaction, realtime]
 ---
 
 # Creator Following
@@ -53,3 +53,21 @@ The reaction schema keeps the ordered following lookup index on `createdBy`, `ob
 Mutual follows — A follows B and B follows A — grant unrestricted direct messaging between the two. A non-mutual pair goes through a message request instead: the initiator sends one message and waits, and the recipient's reply accepts it, freeing both.
 
 This is read live rather than stored, so following or unfollowing changes send permission on the very next message: `FollowService.areMutuallyFollowing` for a single check and `getMutualFollowerIdSet` for a batched conversation list. Unfollowing a creator you were messaging freely returns that conversation to an unanswered request while preserving its history — `FollowService.unfollow` publishes a `deleted` follow event and the message domain resets that pair. See [Direct Messaging](./messaging.md).
+
+## Live follower and following counts (2026-08-22)
+
+Your own follower and following totals update without a refresh, wherever they
+are shown — the account dropdown in the header and your profile header both read
+the same numbers, so the two cannot disagree.
+
+The counts come from the follow records themselves rather than a stored counter,
+which is what keeps them in step with the follower list you open from them.
+
+Clicking **Attention** or **Fans** in the account dropdown opens the same
+follower/following window the profile page uses — same search, paging, follow and
+unfollow, and remove-follower — on the matching tab. It opens over whatever you
+are looking at rather than navigating to your profile, and closing the dropdown
+does not close it.
+
+Updates reach only the person the numbers belong to. Blocking or restricting
+somebody does not change either count, because neither removes the follow.

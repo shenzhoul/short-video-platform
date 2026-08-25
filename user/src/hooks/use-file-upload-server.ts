@@ -1,5 +1,6 @@
+import { toast } from '@douyin-clone/shared-toast';
+import { describeRejectedUpload, describeUploadFailure } from '@lib/upload-policy';
 import { useCallback, useState } from 'react';
-import { toast } from 'react-toastify';
 
 import {
   uploadFile as uploadFileApi,
@@ -30,6 +31,21 @@ import {
 export interface UseFileUploadOptions {
   /** API endpoint to get upload URL from */
   endpoint: string;
+
+  /**
+   * The durable upload type this endpoint issues a URL for.
+   *
+   * When set, the file is judged against that type's policy from
+   * `@douyin-clone/upload-policy` — the same table the API and the file server
+   * read — and a rejected upload is reported with the policy's own message.
+   *
+   * Strongly preferred over `maxSizeMB`/`allowedTypes`, which were per-caller
+   * guesses: the avatar picker refused above 50MB while nothing on the server
+   * agreed, and the post-photo picker refused above 5MB while the server had no
+   * opinion at all. Naming the type is how a picker gets the limits the upload
+   * will actually be held to.
+   */
+  uploadType?: string;
 
   /** Upload configuration options */
   uploadOptions?: Omit<UploadUrlOptions, 'filename' | 'fileSize'>;
@@ -171,6 +187,7 @@ const defaultValidateFile = (
 export function useFileUpload(options: UseFileUploadOptions): UseFileUploadReturn {
   const {
     endpoint,
+    uploadType,
     uploadOptions = {},
     showSuccessMessage = true,
     showErrorMessage = true,
@@ -238,10 +255,19 @@ export function useFileUpload(options: UseFileUploadOptions): UseFileUploadRetur
     // Reset previous state
     reset();
 
-    // Validate file
-    const validation = validateFile
-      ? validateFile(file)
-      : defaultValidateFile(file, maxSizeMB, allowedTypes);
+    // Validate file.
+    //
+    // An explicit `validateFile` still wins — a caller with a rule the registry
+    // does not model keeps it. Otherwise the durable upload type decides, and
+    // only callers that name neither fall back to the old per-caller numbers.
+    let validation: string | null;
+    if (validateFile) {
+      validation = validateFile(file);
+    } else if (uploadType) {
+      validation = await describeRejectedUpload(file, uploadType);
+    } else {
+      validation = defaultValidateFile(file, maxSizeMB, allowedTypes);
+    }
 
     if (validation) {
       const errorResult: UploadResult = {
@@ -294,6 +320,36 @@ export function useFileUpload(options: UseFileUploadOptions): UseFileUploadRetur
         }
       );
 
+      // `uploadFileApi` resolves rather than throws when the server refuses a
+      // file: a TUS failure comes back as `{ success: false, error, errorCode }`.
+      // This branch used to ignore that and report success, so a picture the
+      // file server had already deleted was announced as uploaded and the next
+      // call — `updateAvatar(result.fileId)` — failed against a record that no
+      // longer existed. The refusal is reported as a refusal instead, in the
+      // policy's own words where it sent a code.
+      if (!result.success) {
+        const refusal = describeUploadFailure(result, result.error || errorMessage);
+        setState({
+          isUploading: false,
+          progress: null,
+          error: refusal,
+          result,
+          isSuccess: false,
+          isError: true
+        });
+
+        if (showErrorMessage) {
+          toast.error(refusal);
+        }
+
+        onUploadError?.(refusal, file);
+        setCurrentUpload(null);
+
+        const reported = new Error(refusal);
+        (reported as any).__uploadRefusalReported = true;
+        throw reported;
+      }
+
       // Success
       setState({
         isUploading: false,
@@ -313,7 +369,15 @@ export function useFileUpload(options: UseFileUploadOptions): UseFileUploadRetur
 
       return result;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : errorMessage;
+      // The refusal branch above has already set state, toasted and notified.
+      // Re-running all three here would show the same message twice, which is
+      // exactly the double-toast the comment composer was fixed for.
+      if ((error as any)?.__uploadRefusalReported) throw error;
+
+      const errorMsg = describeUploadFailure(
+        error,
+        error instanceof Error ? error.message : errorMessage
+      );
       const errorResult: UploadResult = {
         success: false,
         fileId: '',
@@ -341,6 +405,7 @@ export function useFileUpload(options: UseFileUploadOptions): UseFileUploadRetur
     }
   }, [
     endpoint,
+    uploadType,
     uploadOptions,
     showSuccessMessage,
     showErrorMessage,

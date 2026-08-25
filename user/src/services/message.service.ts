@@ -1,3 +1,5 @@
+import { describeUploadFailure } from '@lib/upload-policy';
+
 import { APIRequest } from './api-request';
 import { uploadFile, UploadProgress } from './file-upload.service';
 
@@ -52,6 +54,18 @@ export class MessageService extends APIRequest {
     body
   );
 
+  /**
+   * POST /api/messages/share/post/{postId} — share a post with one recipient.
+   *
+   * One recipient per call, so a refusal names the person it applies to and the
+   * other recipients in a multi-share are unaffected. The conversation is found
+   * or created server-side; nothing here needs to know whether one exists.
+   */
+  sharePostToMessage = (postId: string, recipientId: string) => this.post(
+    `/messages/share/post/${encodeURIComponent(postId)}`,
+    { recipientId }
+  );
+
   /** GET /api/messages/unread-count */
   unreadCount = () => this.get('/messages/unread-count');
 
@@ -67,14 +81,14 @@ export class MessageService extends APIRequest {
    */
   async uploadPhoto(file: File, onProgress?: (progress: UploadProgress) => void) {
     const result = await uploadFile('/content/files/message/photo/upload', file, {}, onProgress);
-    if (!result.success) throw new Error(result.error || 'Photo upload failed');
+    if (!result.success) throw new Error(describeUploadFailure(result, 'Photo upload failed'));
     return result;
   }
 
   /** Upload a video for a message and resolve to its file id. */
   async uploadVideo(file: File, onProgress?: (progress: UploadProgress) => void) {
     const result = await uploadFile('/content/files/message/video/upload', file, {}, onProgress);
-    if (!result.success) throw new Error(result.error || 'Video upload failed');
+    if (!result.success) throw new Error(describeUploadFailure(result, 'Video upload failed'));
     return result;
   }
 }
@@ -94,3 +108,4 @@ export const getMessageUnreadCount = messageServiceInstance.unreadCount.bind(mes
 export const markAllMessagesRead = messageServiceInstance.markAllRead.bind(messageServiceInstance);
 export const uploadMessagePhoto = messageServiceInstance.uploadPhoto.bind(messageServiceInstance);
 export const uploadMessageVideo = messageServiceInstance.uploadVideo.bind(messageServiceInstance);
+export const sharePostToMessage = messageServiceInstance.sharePostToMessage.bind(messageServiceInstance);

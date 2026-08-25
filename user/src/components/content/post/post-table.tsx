@@ -7,6 +7,7 @@ import { type PaginatedApiResponse } from '@components/ui/pagination';
 import Table from '@components/ui/table';
 import { FILE_PROCESSING_STATUS, FILE_STATUS } from '@constants/file';
 import { DEFAULT_PAGE_SIZE } from '@constants/pagination';
+import { toast } from '@douyin-clone/shared-toast';
 import { useIsMobile } from '@hooks/use-mobile';
 import { usePaginationHandlers } from '@hooks/use-pagination-handlers';
 import { usePaginationInitialState } from '@hooks/use-pagination-initial-state';
@@ -20,7 +21,6 @@ import debounce from 'lodash/debounce';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { FiEdit, FiTrash2 } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 
 interface PostTableProps {
   initialData: PaginatedApiResponse<IPost>;

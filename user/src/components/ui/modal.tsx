@@ -1,6 +1,8 @@
 'use client';
 
-import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  CSSProperties, ReactNode, useEffect, useRef, useState
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import Button from './button';
@@ -43,6 +45,10 @@ function ModalComponent({
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  /** Whatever had focus before this opened, so it can be handed back. */
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
@@ -56,7 +62,84 @@ function ModalComponent({
     };
   }, [open]);
 
+  /**
+   * Keyboard behaviour: Escape closes, Tab stays inside.
+   *
+   * Bound to `document`, not `window`, and it stops propagation. That ordering
+   * is load-bearing: Post Detail listens for Escape on `window`, and document
+   * handlers run first — so without this, pressing Escape in a dialog opened
+   * over Post Detail closed the *post* and left the dialog behind.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+
+    // No `offsetParent` visibility check: it is null for everything in jsdom,
+    // and unreliable inside a `position: fixed` panel, so it would silently
+    // empty this list and disable the trap. The selector already excludes what
+    // cannot take focus.
+    const focusable = () => Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) || []
+    ).filter((el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true');
+
+    // Focus moves into the dialog so a keyboard user is not left behind it.
+    const timer = setTimeout(() => {
+      const [first] = focusable();
+      (first || panelRef.current)?.focus?.();
+    }, 20);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        event.preventDefault();
+        setIsVisible(false);
+        setTimeout(() => onCancel?.(), 200);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement;
+
+      // Wrap at both ends, which is what keeps focus in the dialog rather than
+      // wandering into the page behind it.
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', onKeyDown, true);
+      // Handed back to whatever opened this, so the reader does not lose their
+      // place in the page.
+      restoreFocusRef.current?.focus?.();
+    };
+  }, [open, onCancel]);
+
   if (!open) return null;
+
+  /**
+   * Whether the caller paints its own panel.
+   *
+   * The panel carried no background of its own, so a caller that did not supply
+   * one got a transparent dialog floating over the dimmed backdrop — readable
+   * only by accident, and unreadable over video. The default below fixes that,
+   * while a caller with its own `bg-` keeps full control rather than fighting a
+   * class of equal specificity.
+   */
+  const hasOwnSurface = /(^|\s)bg-/.test(className);
 
   const handleMaskClick = (e: MouseEvent) => {
     if (maskClosable && e.target === modalRef.current && onCancel) {
@@ -73,8 +156,13 @@ function ModalComponent({
       onClick={(e) => handleMaskClick(e as unknown as MouseEvent)}
     >
       <div
-        className={`rounded-lg shadow-lg relative flex flex-col transform transition-all max-w-[95%] duration-300 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
-          } ${className}`}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+        className={`rounded-lg shadow-lg relative flex flex-col transform transition-all max-w-[95%] duration-300 outline-none ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+          } ${hasOwnSurface ? '' : 'border border-(--border-soft) bg-(--surface-raised) text-(--text-strong)'} ${className}`}
         style={{
           width,
           ...style

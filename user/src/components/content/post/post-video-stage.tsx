@@ -2,6 +2,7 @@
 
 import { LikeButton } from '@components/interactions';
 import SharePanel from '@components/interactions/share-panel';
+import SharePopover from '@components/interactions/share-popover';
 import VideoPlayer, { VideoPlayerRef } from '@components/ui/video-player';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { IPost } from '@interfaces/post';
@@ -130,7 +131,9 @@ export function PostVideoActionRail({
       icon: <ShareLottieIcon className='text-5xl' />,
       label: formatCompactCount(resolvedTotalShare),
       title: 'Share',
-      onClick: () => setSharePanelOpen(true)
+      // No onClick: the popover owns the interaction, opening on hover and
+      // toggling on tap. Opening it deliberately records nothing.
+      sharePopover: true
     },
     isGraphic
       ? {
@@ -230,7 +233,7 @@ export function PostVideoActionRail({
         )}
       />
       {actionItems.map((item) => {
-        return (
+        const control = (
           <button
             key={item.title}
             type="button"
@@ -249,6 +252,24 @@ export function PostVideoActionRail({
               </span>
             ) : null}
           </button>
+        );
+
+        // Wrapped here rather than by a render function on the item: building
+        // the wrapper inside the item would define a component during render,
+        // and React would tear down the subtree on every pass.
+        if (!item.sharePopover) return control;
+
+        return (
+          <SharePopover
+            key={item.title}
+            postId={post._id}
+            shareUrl={shareUrl}
+            // Left of the rail, which is pinned to the right of the stage.
+            panelPositionClassName="bottom-0 right-full mr-3"
+            onShared={onShared}
+          >
+            {control}
+          </SharePopover>
         );
       })}
       {footer}

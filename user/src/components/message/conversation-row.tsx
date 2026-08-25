@@ -24,6 +24,14 @@ interface ConversationRowProps {
  * preview holds only what the sender actually typed.
  */
 function resolvePreview(conversation: IConversation): string {
+  // A shared post is checked before the stored text: the preview must never be
+  // the post's caption, which belongs to somebody else's content and can be
+  // withdrawn after the fact.
+  // A system notice has no stored wording, by design — the label is derived
+  // here for the same reason the media labels are, and so the list never shows
+  // an event name or a blank row.
+  if (conversation.lastMessageType === MESSAGE_TYPE.SYSTEM) return 'You can now message each other';
+  if (conversation.lastMessageType === MESSAGE_TYPE.POST) return '[Post]';
   if (conversation.lastMessage) return conversation.lastMessage;
   if (conversation.lastMessageType === MESSAGE_TYPE.IMAGE) return '[Photo]';
   if (conversation.lastMessageType === MESSAGE_TYPE.VIDEO) return '[Video]';

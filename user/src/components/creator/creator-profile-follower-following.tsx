@@ -4,6 +4,7 @@ import { formatCompactCount } from '@components/content/post/home-feed-media';
 import Dropdown from '@components/ui/dropdown-menu';
 import Modal from '@components/ui/modal';
 import SearchInput from '@components/ui/search-input';
+import { toast } from '@douyin-clone/shared-toast';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { FollowListSort, useFollowList } from '@hooks/use-follow-list';
 import { IUser } from '@interfaces/user';
@@ -11,7 +12,6 @@ import { useProfile } from '@providers/profile.provider';
 import { removeFollower as requestRemoveFollower } from '@services/user.service';
 import Link from 'next/link';
 import { type HTMLAttributes, useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'react-toastify';
 import { type TabItem, Tabs } from 'src/components/ui/tabs';
 import { SortIcon } from 'src/icons';
 
@@ -229,7 +229,7 @@ function FollowListPanel({
   };
 
   return (
-    <div className='mt-0 -mx-8.5 -mb-5 py-0 pr-7 pl-10 overflow-x-hidden overflow-y-auto scrollbar-thin scrollbar-thumb-white/16 scrollbar-track-transparent'>
+    <div className='mt-0 -mx-8.5 -mb-5 py-0 pr-7 pl-10 overflow-x-hidden overflow-y-auto'>
       {visibleUsers.map(user => (
         <FollowListRow
           key={user._id}

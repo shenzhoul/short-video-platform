@@ -22,6 +22,7 @@
 
 import Button from '@components/ui/button';
 import { FormFieldPassword, FormFieldText } from '@components/ui/form-field';
+import { toast } from '@douyin-clone/shared-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { hashPassword } from '@lib/crypto';
 import { getRedirectUrl, removeRedirectUrl, setRedirectUrl } from '@lib/local-storage';
@@ -31,7 +32,6 @@ import { useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'react-toastify';
 import { z } from 'zod';
 
 const DEFAULT_REDIRECT_URL = '/';
@@ -125,7 +125,7 @@ export default function LoginForm() {
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="bg-surface w-[400px] max-w-full p-3 rounded-lg space-y-3"
+      className="bg-surface w-100 max-w-full p-3 rounded-lg space-y-3"
       method="POST"
     >
       <h3 className='text-center font-bold mb-7 text-[30px]'>Welcome to {siteName}</h3>

@@ -1,5 +1,6 @@
 'use client';
 
+import { toast } from '@douyin-clone/shared-toast';
 import type { IUser } from '@interfaces/user';
 import { resolveMentionedUserIds } from '@lib/post-mentions';
 import { showErrorMessage } from '@lib/utils';
@@ -23,7 +24,6 @@ import {
   useRef,
   useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 type PostCreateAccessState = 'checking' | 'allowed' | 'redirecting';
 export type PostCoverRatio = '4:3' | '3:4';

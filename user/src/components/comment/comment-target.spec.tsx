@@ -29,7 +29,7 @@ jest.mock('@providers/profile.provider', () => ({
   useProfile: () => ({ current: viewer })
 }));
 
-jest.mock('react-toastify', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
+jest.mock('@douyin-clone/shared-toast', () => ({ toast: { error: jest.fn(), success: jest.fn() } }));
 
 function comment(overrides: Record<string, any> = {}) {
   return {

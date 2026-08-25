@@ -4,18 +4,24 @@ import { shouldResetPostTypeOnUploadModalCancel } from '@components/content/post
 import { PostTypeValue } from '@components/content/post/post-form-toolbar';
 import { FileThumb } from '@components/shared';
 import Button from '@components/ui/button';
+import { toast } from '@douyin-clone/shared-toast';
 import { usePostTopics } from '@hooks/use-post-topics';
 import { useSearchSuggestions } from '@hooks/use-search-suggestions';
 import { IPost } from '@interfaces/post';
 import { IUser } from '@interfaces/user';
+import {
+  acceptAttributeFor,
+  describeRejectedUpload,
+  POST_TEASER_UPLOAD_TYPE,
+  POST_THUMBNAIL_UPLOAD_TYPE,
+  uploadPolicyFor
+} from '@lib/upload-policy';
 import { getBase64 } from '@lib/utils';
-import { FILE_VALIDATION_PRESETS, validateFileSize } from '@utils/file-validation';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { FiImage, FiPlus, FiVideo } from 'react-icons/fi';
-import { toast } from 'react-toastify';
 
 const Modal = dynamic(() => import('@components/ui/modal'));
 const ComposerTextarea = dynamic(() => import('./composer-textarea'), { ssr: false });
@@ -188,19 +194,23 @@ export const PostForm: React.FC<PostFormProps> = ({
   }, [postType, post, resetPostStates]);
 
   // Handle file selection (thumbnail / teaser only; main files go via UploadMediaModal)
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'thumbnail' | 'teaser') => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, type: 'thumbnail' | 'teaser') => {
     const files = e.target.files;
     if (!files) return;
     const file = files[0];
-    const maxSizeMB = type === 'thumbnail'
-      ? FILE_VALIDATION_PRESETS.IMAGE.maxSizeMB
-      : FILE_VALIDATION_PRESETS.TEASER_VIDEO.maxSizeMB;
-    const validation = validateFileSize(file, maxSizeMB);
 
-    if (!validation.isValid) {
-      const message = validation.error || 'The selected file is too large.';
-      setFileSelectionWarning(prev => ({ ...prev, [type]: message }));
-      toast.error(message);
+    // Each control names the durable upload type it will produce, so the picker
+    // holds the file to the same limits the API and the file server will. The
+    // old check compared only bytes, against a client-side number no server
+    // agreed with.
+    const uploadType = type === 'thumbnail' ? POST_THUMBNAIL_UPLOAD_TYPE : POST_TEASER_UPLOAD_TYPE;
+    const rejection = await describeRejectedUpload(file, uploadType);
+
+    if (rejection) {
+      setFileSelectionWarning(prev => ({ ...prev, [type]: rejection }));
+      toast.error(rejection);
+      // Cleared so choosing the same file again re-fires `change`, and so a
+      // refused pick never leaves a file the form still believes it holds.
       e.target.value = '';
       return;
     }
@@ -210,6 +220,11 @@ export const PostForm: React.FC<PostFormProps> = ({
     else if (type === 'teaser') setSelectedTeaser(file);
     e.target.value = '';
   };
+
+  /** The byte limit a control advertises, quoted from its own policy. */
+  const limitLabel = (uploadType: string) => (
+    `${Math.round((uploadPolicyFor(uploadType)?.maxBytes ?? 0) / (1024 * 1024))}MB`
+  );
 
   // Remove selected file
   const removeSelectedFile = (type: 'files' | 'thumbnail' | 'teaser', index?: number) => {
@@ -354,7 +369,7 @@ export const PostForm: React.FC<PostFormProps> = ({
         <div className="flex items-center gap-2 mt-2">
           {showThumbnail ? (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Thumbnail (Optional, Max {FILE_VALIDATION_PRESETS.IMAGE.maxSizeMB}MB)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Thumbnail (Optional, Max {limitLabel(POST_THUMBNAIL_UPLOAD_TYPE)})</label>
               <div>
                 {/* Existing thumbnail */}
                 {existingThumbnail ? (
@@ -392,7 +407,7 @@ export const PostForm: React.FC<PostFormProps> = ({
               <input
                 id="thumbnail-input"
                 type="file"
-                accept="image/*,.heic,.heif,.avif,.tiff,.tif"
+                accept={acceptAttributeFor(POST_THUMBNAIL_UPLOAD_TYPE)}
                 className="hidden"
                 onChange={e => handleFileSelect(e, 'thumbnail')}
               />
@@ -402,7 +417,7 @@ export const PostForm: React.FC<PostFormProps> = ({
 
           {showTeaser ? (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Teaser (Optional, Max {FILE_VALIDATION_PRESETS.TEASER_VIDEO.maxSizeMB}MB)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Teaser (Optional, Max {limitLabel(POST_TEASER_UPLOAD_TYPE)})</label>
               <div>
                 {/* Existing teaser */}
                 {existingTeaser ? (
@@ -441,7 +456,7 @@ export const PostForm: React.FC<PostFormProps> = ({
                 id="teaser-input"
                 type="file"
                 multiple={false}
-                accept="video/*,.hevc,.mov"
+                accept={acceptAttributeFor(POST_TEASER_UPLOAD_TYPE)}
                 className="hidden"
                 onChange={e => handleFileSelect(e, 'teaser')}
               />

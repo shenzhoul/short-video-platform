@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { MessageRequestPendingException } from 'src/common/exceptions/message';
 import { ObjectId } from 'mongodb';
 
 import { MessageService } from './message.service';
@@ -53,6 +54,12 @@ describe('MessageService', () => {
       ...overrides.fileServerService
     };
     const queueMessageService = { publish: jest.fn().mockResolvedValue(undefined) };
+    const sharedPostService = {
+      resolveMany: jest.fn().mockResolvedValue(new Map()),
+      resolveOne: jest.fn(),
+      assertShareable: jest.fn(),
+      ...overrides.sharedPostService
+    };
 
     return {
       service: new MessageService(
@@ -60,6 +67,7 @@ describe('MessageService', () => {
         conversationService as any,
         participantService as any,
         permissionService as any,
+        sharedPostService as any,
         contentFileService as any,
         fileServerService as any,
         queueMessageService as any
@@ -68,6 +76,7 @@ describe('MessageService', () => {
       conversationService,
       participantService,
       permissionService,
+      sharedPostService,
       contentFileService,
       queueMessageService
     };
@@ -118,7 +127,7 @@ describe('MessageService', () => {
       });
 
       await expect(service.send(conversationId, { text: 'again' } as any, sender))
-        .rejects.toBeInstanceOf(ForbiddenException);
+        .rejects.toBeInstanceOf(MessageRequestPendingException);
 
       expect(messageModel.create).not.toHaveBeenCalled();
       expect(participantService.recordMessage).not.toHaveBeenCalled();
@@ -255,6 +264,108 @@ describe('MessageService', () => {
       await service.send(conversationId, { type: 'image', text: '', fileIds: [fileId] } as any, sender);
 
       expect(messageModel.create.mock.calls[0][0].type).toBe('video');
+    });
+  });
+
+  /**
+   * What happens to the consent state when the row does not get written.
+   *
+   * The claim moves conversation state before the insert, so a failed insert
+   * leaves that state describing a message that does not exist. The compensation
+   * is the only thing standing between a crash and a sender who has silently
+   * spent their one message request, or a request marked accepted by a reply
+   * nobody can read.
+   */
+  describe('compensation when the insert fails', () => {
+    const failing = (error: Error) => ({
+      messageModel: { create: jest.fn().mockRejectedValue(error) }
+    });
+
+    it('releases the claim it made', async () => {
+      const { service, permissionService } = buildService(failing(new Error('write failed')));
+
+      await expect(service.send(conversationId, { text: 'hello' } as any, sender))
+        .rejects.toThrow('write failed');
+
+      expect(permissionService.releaseSendSlot).toHaveBeenCalledWith(
+        conversationId,
+        sender._id,
+        expect.objectContaining({ transition: 'request-sent' })
+      );
+    });
+
+    it('gives the sender their message request allowance back', async () => {
+      // Otherwise a crash costs them the one message they were allowed to send.
+      const { service, permissionService } = buildService(failing(new Error('write failed')));
+
+      await service.send(conversationId, { text: 'hi' } as any, sender).catch(() => null);
+
+      const [, , claim] = permissionService.releaseSendSlot.mock.calls[0];
+      expect(claim.transition).toBe('request-sent');
+    });
+
+    it('does not leave a request accepted by a reply that was never stored', async () => {
+      const { service, permissionService } = buildService({
+        ...failing(new Error('write failed')),
+        permissionService: {
+          claimSendSlot: jest.fn().mockResolvedValue({
+            allowed: true,
+            isMutualFollow: false,
+            requestState: 'accepted',
+            restrictionReason: null,
+            transition: 'request-accepted',
+            previousPendingSenderId: recipientId
+          })
+        }
+      });
+
+      await service.send(conversationId, { text: 'thanks' } as any, sender).catch(() => null);
+
+      const [, , claim] = permissionService.releaseSendSlot.mock.calls[0];
+      expect(claim.transition).toBe('request-accepted');
+      // The pending sender has to be restored, not dropped, or the request
+      // silently becomes nobody's.
+      expect(claim.previousPendingSenderId).toEqual(recipientId);
+    });
+
+    it('publishes nothing and moves no preview when the write failed', async () => {
+      const {
+        service, queueMessageService, conversationService, participantService
+      } = buildService(failing(new Error('write failed')));
+
+      await service.send(conversationId, { text: 'hello' } as any, sender).catch(() => null);
+
+      expect(queueMessageService.publish).not.toHaveBeenCalled();
+      expect(conversationService.applyLastMessage).not.toHaveBeenCalled();
+      expect(participantService.recordMessage).not.toHaveBeenCalled();
+    });
+
+    it('reports the original failure, not the compensation', async () => {
+      // A compensation that swallowed the cause would leave the crash invisible.
+      const { service } = buildService({
+        ...failing(new Error('write failed')),
+        permissionService: {
+          releaseSendSlot: jest.fn().mockRejectedValue(new Error('release also failed'))
+        }
+      });
+
+      await expect(service.send(conversationId, { text: 'hello' } as any, sender))
+        .rejects.toThrow('write failed');
+    });
+
+    it('lets a retry send successfully once the fault is gone', async () => {
+      // The claim was released, so the retry is allowed to claim again.
+      const create = jest.fn()
+        .mockRejectedValueOnce(new Error('write failed'))
+        .mockImplementation(async (doc: any) => ({ ...doc, _id: new ObjectId() }));
+      const { service, messageModel } = buildService({ messageModel: { create } });
+
+      await service.send(conversationId, { text: 'hello' } as any, sender).catch(() => null);
+      const result = await service.send(conversationId, { text: 'hello' } as any, sender);
+
+      expect(result.message).toBeTruthy();
+      // Exactly one message survives the retry, not two.
+      expect(messageModel.create).toHaveBeenCalledTimes(2);
     });
   });
 

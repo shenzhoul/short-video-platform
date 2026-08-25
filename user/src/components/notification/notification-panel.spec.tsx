@@ -147,8 +147,8 @@ describe('notification panel rendering', () => {
     ]));
     renderPanel();
 
-    expect(await screen.findByRole('button', { name: 'Follow back' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Follow back' })).toHaveLength(1);
+    expect(await screen.findByRole('button', { name: 'Follow' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Follow' })).toHaveLength(1);
   });
 
   it('shows the post thumbnail on post-scoped rows and not on follows', async () => {
@@ -286,7 +286,7 @@ describe('notification panel navigation', () => {
     ]));
     renderPanel();
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Follow back' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Follow' }));
 
     expect(mockToggleFollow).toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();

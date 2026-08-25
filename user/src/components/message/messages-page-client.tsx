@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect } from 'react';
 
 import ConversationList from './conversation-list';
+import MessageThreadActions from './message-thread-actions';
 import MessageThreadPanel from './message-thread-panel';
 
 /**
@@ -71,9 +72,10 @@ function MessagesPageContent() {
                   alt=""
                   className="h-8 w-8 shrink-0 rounded-full object-cover"
                 />
-                <span className="min-w-0 truncate text-[15px] font-medium text-(--text-strong)">
+                <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-(--text-strong)">
                   {participant?.name || participant?.username || 'Conversation'}
                 </span>
+                <MessageThreadActions conversation={conversation} />
               </div>
             )}
           />

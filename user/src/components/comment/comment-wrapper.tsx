@@ -2,7 +2,9 @@
 
 import { CommentForm, CommentFormRef, ListComments } from '@components/comment';
 import CommentItem from '@components/comment/comment-item';
+import { CommentLiveStatsProvider } from '@components/comment/comment-live-stats';
 import CommentTargetContext from '@components/comment/comment-target-context';
+import { toast } from '@douyin-clone/shared-toast';
 import { useCommentTarget } from '@hooks/use-comment-target';
 import { useComments } from '@hooks/use-comments';
 import { useHotComment } from '@hooks/use-hot-comment';
@@ -14,7 +16,6 @@ import { useProfile } from '@providers/profile.provider';
 import {
   forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState
 } from 'react';
-import { toast } from 'react-toastify';
 
 type CommentObjectType = 'post' | 'comment';
 
@@ -101,7 +102,7 @@ export interface CommentWrapperRef {
  * commentRef.current?.setVisible(true);
  * commentRef.current?.toggle();
  */
-const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
+const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
   contentId,
   contentType = 'post',
   user,
@@ -281,28 +282,35 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
-  /**
-   * The server page, minus a row the context section is already showing.
+    /**
+   * The one comment id the notification context stands for in the canonical list.
    *
-   * A render-time filter only: `comments` — the canonical array the cursor
-   * pages into — is never touched, and the surviving rows keep their server
-   * order exactly. It exists purely so the target does not appear twice in one
-   * viewport when it happens to sit on the loaded page.
+   * Always the **root** of the target's thread, never the target itself. For a
+   * top-level target the two are the same id; for a reply they are not, and that
+   * difference was the bug: suppressing the reply's own id matched nothing in a
+   * list that only holds top-level comments, so the whole thread rendered again
+   * underneath the card and the reader saw it twice.
+   *
+   * `target.root` is resolved server-side by walking up to the top-level comment,
+   * so this stays correct however deep the target sits.
    */
+  const notificationRootCommentId = useMemo(() => {
+    if (targetDismissed || target.status !== 'found') return null;
+    return target.root?._id || target.comment?._id || null;
+  }, [target, targetDismissed]);
+
   /**
    * The comment currently promoted into the hot slot.
    *
-   * Notification context outranks it: when both point at the same comment the
-   * hot slot stands down rather than showing the reader the same comment twice
-   * under two different headings.
+   * Notification context outranks it: when both point at the same thread the hot
+   * slot stands down rather than showing the reader the same comment twice under
+   * two different headings. Compared against the *root* for the same reason the
+   * list filter is — a reply target still means its root is already on screen.
    */
   const hotCommentId = useMemo(() => {
     if (!hotComment) return null;
-    const contextId = !targetDismissed && target.status === 'found'
-      ? target.comment?._id
-      : null;
-    return contextId === hotComment._id ? null : hotComment._id;
-  }, [hotComment, target, targetDismissed]);
+    return notificationRootCommentId === hotComment._id ? null : hotComment._id;
+  }, [hotComment, notificationRootCommentId]);
 
   /**
    * The server page, minus rows a context section is already showing.
@@ -314,14 +322,12 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
    */
   const visibleComments = useMemo(() => {
     const suppressed = new Set<string>();
-    if (!targetDismissed && target.status === 'found' && !target.isReply && target.comment) {
-      suppressed.add(target.comment._id);
-    }
+    if (notificationRootCommentId) suppressed.add(notificationRootCommentId);
     if (hotCommentId) suppressed.add(hotCommentId);
 
     if (!suppressed.size) return comments;
     return comments.filter((item) => !suppressed.has(item._id));
-  }, [comments, target, targetDismissed, hotCommentId]);
+  }, [comments, notificationRootCommentId, hotCommentId]);
 
   // Track when comments are actually loaded
   useEffect(() => {
@@ -354,13 +360,22 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
   const handleCreateComment = async (values: ICreateComment & { objectId?: string; objectType?: CommentObjectType; }) => {
     if (!user?._id) {
       toast.error('Please login to comment');
-      return;
+      // `null` rather than nothing: the composer reads it as "not created" and
+      // keeps the text and the image instead of clearing them.
+      return null;
     }
 
     const trimmedContent = values.content?.trim() || '';
-    if (!trimmedContent) {
-      toast.error('Comment content is required');
-      return;
+    const attachedImageId = (values as any).imageId;
+
+    // Text or an image will do. Requiring text would make an image-only
+    // comment impossible to post while its file had already been uploaded and
+    // stored — which is exactly what used to happen here: the picture was
+    // saved, the comment was refused, and the author was told their own
+    // comment was empty.
+    if (!trimmedContent && !attachedImageId) {
+      toast.error('Add a comment or an image before posting.');
+      return null;
     }
 
     try {
@@ -386,9 +401,11 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
       }
 
       toast.success('Comment added successfully');
-      return newComment;
+      return newComment ?? null;
     } catch (error: any) {
       showErrorMessage(error);
+      // The draft survives the failure — see the composer's `onFinish`.
+      return null;
     }
   };
 
@@ -451,6 +468,14 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
           onReply={(comment) => setReplyTarget(comment)}
           replyTargetId={replyTarget?._id}
           onDismiss={dismissTarget}
+          postOwnerId={postOwnerId}
+          // Shared with the list below so one comment is never expanded in two
+          // places with two different answers.
+          expandedCommentId={openReplyCommentId}
+          onToggleReplies={(commentId) => setOpenReplyCommentId(
+            (current) => (current === commentId ? null : commentId)
+          )}
+          createdReply={createdReply}
         />
       ) : null}
 
@@ -473,12 +498,18 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
         ordinary comment component so there is one comment UI, not two.
       */}
       {hotCommentId && hotComment ? (
+        /*
+          Overlay tokens for the same reason the notification card uses them:
+          this panel is dark in both themes, and a card painted with the page's
+          flipping tokens turns near-white in light mode behind text that stays
+          white.
+        */
         <section
           aria-label="Top comment"
           data-testid="hot-comment"
-          className="mx-4 mb-3 shrink-0 rounded-xl border border-(--border-faint) bg-(--surface-soft) px-3 py-2.5"
+          className="mx-4 mb-3 shrink-0 rounded-xl border border-(--overlay-border-faint) bg-(--overlay-surface-soft) px-3 py-2.5"
         >
-          <p className="mb-1.5 text-[12px] leading-4 font-medium text-(--text-muted)">
+          <p className="mb-1.5 text-[12px] leading-4 font-medium text-(--overlay-text-muted)">
             Top comment
           </p>
           <CommentItem item={hotComment} user={user} canReply={false} postOwnerId={postOwnerId} />
@@ -488,7 +519,7 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
       <div
         ref={listRef}
         onScroll={(event) => setIsAtNewest(event.currentTarget.scrollTop <= 24)}
-        className={`scrollbar-thin scrollbar-thumb-white/16 scrollbar-track-transparent ${isTopLevelThread ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-2' : ''}`}
+        className={`${isTopLevelThread ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-2' : ''}`}
       >
         <ListComments
           comments={visibleComments}
@@ -544,7 +575,12 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
                 setOpenReplyCommentId(targetObjectId);
               }
 
+              // A failed create keeps the reply target too: clearing it would
+              // turn the retry into a new top-level comment.
+              if (newComment === null) return null;
+
               setReplyTarget(null);
+              return newComment;
             }}
             requesting={submitting}
             replyTarget={replyTarget}
@@ -559,6 +595,25 @@ const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>(({
     </div>
   );
 });
+
+CommentWrapperInner.displayName = 'CommentWrapperInner';
+
+/**
+ * The comment list, with its live-counter store attached.
+ *
+ * The provider has to sit *above* the component that reads the store, so it
+ * cannot live inside the implementation. Wrapping here rather than at each call
+ * site means every surface that renders comments gets the same behaviour, and
+ * none of them has to remember to opt in.
+ *
+ * Keyed on the object being commented on, so switching posts starts from an
+ * empty store instead of inheriting the previous post's numbers.
+ */
+const CommentWrapper = forwardRef<CommentWrapperRef, CommentWrapperProps>((props, ref) => (
+  <CommentLiveStatsProvider postId={props.contentId}>
+    <CommentWrapperInner {...props} ref={ref} />
+  </CommentLiveStatsProvider>
+));
 
 CommentWrapper.displayName = 'CommentWrapper';
 

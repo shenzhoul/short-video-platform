@@ -410,6 +410,38 @@ export class FileServerService {
   }
 
   /**
+   * Remove a reference from a file
+   *
+   * The compensating half of `addRef`. Used when an operation claimed a file and
+   * then could not finish: dropping the reference returns the file to the state
+   * the unused-file sweeper collects, so a failure leaks nothing permanently.
+   *
+   * @param fileId - File ID
+   * @param ref - The exact reference to remove
+   *
+   * @example
+   * ```typescript
+   * await fileServerService.removeRef('file-id-123', {
+   *   itemId: 'user-id-456',
+   *   itemType: 'user'
+   * });
+   * ```
+   */
+  async removeRef(fileId: string | ObjectId, ref: { itemId: string | ObjectId; itemType: string }): Promise<void> {
+    try {
+      await this.makeRequest('POST', `/${fileId}/remove-ref`, {
+        itemId: ref.itemId.toString(),
+        itemType: ref.itemType
+      });
+    } catch (error) {
+      throw new HttpException(
+        `Failed to remove reference from file: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
+
+  /**
    * Add references to multiple files in batch
    *
    * @param fileRefs - Array of file references

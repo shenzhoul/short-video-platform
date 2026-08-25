@@ -16,6 +16,8 @@ export interface ITusUploadRequest {
   acl?: string;
   processingOptions?: any;
   metadata?: Record<string, any>;
+  /** Effective limits from the API, bound to the record for this upload. */
+  uploadLimits?: Record<string, number>;
   createdBy?: string;
   updatedBy?: string;
 }
@@ -133,7 +135,7 @@ export class TusAuthService {
     // Create a pending file record similar to generateSignedUploadUrl
     const fileId = new ObjectId();
     const {
-      mediaType, type, filename, acl, processingOptions, metadata, createdBy, updatedBy
+      mediaType, type, filename, acl, processingOptions, metadata, uploadLimits, createdBy, updatedBy
     } = request;
 
     // Create pending file record for TUS upload
@@ -160,6 +162,11 @@ export class TusAuthService {
       metadata: {
         ...metadata,
         processingOptions,
+        // Written here and never again. The uploader's own TUS metadata is not
+        // merged into this record at any point, so these numbers stay exactly
+        // what the API resolved — which is the same property that makes the
+        // durable `type` trustworthy.
+        uploadLimits,
         originalFilename: filename
       },
       createdBy: createdBy || null,

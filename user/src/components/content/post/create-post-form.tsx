@@ -1,6 +1,7 @@
 'use client';
 
 import { PostForm } from '@components/content/post/post-form';
+import { toast } from '@douyin-clone/shared-toast';
 import { IPost } from '@interfaces/post';
 import { showErrorMessage } from '@lib/utils';
 import { create, uploadPhoto, uploadTeaser, uploadThumbnail, uploadVideo } from '@services/post.service';
@@ -8,7 +9,6 @@ import { getUserFriendlyUploadErrorMessage, isUploadSizeLimitError } from '@util
 import { FileUploadItem, uploadFilesInParallel, UploadProgress } from '@utils/upload-utils';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { toast } from 'react-toastify';
 
 export default function CreatePostForm({ showCancelButton = true }: { showCancelButton?: boolean }) {
   const router = useRouter();

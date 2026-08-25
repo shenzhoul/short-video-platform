@@ -140,6 +140,38 @@ export interface UploadResult {
 
   /** Error message if upload failed */
   error?: string;
+
+  /**
+   * Stable code from the server when it refused the file, e.g.
+   * `INVALID_COMMENT_IMAGE_FORMAT`.
+   *
+   * Carried separately from `error` so a caller can branch on the reason
+   * without matching on prose that may be reworded or translated.
+   */
+  errorCode?: string;
+}
+
+/**
+ * The stable code the server sent with a rejected upload, if it sent one.
+ *
+ * tus-js-client wraps the HTTP failure in a `DetailedError` and flattens the
+ * response into the message, which is fine to log and wrong to branch on. The
+ * original response is still attached, so the JSON body is read from there and
+ * only falls back to scanning the message when it cannot be parsed.
+ */
+function readServerErrorCode(error: any): string | undefined {
+  try {
+    const body = error?.originalResponse?.getBody?.();
+    if (body) {
+      const parsed = JSON.parse(body);
+      const code = parsed?.error || parsed?.message?.error;
+      if (typeof code === 'string') return code;
+    }
+  } catch {
+    // Not JSON, or no response at all — fall through to the message.
+  }
+  const match = /[A-Z][A-Z0-9_]{6,}/.exec(String(error?.message || ''));
+  return match ? match[0] : undefined;
 }
 
 export class FileUploadService extends APIRequest {
@@ -334,7 +366,8 @@ export class FileUploadService extends APIRequest {
               success: false,
               _id: uploadData.fileId,
               fileId: uploadData.fileId,
-              error: error.message || 'TUS upload failed'
+              error: error.message || 'TUS upload failed',
+              errorCode: readServerErrorCode(error)
             });
           },
 

@@ -71,7 +71,7 @@ export default function ConversationList({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain message-scrollbar"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         {loading && conversations.length === 0 ? (
           <div className="flex h-40 items-center justify-center">

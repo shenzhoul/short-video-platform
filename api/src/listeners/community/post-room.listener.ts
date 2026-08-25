@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   COMMENT_CHANNELS,
   COMMENT_OBJECT_TYPES,
+  COMMENT_ROOM_EVENTS,
   POST_ROOM_EVENTS,
   REACTION_CHANNELS,
   REACTION_TARGET_TYPES
@@ -9,6 +10,7 @@ import {
 import { QueueEvent, QueueMessageService } from 'src/kernel';
 import { EVENT } from 'src/kernel/constants';
 import { CommentService } from 'src/services/community/comment/comment.service';
+import { CommentRoomService } from 'src/services/socket/comment-room.service';
 import { PostRoomService } from 'src/services/socket/post-room.service';
 import { PostStatsCoalescerService } from 'src/services/socket/post-stats-coalescer.service';
 
@@ -37,6 +39,7 @@ export class PostRoomListener {
   constructor(
     private readonly queueMessageService: QueueMessageService,
     private readonly postRoomService: PostRoomService,
+    private readonly commentRoomService: CommentRoomService,
     private readonly postStatsCoalescerService: PostStatsCoalescerService,
     private readonly commentService: CommentService
   ) {
@@ -66,19 +69,47 @@ export class PostRoomListener {
       if (!postId) return;
 
       if (event.eventName === EVENT.CREATED) {
-        await this.postRoomService.emit(
-          postId,
-          isReply ? POST_ROOM_EVENTS.REPLY_CREATED : POST_ROOM_EVENTS.COMMENT_CREATED,
-          {
-            // The comment id doubles as the event id: a redelivered queue job
-            // carries the same one, so the client can ignore what it already has.
-            eventId: comment._id.toString(),
+        // The comment id doubles as the event id: a redelivered queue job
+        // carries the same one, so the client can ignore what it already has.
+        const eventId = comment._id.toString();
+        const occurredAt = new Date().toISOString();
+
+        if (isReply) {
+          const rootId = comment.objectId?.toString();
+
+          // Two rooms, two different payloads, and the split is the point. The
+          // post room is everyone watching the post — most of them have this
+          // thread collapsed, and all they need is that it grew. Sending the
+          // reply body there would put the bulk of a busy post's traffic in
+          // front of people who are not reading it.
+          //
+          // The count itself is deliberately absent here: it arrives in the
+          // coalesced snapshot, so a thread taking a burst of replies produces
+          // one bounded counter frame rather than one per reply.
+          await this.postRoomService.emit(postId, POST_ROOM_EVENTS.REPLY_CREATED, {
+            eventId,
             postId: postId.toString(),
-            occurredAt: new Date().toISOString(),
-            ...(isReply ? { rootId: comment.objectId?.toString() } : {}),
-            [isReply ? 'reply' : 'comment']: comment
-          }
-        );
+            parentCommentId: rootId,
+            occurredAt,
+            createdAt: comment.createdAt || occurredAt
+          });
+
+          // The body goes only to the people with this thread open.
+          await this.commentRoomService.emit(rootId, COMMENT_ROOM_EVENTS.REPLY_CREATED, {
+            eventId,
+            postId: postId.toString(),
+            parentCommentId: rootId,
+            occurredAt,
+            reply: comment
+          });
+        } else {
+          await this.postRoomService.emit(postId, POST_ROOM_EVENTS.COMMENT_CREATED, {
+            eventId,
+            postId: postId.toString(),
+            occurredAt,
+            comment
+          });
+        }
       }
 
       if (event.eventName === EVENT.DELETED) {

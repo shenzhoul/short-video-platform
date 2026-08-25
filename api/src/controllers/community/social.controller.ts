@@ -112,7 +112,10 @@ export class SocialController {
       objectId: contentId,
       replyToUserId: payload.replyToUserId,
       replyToName: payload.replyToName,
-      mentionedUserIds: payload.mentionedUserIds
+      mentionedUserIds: payload.mentionedUserIds,
+      // Carried through rather than dropped: the service is where ownership,
+      // upload type and draft state are actually decided.
+      imageId: payload.imageId
     };
 
     const comment = await this.communicationService.createComment(
