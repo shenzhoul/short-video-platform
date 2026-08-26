@@ -27,6 +27,7 @@ describe('PostCrudService setPinned', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
       {} as any
     );
     jest.spyOn(service, 'findById').mockResolvedValue({
@@ -120,6 +121,7 @@ describe('PostCrudService deletePost', () => {
       {} as any,
       fileServerService as any,
       queueMessageService as any,
+      {} as any,
       {} as any
     );
     const post = {
@@ -245,7 +247,8 @@ describe('PostCrudService create video covers', () => {
       { findById: jest.fn().mockResolvedValue({ _id: ownerId }) } as any,
       fileServerService as any,
       { publish: jest.fn().mockResolvedValue(undefined) } as any,
-      { reconcileTagStatistics: jest.fn().mockResolvedValue(undefined) } as any
+      { reconcileTagStatistics: jest.fn().mockResolvedValue(undefined) } as any,
+      { resolveActiveKeyOrThrow: jest.fn() } as any
     );
 
     await service.create({

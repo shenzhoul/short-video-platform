@@ -12,6 +12,7 @@ import {
   CreatorPostController,
   UserPostController,
   SearchController,
+  AdminCategoryController,
   SocialController,
   NotificationController,
   ConversationController,
@@ -46,6 +47,9 @@ export const appControllers = [
 
   // search
   SearchController,
+
+  // post categories
+  AdminCategoryController,
 
   // file
   IdentityFileController,

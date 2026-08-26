@@ -6,6 +6,8 @@ exports.COLLECTION = {
   SETTING: 'settings',
   USER: 'users',
   AUTH: 'auth',
+  CATEGORY: 'categories',
+  POST: 'posts',
 };
 
 exports.DB = mongoose.connection;

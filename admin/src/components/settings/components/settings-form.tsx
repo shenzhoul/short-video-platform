@@ -3,14 +3,16 @@
 import { Loader } from '@layout/components';
 import { Button, Form } from 'antd';
 import { FormInstance } from 'antd/lib/form';
-import React, { useEffect, useEffectEvent, useRef } from 'react';
+import React, { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { ISetting } from 'src/interfaces';
 
 import { useFormValidation } from '../hooks/use-form-validation';
 import { useSettingsData } from '../hooks/use-settings-data';
+import { useSettingsSections } from '../hooks/use-settings-sections';
 import { FileUploadRenderer } from './file-upload-renderer';
 import { FormItemRenderer } from './form-item-renderer';
 import { SettingsMenu } from './settings-menu';
+import { SettingsSections } from './settings-sections';
 
 interface SettingsFormProps {
   selectedTab: string;
@@ -33,8 +35,16 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({ selectedTab }) => {
     errorSettings
   });
 
+  const { groups, activeSection, sections, selectSection } = useSettingsSections(list);
+
+  // `dataChange` is a ref, so the "unsaved changes" notice needs its own state to
+  // re-render. It is derived from the ref rather than duplicating it, so the two
+  // cannot disagree about what is pending.
+  const [pendingCount, setPendingCount] = useState(0);
+
   const setVal = (field: string, val: any) => {
     dataChange.current[field] = val;
+    setPendingCount(Object.keys(dataChange.current).length);
   };
 
   // Update form fields when data is loaded
@@ -46,6 +56,9 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({ selectedTab }) => {
       });
       formRef.current.setFieldsValue(formValues);
     }
+    // A refetch clears the pending map in useSettingsData; read it back rather
+    // than assuming zero, so a reload that arrives mid-edit stays honest.
+    setPendingCount(Object.keys(dataChange.current).length);
   });
 
   useEffect(() => {
@@ -55,6 +68,22 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({ selectedTab }) => {
   if (loadingSettings) {
     return <Loader spinning />;
   }
+
+  const renderSetting = (setting: ISetting) => (
+    <div key={setting._id}>
+      <FormItemRenderer
+        setting={setting}
+        onValueChange={setVal}
+      />
+      <FileUploadRenderer setting={setting} formRef={formRef} onValueChange={setVal} />
+    </div>
+  );
+
+  // Fields outside the active section stay mounted-in-value but unrendered.
+  // antd keeps an unmounted field's value (`Form` preserves by default), and
+  // `dataChange` is untouched by the switch, so an edit made in one section is
+  // still submitted after moving to another.
+  const visibleSettings = activeSection ? activeSection.settings : list;
 
   return (
     <>
@@ -70,15 +99,21 @@ export const SettingsForm: React.FC<SettingsFormProps> = ({ selectedTab }) => {
         labelCol={{ span: 24 }}
         wrapperCol={{ span: 24 }}
       >
-        {list.map((setting: ISetting) => (
-          <div key={setting._id}>
-            <FormItemRenderer
-              setting={setting}
-              onValueChange={setVal}
-            />
-            <FileUploadRenderer setting={setting} formRef={formRef} onValueChange={setVal} />
-          </div>
-        ))}
+        {sections.length && activeSection ? (
+          <SettingsSections
+            key="settings-sections"
+            groups={groups}
+            activeSection={activeSection}
+            onSelect={selectSection}
+            pendingCount={pendingCount}
+          >
+            {visibleSettings.map(renderSetting)}
+          </SettingsSections>
+        ) : (
+          <React.Fragment key="settings-fields">
+            {visibleSettings.map(renderSetting)}
+          </React.Fragment>
+        )}
 
         <div key="submit-button" className="bottom-form">
           <Button

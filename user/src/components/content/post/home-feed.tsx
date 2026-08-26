@@ -2,8 +2,9 @@
 
 import { useHomeFeedInfiniteScroll } from '@hooks/use-home-feed-infinite-scroll';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
+import { isTopicKeyRetired, usePostTopicsCatalogue } from '@hooks/use-post-topics';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FaHeart, FaRss, FaUserPlus } from 'react-icons/fa';
 import InfiniteScroll from 'react-infinite-scroll-component';
 
@@ -51,11 +52,29 @@ function FeedError({ message, onRetry }: { message: string; onRetry: () => void 
 
 export default function HomeFeed({ initialData }: HomeFeedProps) {
   const [topicKey, setTopicKey] = useState('');
+  const catalogue = usePostTopicsCatalogue();
   const { posts, hasMore, loading, loadMore, error, updatePostInteraction } = useHomeFeedInfiniteScroll({
     initialData,
     enabled: true,
     topicKey
   });
+
+  /**
+   * Drop a selection an admin has since disabled.
+   *
+   * The API ignores an unknown or disabled `topicKey` and answers with the unfiltered feed, so
+   * leaving the selection in place would show every post under a category chip that is no longer
+   * even in the bar — the person would believe they were still filtered. Clearing it puts the bar
+   * and the feed back in agreement on "All of them", and `useHomeFeedInfiniteScroll` reloads the
+   * first unfiltered page because `topicKey` changed.
+   *
+   * `isTopicKeyRetired` only answers true after a successful catalogue load, so a first paint still
+   * awaiting the list, or a failed refetch holding the previous one, never clears a valid choice.
+   */
+  useEffect(() => {
+    if (isTopicKeyRetired(topicKey, catalogue)) setTopicKey('');
+  }, [catalogue, topicKey]);
+
   const [hoveredCompactPostId, setHoveredCompactPostId] = useState<string | null>(null);
   const playback = useHomeFeedPlayback(posts, updatePostInteraction);
 
@@ -67,7 +86,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
-      <HomeFeedCategoryBar activeTopicKey={topicKey} onTopicChange={setTopicKey} />
+      <HomeFeedCategoryBar topics={catalogue.topics} activeTopicKey={topicKey} onTopicChange={setTopicKey} />
 
       <div id="home-feed-scroll" className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="px-4 pb-8">

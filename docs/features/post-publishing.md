@@ -4,7 +4,7 @@ description: Creator-owned text, photo, and video post lifecycle.
 audience: [creator, developer-agent]
 domain: content
 status: active
-updated: 2026-08-13
+updated: 2026-08-25
 tags: [post, publish, photo, video, cover]
 ---
 
@@ -39,6 +39,15 @@ tags: [post, publish, photo, video, cover]
 - Continue keeps the Upload graphics context. A draft whose browser metadata was saved before its server file IDs were prepared opens the editor with replaceable interrupted placeholders instead of redirecting to the Video tab; fallback navigation uses `/creator/publish?tab=uploadGraphic`.
 - The phone graphic preview starts paused. Pressing Play advances the shared UI carousel every four seconds, uses Slick's infinite cloning for a seamless loop after the final image, and rotates the Douyin sound-disc indicator while playback is active. A thin full-width segmented bottom control leaves a small gap between image indicators and advances immediately when clicked; manual changes restart the autoplay interval. Pressing Play again pauses on the current image. The preview caption is visually limited to four lines with an ellipsis without truncating the draft or submitted text. The phone action area exposes only the full-width Clear and re-upload control; music selection remains in Extended information.
 - The reusable carousel lives at `user/src/components/ui/carousel.tsx` and wraps `react-slick`. Slick owns autoplay, infinite cloning, swipe/touch handling, and slide transitions; the Douyin progress control uses the exposed `slickNext()`/`slickGoTo()` actions.
+
+## Topics (categories) — updated 2026-08-25
+
+- The optional Topic picker in the video and graphic composers is filled from `GET /search/topics`, which returns the **active** categories from the admin-managed `categories` collection in display order. The response shape is unchanged: `[{ key, label }]`.
+- A post stores the chosen category as the stable `topicKey` string. `PostCrudService` re-checks that key against the catalogue on create and on update: an unknown key is a 404, a disabled one is a 400, and an absent or empty value stores `null`.
+- Admins add, rename, reorder, and disable categories at **Content → Categories** in the admin app. Renaming a category never touches posts, because posts store the key rather than the name; a key cannot be changed once created.
+- Disabling a category removes it from the picker and the home category bar but leaves existing posts intact. The edit screen has no category control, so editing an older post whose category was later disabled still succeeds — the update request omits `topicKey` entirely, and an omitted field means "leave the category alone".
+- The web client caches the topic list for five minutes and refetches when a backgrounded tab regains focus, so an admin's change reaches open sessions without anyone clearing anything.
+- If the category a visitor has selected on the home category bar is disabled while they are browsing, the selection resets to **All of them** and the feed reloads unfiltered. The API answers a disabled `topicKey` with the unfiltered feed rather than an error, so without this the bar would still show a filter that is no longer being applied. The reset only happens after a successful topic refetch confirms the category is gone — a failed refetch or a still-loading first paint never clears a valid selection.
 
 ## Workflow
 

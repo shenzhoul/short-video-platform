@@ -46,7 +46,6 @@ export function usePostEdit(postId: string) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [topicKey, setTopicKey] = useState('');
   const [mentionedUsers, setMentionedUsers] = useState<IUser[]>([]);
   const [generatedCoverUrls, setGeneratedCoverUrls] = useState<string[]>([]);
   const [selectedCoverIndex, setSelectedCoverIndex] = useState<number | null>(null);
@@ -82,7 +81,6 @@ export function usePostEdit(postId: string) {
         setPost(loaded);
         setTitle(loaded.title || '');
         setDescription(loaded.text || '');
-        setTopicKey(loaded.topicKey || '');
         const loadedPhotoCoverId = loaded.type === 'photo'
           ? loaded.thumbnailId || getPostImages(loaded)[0]?._id || ''
           : '';
@@ -199,9 +197,10 @@ export function usePostEdit(postId: string) {
         title: title.trim(),
         text: postText,
         ...(post.type === 'video' ? { coverDisplayRatio } : {}),
-        // Both always sent: each is loaded with the post's current value and reflects the creator's
-        // final intent, so an empty one means "cleared" rather than "not edited".
-        topicKey: topicKey || null,
+        // `topicKey` is deliberately absent. This screen has no category control, so the request
+        // has nothing to say about it — and an omitted field means "leave it alone" to the API.
+        // Resending the loaded value would fail the moment an admin disabled that category, blocking
+        // a caption edit over something the creator cannot even see here.
         mentionedUserIds,
         ...coverPayload
       });
@@ -236,8 +235,6 @@ export function usePostEdit(postId: string) {
     setTitle,
     description,
     setDescription,
-    topicKey,
-    setTopicKey,
     setMentionedUsers,
     descriptionEditorRef,
     videoPreviewUrl: post ? getPostVideo(post) : '',

@@ -61,7 +61,11 @@ export class Post {
   tags: string[];
 
   /**
-   * Broad content category chosen by the creator, as a stable key from POST_TOPICS.
+   * Broad content category chosen by the creator, as a stable key from the `categories` collection.
+   *
+   * Stores the key rather than the category's `_id` because the key never changes — an admin can
+   * rename or disable a category without touching a single post. PostCrudService validates the key
+   * against the live catalogue on every write.
    *
    * Optional on purpose: forcing a choice makes creators pick something arbitrary just to submit,
    * which produces worse category data than leaving it unset.

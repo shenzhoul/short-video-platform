@@ -12,7 +12,7 @@ describe('PostSearchService creator pin ordering', () => {
       countDocuments: jest.fn().mockResolvedValue(0)
     };
     return {
-      service: new PostSearchService(postModel as any),
+      service: new PostSearchService(postModel as any, { isActiveKey: jest.fn() } as any),
       query
     };
   }

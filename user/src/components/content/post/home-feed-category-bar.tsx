@@ -1,16 +1,25 @@
 'use client';
 
-import { usePostTopics } from '@hooks/use-post-topics';
+import type { IPostTopic } from '@services/search.service';
 import { useRef, useState } from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 
 interface HomeFeedCategoryBarProps {
+  /**
+   * The active catalogue, owned by HomeFeed.
+   *
+   * Passed in rather than fetched here so one screen makes one request: HomeFeed already needs the
+   * list to notice a selected category being retired, and two components calling the hook meant two
+   * requests on every mount and every focus refresh.
+   */
+  topics: IPostTopic[];
   /** Selected topic key; empty string means "All of them". */
   activeTopicKey?: string;
   onTopicChange?: (topicKey: string) => void;
 }
 
 export default function HomeFeedCategoryBar({
+  topics,
   activeTopicKey = '',
   onTopicChange
 }: HomeFeedCategoryBarProps) {
@@ -18,7 +27,6 @@ export default function HomeFeedCategoryBar({
   const [canScrollBack, setCanScrollBack] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(true);
   // Sourced from the API so the labels shown always map to keys the server accepts.
-  const topics = usePostTopics();
   const categories = [{ key: '', label: 'All of them' }, ...topics];
 
   const updateButtons = () => {

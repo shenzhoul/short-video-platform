@@ -52,7 +52,10 @@
     "message_post_not_accessible": "This post cannot be shared with this person.",
     "message_post_deleted": "This post is no longer available.",
     "message_share_recipient_required": "Choose someone to share this post with.",
-    "message_share_duplicate": "This post has already been shared with this person."
+    "message_share_duplicate": "This post has already been shared with this person.",
+    "category_not_found": "Category not found.",
+    "category_inactive": "This category is no longer available.",
+    "category_key_taken": "A category with this key already exists."
   },
   "auth": {
     "no_valid_token": "No valid token found",

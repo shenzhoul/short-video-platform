@@ -4,7 +4,7 @@ description: Authorized direct/TUS uploads, ownership references, disk storage, 
 audience: [creator, admin, operator, developer-agent]
 domain: file-service
 status: active
-updated: 2026-08-25
+updated: 2026-08-26
 tags: [upload, tus, image, video, ffmpeg, limits, policy]
 ---
 
@@ -93,14 +93,23 @@ Existing files are not re-checked. The policies apply to new uploads only.
 
 ## Adjusting the limits
 
-**Admin → System → Settings → Upload limits.** Updated 2026-08-24.
+**Admin → System → Settings → Upload limits.** Updated 2026-08-26.
 
-Every type above has its own fields on that screen, named `<Type> · <Limit>`:
+The tab is split into one section per upload type, listed in a rail on the left
+and grouped by media kind. Choosing a section shows only that type's fields, so
+adjusting the avatar height limit means picking **Avatar** rather than scrolling a
+single list of fifty-seven numbers. The heading names the type and says in one
+line what it covers; each field's help text is then only its ceiling.
 
-- **Images** — Max file size (MB), Max width (px), Max height (px), Max pixels (MP),
-  Max frames, Max animation duration (seconds).
-- **Videos** — Max file size (MB), Max width (px), Max height (px),
-  Max duration (seconds), Max frame rate.
+- **Images** — Comment photo, Message photo, Post photo, Post thumbnail, Avatar,
+  Cover, Setting file. Fields: Max file size (MB), Max width (px),
+  Max height (px), Max pixels (MP), Max frames, Max animation duration (seconds).
+- **Videos** — Post video, Post teaser, Message video. Fields: Max file size (MB),
+  Max width (px), Max height (px), Max duration (seconds), Max frame rate.
+
+The open section is in the URL (`?tab=upload-limits&section=avatar`), so a section
+can be linked to directly. **Submit saves every field you edited, across sections** —
+a banner shows the count while changes are pending.
 
 Save takes effect on the **next upload**. Nothing needs restarting: the API keeps
 the settings in memory, refreshes that on write, and tells other instances over

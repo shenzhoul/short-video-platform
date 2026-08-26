@@ -4,3 +4,4 @@ export * from './user.service';
 export * from './file-upload.service';
 export * from './setting.service';
 export * from './logger.service';
+export * from './category.service';

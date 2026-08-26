@@ -68,6 +68,7 @@ import {
   SharedPostService,
   PostShareService,
   PostStatisticsService,
+  CategoryService,
   CommunicationService,
   ContentPermissionService
 } from './services';
@@ -200,6 +201,7 @@ export const appProviders = [
   FollowStatsListener,
   CreatorDeletePostListener,
   PostStatisticsService,
+  CategoryService,
 
   // Socket services and gateways
   SocketUserService,

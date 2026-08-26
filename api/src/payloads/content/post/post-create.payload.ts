@@ -10,7 +10,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { POST_CREATE_TYPES, POST_TOPIC_KEYS } from 'src/common/constants';
+import { POST_CATEGORY_KEY_MAX_LENGTH, POST_CREATE_TYPES } from 'src/common/constants';
 import { SanitizeHtmlBasic, SanitizeHtmlPlainText } from 'src/common/decorators';
 
 export class PostCreatePayload {
@@ -41,12 +41,15 @@ export class PostCreatePayload {
   tagline: string;
 
   /**
-   * Optional content category. Validated against the fixed POST_TOPICS list so a client cannot
-   * store an arbitrary key.
+   * Optional content category, referenced by its stable key.
+   *
+   * Only the shape is checked here — whether the key names a category that exists and is still
+   * active is decided in PostCrudService against the `categories` collection, because the catalogue
+   * is admin-managed data rather than a compile-time constant.
    */
   @IsOptional()
   @IsString()
-  @IsIn(POST_TOPIC_KEYS)
+  @MaxLength(POST_CATEGORY_KEY_MAX_LENGTH)
   @ValidateIf((o) => o.topicKey !== null && o.topicKey !== undefined && o.topicKey !== '')
   topicKey?: string | null;
 

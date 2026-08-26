@@ -29,7 +29,7 @@ export interface IPost {
   text: string;
   /** Normalized hashtags extracted from the text server-side. */
   tags?: string[];
-  /** Content category key from the POST_TOPICS list, or null when the creator skipped it. */
+  /** Content category key from `GET /search/topics`, or null when the creator skipped it. */
   topicKey?: string | null;
   mentionedUserIds?: string[];
   /** Trending hashtag the creator associated this post with ("hotspot" in the UI). */

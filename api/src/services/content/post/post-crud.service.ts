@@ -16,6 +16,7 @@ import { EVENT } from "src/kernel/constants";
 import { UserAccountManagementService } from "src/services/identity";
 import { PostMediaService } from './post-media.service';
 import { FileServerService } from "src/services/shared/file-server";
+import { CategoryService } from 'src/services/content/category';
 import { TagStatisticsService } from "src/services/content/tag";
 import { difference } from "lodash";
 
@@ -41,6 +42,7 @@ export class PostCrudService {
     private readonly fileServerService: FileServerService,
     private readonly queueMessageService: QueueMessageService,
     private readonly tagStatisticsService: TagStatisticsService,
+    private readonly categoryService: CategoryService,
   ) { }
   /**
   * Find post by ID
@@ -91,6 +93,21 @@ export class PostCrudService {
 
     const exists = await this.tagStatisticsService.tagExists(normalized);
     return exists ? normalized : null;
+  }
+
+  /**
+   * Resolve the content category a request is filing a post under.
+   *
+   * The catalogue lives in the database and is edited by admins, so the key cannot be checked by a
+   * decorator — it is verified here on every write. An empty value means "no category" and is
+   * stored as null; anything else must name a category that exists and is still active, otherwise
+   * the request is refused rather than silently dropped.
+   */
+  private async resolveTopicKey(topicKey?: string | null): Promise<string | null> {
+    const normalized = (topicKey || '').trim().toLowerCase();
+    if (!normalized) return null;
+
+    return this.categoryService.resolveActiveKeyOrThrow(normalized);
   }
 
   /**
@@ -268,6 +285,7 @@ export class PostCrudService {
     const tags = payload.text ? extractAndNormalizeHashtags(payload.text) : [];
     const mentionedUserIds = await this.resolveMentionedUserIds(payload.mentionedUserIds);
     const associatedTag = await this.resolveAssociatedTag(payload.associatedTag);
+    const topicKey = await this.resolveTopicKey(payload.topicKey);
 
     const generatedCoverUrls = FileServerInfoDto.normalizeThumbnailUrls(mainFiles[0]?.thumbnails);
     const generatedCover = generatedCoverUrls[payload.coverThumbnailIndex ?? 0]
@@ -284,7 +302,7 @@ export class PostCrudService {
       tags,
       mentionedUserIds,
       associatedTag,
-      topicKey: payload.topicKey || null,
+      topicKey,
       mediaTypes,
       orientation,
       cover4x3Url,
@@ -511,8 +529,10 @@ export class PostCrudService {
     if (payload.mentionedUserIds !== undefined) {
       data.mentionedUserIds = await this.resolveMentionedUserIds(payload.mentionedUserIds);
     }
+    // Only touched when the client actually sent the field, so a partial update cannot silently
+    // clear a post's category. When it is sent, the key is re-validated against the live catalogue.
     if (payload.topicKey !== undefined) {
-      data.topicKey = payload.topicKey || null;
+      data.topicKey = await this.resolveTopicKey(payload.topicKey);
     }
     if (payload.associatedTag !== undefined) {
       data.associatedTag = await this.resolveAssociatedTag(payload.associatedTag);

@@ -54,6 +54,7 @@ export { PostService } from './content/post/post.service';
 export { PostSearchService } from './content/post/post-search.service';
 export { PostRecommendationService } from './content/post/post-recommendation.service';
 export { PostStatisticsService } from './content/post/post-statistics.service';
+export { CategoryService } from './content/category/category.service';
 
 // Socket services
 export { SocketUserService } from './socket/socket-user.service';

@@ -4,7 +4,7 @@ description: Header search discovery, autocomplete, and public search results.
 audience: [guest, user, developer-agent]
 domain: content
 status: active
-updated: 2026-08-11
+updated: 2026-08-25
 tags: [search, discovery, autocomplete, trending]
 ---
 
@@ -36,5 +36,5 @@ Search history remains local to the browser. Up to the first three recent terms 
 - `GET /search/discovery`
 - `GET /search/suggestions`
 - `GET /search`
-- `GET /search/topics`
+- `GET /search/topics` — active post categories as `[{ key, label }]`, read from the admin-managed `categories` collection in display order (see [post publishing](post-publishing.md))
 - `GET /search/related`

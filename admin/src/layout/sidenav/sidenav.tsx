@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AppstoreOutlined,
   DashboardOutlined,
   MoonOutlined,
   SettingOutlined,
@@ -69,6 +70,20 @@ function Sidenav({ collapsed }: P) {
           label: 'Admin Management',
           href: '/identity/users/admin-management'
         }] : [])
+      ]
+    },
+    // Content
+    {
+      key: 'content',
+      href: '#',
+      icon: <AppstoreOutlined />,
+      label: 'Content',
+      children: [
+        {
+          key: 'categories',
+          label: 'Categories',
+          href: '/content/categories'
+        }
       ]
     },
     // System & Settings

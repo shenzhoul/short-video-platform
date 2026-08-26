@@ -19,3 +19,4 @@
 export * from './post.dto';
 export * from './post-video-draft.dto';
 export * from './post-photo-draft.dto';
+export * from './category';

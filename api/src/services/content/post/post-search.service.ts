@@ -9,7 +9,8 @@ import { Post, PostDocument } from "src/schemas";
 import * as moment from 'moment';
 import { createSafeSearchRegex } from "src/common/utils/search-sanitizer.util";
 import { applyCursorPagination } from "src/common/utils/pagination.util";
-import { PAGINATION_DEFAULTS, POST_TOPIC_KEYS } from "src/common/constants";
+import { PAGINATION_DEFAULTS } from "src/common/constants";
+import { CategoryService } from "src/services/content/category";
 import { ObjectId } from 'mongodb';
 
 const creatorPinnedSort = (sort: Record<string, SortOrder>): Record<string, SortOrder> => ({
@@ -78,7 +79,8 @@ function applyCreatorPinnedCursor(query: Record<string, any>, req: PostSearchReq
 @Injectable()
 export class PostSearchService {
   constructor(
-    @InjectModel(Post.name) private readonly PostModel: Model<PostDocument>
+    @InjectModel(Post.name) private readonly PostModel: Model<PostDocument>,
+    private readonly categoryService: CategoryService
   ) { }
   /**
    * Search posts for public user consumption
@@ -129,8 +131,11 @@ export class PostSearchService {
       query.mediaTypes = { $in: req.mediaTypes };
     }
 
-    if (req.topicKey && POST_TOPIC_KEYS.includes(req.topicKey as any)) {
-      query.topicKey = req.topicKey;
+    // An unknown or disabled category is ignored rather than rejected: a stale category chip in an
+    // open tab should fall back to the unfiltered feed, not break it. The catalogue is admin-managed
+    // data now, so the check is a query rather than a constant lookup.
+    if (req.topicKey && await this.categoryService.isActiveKey(req.topicKey)) {
+      query.topicKey = req.topicKey.trim().toLowerCase();
     }
 
     // An explicit hashtag intent matches the indexed tag value exactly — no free-text search, so

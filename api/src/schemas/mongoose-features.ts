@@ -8,6 +8,7 @@ import {
   Setting, SettingSchema,
   // Content schemas
   Post, PostSchema,
+  Category, CategorySchema,
   TagSummary, TagSummarySchema,
   PostMediaSchema, PostMedia,
   // Community schemas
@@ -67,6 +68,9 @@ export const mongooseFeatures = MongooseModule.forFeature([
 
   // Content schemas - Tag
   { name: TagSummary.name, schema: TagSummarySchema },
+
+  // Content schemas - Category
+  { name: Category.name, schema: CategorySchema },
 
   // Community schemas
   { name: Comment.name, schema: CommentSchema },

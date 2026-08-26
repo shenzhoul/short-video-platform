@@ -35,6 +35,31 @@ const humanType = (type) => {
     .join(' ');
 };
 
+/**
+ * What each upload type is actually for, in the words an operator would use.
+ *
+ * The admin screen shows this once per section instead of repeating it on every
+ * field, which is what made the flat list unreadable. A type missing from here
+ * still renders — it falls back to the generic sentence below — so registering a
+ * new upload type never breaks the screen, it only makes it vaguer until someone
+ * writes the line.
+ */
+const TYPE_PURPOSE = Object.freeze({
+  'comment-photo': 'Photos people attach to a comment.',
+  'message-photo': 'Photos sent inside a direct message.',
+  'post-photo': 'The photos that make up a graphic post.',
+  'post-thumbnail': 'Cover images a creator uploads for a post.',
+  avatar: 'Profile pictures.',
+  cover: 'Profile cover banners.',
+  'setting-file': 'Images an admin uploads in Settings, such as the logo and favicon.',
+  'post-video': 'The main video of a video post.',
+  'post-teaser': 'Short teaser clips attached to a post.',
+  'message-video': 'Videos sent inside a direct message.'
+});
+
+/** The heading a section groups under in the admin navigation. */
+const SECTION_GROUPS = Object.freeze({ image: 'Images', video: 'Videos' });
+
 /** Trim floating-point noise from a unit conversion (`5.000000001` -> `5`). */
 const inDisplayUnits = (value, factor) => {
   const converted = value / factor;
@@ -48,6 +73,14 @@ for (const type of UPLOAD_POLICY_TYPES) {
   const policy = getUploadPolicy(type);
   const ceilings = UPLOAD_HARD_CEILINGS[policy.mediaKind] || {};
 
+  const kindWord = policy.mediaKind === 'video' ? 'Video' : 'Image';
+  const sectionLabel = humanType(type);
+  // Said once per section rather than on all six of its fields. Everything here
+  // was previously repeated verbatim in every single description, which is what
+  // made the screen a wall of identical sentences.
+  const sectionNote = `${TYPE_PURPOSE[type] || `${kindWord} uploads of type "${type}".`} `
+    + `Applies to new uploads only; files already stored are never re-checked.`;
+
   for (const spec of uploadLimitFieldsFor(type)) {
     ordering += 1;
     const key = uploadLimitSettingKey(type, spec.settingSuffix);
@@ -60,12 +93,12 @@ for (const type of UPLOAD_POLICY_TYPES) {
       newData: {
         key,
         value: inDisplayUnits(policy[spec.field], spec.factor),
-        name: `${humanType(type)} · ${spec.label}`,
-        description: `${policy.mediaKind === 'video' ? 'Video' : 'Image'} uploads of type "${type}". `
-          + `Applies to new uploads only; files already stored are never re-checked. `
-          + (ceiling
-            ? `The system will not accept more than ${inDisplayUnits(ceiling, spec.factor)}${spec.unit} here.`
-            : ''),
+        // Just the field. The section heading carries the upload type, so the
+        // old `Comment photo · Max width (px)` prefix is redundant there.
+        name: spec.label,
+        description: ceiling
+          ? `Cannot be set above ${inDisplayUnits(ceiling, spec.factor)}${spec.unit}.`
+          : '',
         type: 'number',
         // Public because the uploader in the web app has to show the same limit
         // it will be held to. These are limits, not secrets — the file server
@@ -85,7 +118,14 @@ for (const type of UPLOAD_POLICY_TYPES) {
           max: ceiling ? inDisplayUnits(ceiling, spec.factor) : undefined,
           step: spec.step,
           uploadType: type,
-          limitField: spec.field
+          limitField: spec.field,
+          // Presentation metadata the admin settings screen groups on. Generic
+          // on purpose: any future settings group can split itself into sections
+          // the same way without the admin app learning about upload limits.
+          section: type,
+          sectionLabel,
+          sectionGroup: SECTION_GROUPS[policy.mediaKind] || 'Other',
+          sectionNote
         },
         ordering
       }

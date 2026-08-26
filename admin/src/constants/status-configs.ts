@@ -27,6 +27,18 @@ export const USER_STATUS_CONFIG: StatusConfig = {
 };
 
 /**
+ * Post category status configuration
+ * Used in: components/category/category-list.tsx
+ *
+ * A disabled category is not deleted — it stops being offered to creators while posts already
+ * filed under it keep working, so "Disabled" is the honest word rather than "Removed".
+ */
+export const CATEGORY_STATUS_CONFIG: StatusConfig = {
+  active: { color: 'green', text: 'Active' },
+  inactive: { color: 'default', text: 'Disabled' }
+};
+
+/**
  * Report status configuration
  * Used in: report-status-tag.tsx
  */
@@ -56,7 +68,7 @@ export const PAGE_STATUS_CONFIG: StatusConfig = {
 export const POST_TYPE_CONFIG: StatusConfig = {
   text: { color: 'blue', text: 'Text' },
   photo: { color: 'green', text: 'Photo' },
-  video: { color: 'purple', text: 'Video' },
+  video: { color: 'purple', text: 'Video' }
 };
 
 /**

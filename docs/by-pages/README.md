@@ -4,7 +4,7 @@ description: Implemented Next.js routes in the user and admin applications.
 audience: [user, admin, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-04
+updated: 2026-08-25
 tags: [routes, pages, user, admin]
 ---
 
@@ -36,6 +36,9 @@ Post details open in an in-place modal from the home feed or creator profile. Sh
 | `/identity/users/create` | Admin | Create a user |
 | `/identity/users/update/[id]` | Admin | Edit a user |
 | `/identity/users/admin-management` | Admin | Grant/revoke admin role |
+| `/content/categories` | Admin | Post category list, search, and disable |
+| `/content/categories/create` | Admin | Create a post category |
+| `/content/categories/update/[id]` | Admin | Rename, describe, reorder, or disable a post category |
 | `/system/settings` | Admin | General site and maintenance settings |
 | `/system/logger/audit-logs` | Admin | Audit log viewer |
 | `/system/logger/request-logs` | Admin | Request log viewer |

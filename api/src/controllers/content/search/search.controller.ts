@@ -3,19 +3,22 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { POST_TOPICS } from 'src/common/constants';
 import { CurrentUser } from 'src/common/decorators';
 import { CustomThrottlerGuard, LoadUser } from 'src/common/guards';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { DataResponse } from 'src/kernel';
 import { SearchRequestPayload, SearchSuggestionRequestPayload } from 'src/payloads';
+import { CategoryService } from 'src/services/content/category';
 import { SearchService } from 'src/services/content/search';
 
 @Injectable()
 @Controller('/search')
 @ApiTags('Search')
 export class SearchController {
-  constructor(private readonly searchService: SearchService) { }
+  constructor(
+    private readonly searchService: SearchService,
+    private readonly categoryService: CategoryService
+  ) { }
 
   /**
    * Public search. `LoadUser` is optional auth so results can carry the viewer's own like/follow
@@ -85,11 +88,16 @@ export class SearchController {
   /**
    * The canonical topic list, so the composer and the home category bar render exactly the keys the
    * API will accept rather than each maintaining their own copy.
+   *
+   * Backed by the admin-managed `categories` collection. The `{ key, label }` response shape is
+   * unchanged from when the list was a hard-coded constant, which is what lets the catalogue become
+   * editable without the web client changing.
    */
   @Get('/topics')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'List the content topics a post can be filed under' })
-  async topics(): Promise<DataResponse<typeof POST_TOPICS>> {
-    return DataResponse.ok(POST_TOPICS);
+  async topics(): Promise<DataResponse<Array<{ key: string; label: string }>>> {
+    const categories = await this.categoryService.findActive();
+    return DataResponse.ok(categories.map((category) => category.toTopicResponse()));
   }
 }
