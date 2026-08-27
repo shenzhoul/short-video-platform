@@ -51,6 +51,18 @@ export class PostService extends APIRequest {
     headers
   );
 
+  /**
+   * Posts from the viewer's friends — creators they follow who follow back.
+   *
+   * Same shape as `getFollowingPosts`; the server narrows the creator set to
+   * mutual follows, which is the relationship this product already treats as a
+   * peer connection (it is what lets two people message without a request).
+   */
+  getFriendPosts = (query?: PostQuery, headers?: HeadersMap) => this.get(
+    this.buildUrl('/posts/friends', query),
+    headers
+  );
+
   getCreatorPosts = (userId: string, query?: PostQuery, headers?: HeadersMap) => this.getHomePosts(
     { ...query, userId },
     headers
@@ -213,6 +225,7 @@ const postServiceInstance = new PostService();
 export const getPersonalizedHomePosts = postServiceInstance.getPersonalizedHomePosts.bind(postServiceInstance);
 export const getRecommendedPosts = postServiceInstance.getRecommendedPosts.bind(postServiceInstance);
 export const getFollowingPosts = postServiceInstance.getFollowingPosts.bind(postServiceInstance);
+export const getFriendPosts = postServiceInstance.getFriendPosts.bind(postServiceInstance);
 export const getCreatorPosts = postServiceInstance.getCreatorPosts.bind(postServiceInstance);
 export const myPosts = postServiceInstance.myPosts.bind(postServiceInstance);
 export const likedPosts = postServiceInstance.likedPosts.bind(postServiceInstance);

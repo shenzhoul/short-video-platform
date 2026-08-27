@@ -61,7 +61,9 @@ export default function ErrorPage({
   useEffect(() => {
     if (sessionExpired) {
       const timer = setTimeout(() => {
-        window.location.href = `/auth/login?redirectUrl=${encodeURIComponent('/')}`;
+        // Home rather than a login page: there is no login page any more, and
+        // the account dropdown there opens the login dialog.
+        window.location.href = '/';
       }, 3000);
       return () => clearTimeout(timer);
     }

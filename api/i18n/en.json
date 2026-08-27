@@ -1,6 +1,11 @@
 {
   "errors": {
     "user_not_found": "User not found",
+    "email_taken": "That email address is already registered.",
+    "username_taken": "That username is already taken.",
+    "credential_write_failed": "We could not save those credentials. Please try again.",
+    "credential_already_exists": "That account already has a password set.",
+    "credential_not_found": "That account has no password to change.",
     "invalid_login_credentials": "Your username/email or password is incorrect, please recheck.",
     "base_model_not_initialized": "BaseUserModel is not initialized. Ensure the service constructor has been called.",
     "no_database_connection": "MongoDB connection not established. Check your MONGO_URI configuration.",

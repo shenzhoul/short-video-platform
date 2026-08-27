@@ -26,6 +26,7 @@ export { AppService } from '../app.service';
 // Identity services
 export { AuthService } from './identity/auth/auth.service';
 export { TokenService } from './identity/auth/token.service';
+export { PasswordHasherService } from './identity/auth/password-hasher.service';
 export { BaseUserService } from './identity/user/base-user.service';
 export { UserAccountManagementService } from './identity/user/user.service';
 export { UserSearchAndFilterService } from './identity/user/user-search.service';

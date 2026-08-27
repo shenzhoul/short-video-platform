@@ -64,6 +64,14 @@ export default async function CreatorPage({ params, searchParams }: CreatorPageP
       if (hasApiErrorStatus(err, 403)) {
         return <AccessForbiddenContent reason={getAccessRestrictionReason(err)} />;
       }
+      // 401 is not 404. This profile is public, so a rejected credential says
+      // something about *the viewer's session*, not about whether the creator
+      // exists — reporting it as not-found would tell a signed-in visitor with a
+      // stale token that the person they are looking at has vanished. Rethrown
+      // so the error boundary can end the dead session instead.
+      if (hasApiErrorStatus(err, 401)) {
+        throw err;
+      }
       notFound();
     }
     const creator = response?.data;
@@ -107,6 +115,11 @@ export default async function CreatorPage({ params, searchParams }: CreatorPageP
   } catch (error) {
     if (hasApiErrorStatus(error, 403)) {
       return <AccessForbiddenContent reason={getAccessRestrictionReason(error)} />;
+    }
+    // Same rule as the inner handler, and for the same reason: an expired
+    // session must not be reported as a missing creator.
+    if (hasApiErrorStatus(error, 401)) {
+      throw error;
     }
     notFound();
   }

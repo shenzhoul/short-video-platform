@@ -29,14 +29,13 @@
  */
 
 import { PostActions, PostMenu } from '@components/content/post';
-import { toast } from '@douyin-clone/shared-toast';
 import { usePostDetails } from '@hooks/use-content';
 import { useUserOnlineStatus } from '@hooks/use-user-online-status';
 import { linkifyText } from '@lib/html-helper';
 import { formatDateFromNow } from '@lib/index';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { IPost } from 'src/interfaces';
 import { useProfile } from 'src/providers/profile.provider';
@@ -51,14 +50,13 @@ type Props = {
 };
 
 export default function PostCard({ post, onDelete }: Props) {
-  const router = useRouter();
+  const { openAuthModal } = useAuthModal();
   const { current: user } = useProfile();
   // Use the post details hook
   const { post: currentPost } = usePostDetails(post);
 
   const [isOpenComment, setIsOpenComment] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const pathname = usePathname();
 
   // Track creator's online status
   const { isOnline: creatorIsOnline } = useUserOnlineStatus({
@@ -84,8 +82,9 @@ export default function PostCard({ post, onDelete }: Props) {
 
   const onClickViewPost = () => {
     if (!user?._id) {
-      toast.error('You can subscribe to the model once you login/register.');
-      router.push(`/auth/login?redirectUrl=${encodeURIComponent(pathname)}`);
+      // Blocked, then offered a way in — over this post, with the URL intact,
+      // rather than navigating away and losing the visitor's place in the feed.
+      openAuthModal();
       return;
     }
   };

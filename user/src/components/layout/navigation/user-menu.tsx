@@ -3,6 +3,7 @@
 import { NavigationMenuItem } from '@components/ui/navigation-menu-item';
 import { useIsMobile } from '@hooks/use-mobile';
 import { IUser } from '@interfaces/user';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { useProfile } from '@providers/profile.provider';
 import { ThemeContext } from '@providers/ThemeProvider';
 import { usePathname, useRouter } from 'next/navigation';
@@ -32,10 +33,22 @@ export type FanMenuItem = {
   activeClassName?: string;
   tooltip?: string;
   group?: string;
+  /**
+   * The destination cannot even be *addressed* without a signed-in user, so a
+   * guest gets the auth dialog instead of a navigation.
+   *
+   * This is not the general "this page needs auth" flag — pages like
+   * `/following` have a fixed URL and gate themselves, which is better because
+   * the intended URL survives the sign-in. It is for items whose href is built
+   * *from* the user, where following the link signed-out navigates somewhere
+   * that does not exist.
+   */
+  requiresSignedInHref?: boolean;
 };
 
 export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
   const { current: clientUser, fetching } = useProfile();
+  const { openAuthModal } = useAuthModal();
   const user = fetching ? (serverUser || clientUser) : (clientUser || serverUser);
   const pathname = usePathname();
   const router = useRouter();
@@ -98,7 +111,12 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
       activeClassName: 'bg-(--active-bg) text-(--text-strong)'
     },
     {
-      href: `/${user?.username}`,
+      // Signed out this interpolates to the literal string `/undefined`, which
+      // resolves to the `[creator]` route, finds no such creator and renders a
+      // hard 404. That is an authentication problem wearing a not-found error,
+      // so the guest branch below intercepts it before any navigation happens.
+      href: user?.username ? `/${user.username}` : undefined,
+      requiresSignedInHref: true,
       icon: getMenuIcon('profile', isPathActive(`/${user?.username}`, user?.username || '')),
       label: 'Profile',
       tooltip: 'Profile',
@@ -164,6 +182,12 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
               }
               if (isHydratedMobile && (item as any)?.children?.length > 0) {
                 setActiveMenuKey(activeMenuKey === item.key ? undefined : item.key);
+                return;
+              }
+              // An href that is built from the signed-in user has nowhere to go
+              // for a guest. Offer the dialog rather than navigating into a 404.
+              if (item.requiresSignedInHref && !user?.username) {
+                openAuthModal();
                 return;
               }
               if (pathname === item.href || !item.href) {

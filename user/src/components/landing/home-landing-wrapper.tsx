@@ -1,5 +1,6 @@
 import HomeFeed from '@components/content/post/home-feed';
 import { POST_PAGE_LIMIT } from '@constants/pagination';
+import { hasApiErrorStatus } from '@lib/api-error';
 import { authOptions } from '@lib/auth-options';
 import { getClientIpHeadersFromNextHeaders } from '@lib/ip';
 import { getPersonalizedHomePosts } from '@services/post.service';
@@ -54,7 +55,14 @@ export default async function HomeLandingWrapper({ searchParams }: { searchParam
         </div>
       </div>
     );
-  } catch {
+  } catch (error) {
+    // The home feed is public and this page needs no session, so a rejected
+    // credential here means a stale token — not a missing page. Rethrown for the
+    // error boundary, which ends the dead session, rather than being flattened
+    // into a 404 that tells the visitor the home page does not exist.
+    if (hasApiErrorStatus(error, 401)) {
+      throw error;
+    }
     notFound();
   }
 }

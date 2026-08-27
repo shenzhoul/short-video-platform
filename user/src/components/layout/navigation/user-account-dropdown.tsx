@@ -11,6 +11,7 @@ import { toast } from '@douyin-clone/shared-toast';
 import { useFollowStats } from '@hooks/use-follow-stats';
 import { useLikedPostCount } from '@hooks/use-liked-post-count';
 import { IUser } from '@interfaces/user';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { useFollowListModal } from '@providers/follow-list.provider';
 import { useRouter } from 'next/navigation';
 import {
@@ -42,6 +43,7 @@ function LikedPostCount({ enabled }: { enabled: boolean }) {
 
 export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropdownProps) {
   const router = useRouter();
+  const { openAuthModal } = useAuthModal();
   const displayName = loggedIn ? (user?.name || user?.username || 'Guest') : 'Not logged in';
   const { openFollowList } = useFollowListModal();
   // Seeded from the profile response — which counts the follow rows rather than
@@ -58,9 +60,16 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
   const postCount = user?.stats?.totalPosts || 0;
   const profileHref = user?.username ? `/${user.username}` : '';
 
+  /**
+   * Gate for the menu entries that only make sense for an account.
+   *
+   * Opens the shared dialog rather than telling the visitor off with a toast:
+   * the answer to "you need an account" is a place to sign in, and it appears
+   * over this page rather than replacing it.
+   */
   const requireLogin = () => {
     if (!loggedIn) {
-      toast.error('Please login to use this menu');
+      openAuthModal();
       return false;
     }
     return true;
@@ -115,9 +124,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
       <button
         type="button"
         className="ml-4 inline-flex h-10 w-23 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#ff2f5f] px-4 text-sm font-semibold text-white transition hover:bg-[#ff4772]"
-        onClick={() => {
-          window.location.href = '/auth/login';
-        }}
+        onClick={() => openAuthModal()}
       >
         <AvatarIcon className='text-xl' />
         Login
@@ -240,7 +247,11 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
               type="button"
               className="flex h-9 cursor-pointer items-center gap-2 text-left text-sm font-medium text-(--text-soft) transition hover:text-(--text-strong)"
               onClick={() => {
-                window.location.href = loggedIn ? '/auth/logout' : '/auth/login';
+                if (!loggedIn) {
+                  openAuthModal();
+                  return;
+                }
+                window.location.href = '/auth/logout';
               }}
             >
               <LogoutIcon className="text-[26px]" />

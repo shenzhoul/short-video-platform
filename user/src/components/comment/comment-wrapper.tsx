@@ -12,6 +12,7 @@ import { usePostLiveComments } from '@hooks/use-post-live-comments';
 import { IComment, ICreateComment } from '@interfaces/comment';
 import { IUser } from '@interfaces/user';
 import { showErrorMessage } from '@lib/utils';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { useProfile } from '@providers/profile.provider';
 import {
   forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState
@@ -130,6 +131,7 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
   const [displayTotalComments, setDisplayTotalComments] = useState(initialTotalComments);
 
   const { current: profileUser } = useProfile();
+  const { openAuthModal } = useAuthModal();
   const isTopLevelThread = level === 0;
   const commentFormRef = useRef<CommentFormRef>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -359,7 +361,9 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
   // Handle comment creation with the hook
   const handleCreateComment = async (values: ICreateComment & { objectId?: string; objectType?: CommentObjectType; }) => {
     if (!user?._id) {
-      toast.error('Please login to comment');
+      // The dialog, not a toast: the visitor needs somewhere to sign in, not a
+      // reminder that they have not.
+      openAuthModal();
       // `null` rather than nothing: the composer reads it as "not created" and
       // keeps the text and the image instead of clearing them.
       return null;
@@ -587,9 +591,13 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
             onCancelReply={() => setReplyTarget(null)}
           />
         ) : (
-          <div className="flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-white/20 text-sm text-white/60 transition hover:bg-white/30">
+          <button
+            type="button"
+            onClick={() => openAuthModal()}
+            className="flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-white/20 text-sm text-white/60 transition hover:bg-white/30"
+          >
             Please <span className="mx-1 text-[#fe2c55]">login</span> before leaving comments
-          </div>
+          </button>
         )}
       </div>
     </div>

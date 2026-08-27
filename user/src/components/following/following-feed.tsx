@@ -6,7 +6,7 @@ import Carousel, {
 } from '@components/ui/carousel';
 import { VideoPlayerRef } from '@components/ui/video-player';
 import { useCreatorVideos } from '@hooks/use-creator-videos';
-import { FollowingFeedPage, useFollowingFeed } from '@hooks/use-following-feed';
+import { FollowingFeedPage, FollowingFeedSource, useFollowingFeed } from '@hooks/use-following-feed';
 import { usePipFeedSync } from '@hooks/use-pip-feed-sync';
 import { usePostInteractionState } from '@hooks/use-post-interactions';
 import { PostNavigationDirection, usePostNavigationWheel } from '@hooks/use-post-navigation-wheel';
@@ -29,11 +29,27 @@ import FollowingCreatorsRail from './following-creators-rail';
 interface FollowingFeedProps {
   initialData?: FollowingFeedPage | null;
   initialCreators?: IUser[];
+  /**
+   * Which relationship scopes the feed.
+   *
+   * The Friends page is this same component with `source="friends"` — same
+   * layout, same rail, same loading and empty behaviour, same interaction
+   * handling. A second feed implementation would be two places for the same
+   * bugs.
+   */
+  source?: FollowingFeedSource;
+  /** Heading for the creator rail, which is "my friends" on the Friends page. */
+  railTitle?: string;
 }
 
-export default function FollowingFeed({ initialData, initialCreators = [] }: FollowingFeedProps) {
+export default function FollowingFeed({
+  initialData,
+  initialCreators = [],
+  source = 'following',
+  railTitle
+}: FollowingFeedProps) {
   const playerRef = useRef<VideoPlayerRef>(null);
-  const { posts, hasMore, loading, error, loadMore, updatePostInteraction, markCreatorFollowed, unfollowCreator } = useFollowingFeed(initialData);
+  const { posts, hasMore, loading, error, loadMore, updatePostInteraction, markCreatorFollowed, unfollowCreator } = useFollowingFeed(initialData, source);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [unfollowedCreatorIds, setUnfollowedCreatorIds] = useState<Set<string>>(() => new Set());
   const [detailPanelTab, setDetailPanelTab] = useState<PostVideoDetailTab | null>(null);
@@ -131,10 +147,18 @@ export default function FollowingFeed({ initialData, initialCreators = [] }: Fol
   }, [activePost, resumePlayback]);
 
   if (!activePost) {
+    // An empty feed is a legitimate state of a working account — you follow
+    // nobody yet, or none of your friends has posted. It is never an error and
+    // never a missing page. A real failure keeps its own message and its retry.
+    const emptyMessage = source === 'friends'
+      ? 'Follow someone who follows you back to see your friends here.'
+      : 'Follow creators to see their latest posts here.';
+    const loadingMessage = source === 'friends' ? 'Loading posts from friends...' : 'Loading followed posts...';
+
     return (
       <div className="flex h-full min-h-0 w-full">
         <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-(--page-bg) text-sm font-semibold text-(--text-muted)">
-          <span>{loading ? 'Loading followed posts...' : error || 'Follow creators to see their latest posts here.'}</span>
+          <span>{loading ? loadingMessage : error || emptyMessage}</span>
           {error ? <button type="button" onClick={() => void loadMore()} className="cursor-pointer rounded-full bg-white px-4 py-2 text-xs font-bold text-black">Try again</button> : null}
         </div>
       </div>
@@ -146,6 +170,7 @@ export default function FollowingFeed({ initialData, initialCreators = [] }: Fol
     <div className="flex h-full min-h-0 w-full bg-(--page-bg)">
       <FollowingCreatorsRail
         creators={creators}
+        title={railTitle}
         activeCreatorId={activePost.user?._id}
         onSelectCreator={openCreatorVideos}
         onUnfollowCreator={handleUnfollowCreator}

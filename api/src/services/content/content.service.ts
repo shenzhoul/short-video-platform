@@ -273,6 +273,29 @@ export class ContentService {
     return this.userSearchPosts(req, user);
   }
 
+  /**
+   * Posts from the user's friends — the creators they follow who follow back.
+   *
+   * Deliberately identical in shape to `getFollowingPosts`: same search, same
+   * pagination, same population, only the creator set differs. A friends feed is
+   * a following feed narrowed to mutual relationships, not a separate system.
+   *
+   * No friends means an empty page, never an error and never a missing route:
+   * "you have no friends yet" is a legitimate state of a working account.
+   */
+  async getFriendPosts(req: PostSearchRequest, user: UserDto | AuthUserDto) {
+    const creatorIds = await this.followService.getMutualFollowCreatorIds(user._id);
+    if (!creatorIds.length) {
+      return {
+        data: [], total: 0, hasMore: false, nextCursor: null,
+        paginationInfo: { maxOffset: PAGINATION_DEFAULTS.MAX_OFFSET, cursorPaginationAvailable: true }
+      };
+    }
+
+    (req as any).enhanceQueryUserId = { $in: creatorIds };
+    return this.userSearchPosts(req, user);
+  }
+
   /** Return posts liked by the authenticated user in reaction order. */
   async getLikedPosts(req: ReactionSearchRequestPayload, user: UserDto | AuthUserDto) {
     req.createdBy = user._id;

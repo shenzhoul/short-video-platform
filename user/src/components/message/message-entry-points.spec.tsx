@@ -16,6 +16,9 @@ import {
  * - a profile knows *who* the user wants, so it opens that thread directly;
  * - post detail names no conversation, so it just toggles.
  *
+ * A signed-out visitor is a fourth case: every conversation is private, so the
+ * shared auth dialog opens *over* the profile rather than navigating anywhere.
+ *
  * These tests pin those responsibilities and the single-workspace guarantee.
  */
 
@@ -26,9 +29,15 @@ jest.mock('next-auth/react', () => ({
 
 let pathname = '/';
 const pushMock = jest.fn();
+const replaceMock = jest.fn();
 jest.mock('next/navigation', () => ({
   usePathname: () => pathname,
-  useRouter: () => ({ push: pushMock })
+  useRouter: () => ({ push: pushMock, replace: replaceMock })
+}));
+
+const openAuthModal = jest.fn();
+jest.mock('@providers/auth-modal.provider', () => ({
+  useAuthModal: () => ({ openAuthModal })
 }));
 
 const openConversationWith = jest.fn();
@@ -61,6 +70,8 @@ beforeEach(() => {
   hasUnread = false;
   openConversationWith.mockReset();
   pushMock.mockReset();
+  replaceMock.mockReset();
+  openAuthModal.mockReset();
 });
 
 describe('header message entry point', () => {
@@ -128,13 +139,17 @@ describe('profile message entry point', () => {
     expect(screen.getByTestId('state')).toHaveTextContent('closed:list:-');
   });
 
-  it('sends a signed-out visitor to sign in instead of opening anything', async () => {
+  it('opens the auth dialog for a signed-out visitor instead of navigating', async () => {
     sessionStatus = 'unauthenticated';
     renderShell(<ProfileMessageButton creatorId="creator-9" />);
 
     await act(async () => { screen.getByLabelText('Message this creator').click(); });
 
-    expect(pushMock).toHaveBeenCalledWith('/auth/login');
+    expect(openAuthModal).toHaveBeenCalledTimes(1);
+    // The profile URL must survive: the visitor came here to look at this
+    // creator, and signing in has to leave them looking at them.
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(replaceMock).not.toHaveBeenCalled();
     expect(openConversationWith).not.toHaveBeenCalled();
     expect(screen.getByTestId('state')).toHaveTextContent('closed:list:-');
   });

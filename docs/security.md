@@ -4,8 +4,8 @@ description: Security controls implemented in the current codebase and limitatio
 audience: [admin, operator, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-22
-tags: [security, auth, validation, rate-limit, upload]
+updated: 2026-08-26
+tags: [security, auth, password, validation, rate-limit, upload]
 ---
 
 # Security
@@ -13,6 +13,11 @@ tags: [security, auth, validation, rate-limit, upload]
 ## Implemented controls
 
 - NextAuth credentials sessions in both web apps.
+- Passwords hashed with scrypt (`node:crypto`, RFC 7914) at `N=2^15, r=8, p=1`, one random
+  salt per credential, compared with `timingSafeEqual`. Cost parameters are stored inside each
+  hash so they can be raised without invalidating existing credentials.
+- A unique index on `auth.{ userId, type }` plus an atomic upsert, so one user cannot end up
+  with two credentials of the same kind.
 - API authentication/load-user/role guards and admin route separation.
 - Class-validator payload validation, whitelist transforms, Mongo ID validation on many inputs, and HTML sanitization for post text.
 - Redis-backed throttling and per-endpoint limits on sensitive/high-volume actions.
@@ -32,6 +37,20 @@ tags: [security, auth, validation, rate-limit, upload]
 - Restrict file-server internal routes at the network layer.
 - Keep FFmpeg, Sharp, Node.js, NestJS, Next.js, MongoDB, and Redis patched.
 - Back up MongoDB and stored files together so references remain consistent.
+
+## Password hashing (2026-08-26)
+
+Passwords were previously stored as a **single salted SHA256 round**. SHA256 is built to be fast,
+so a stolen `auth` collection was close to a plaintext list — the salt stopped rainbow tables and
+nothing more. (The code's own comments claimed PBKDF2 with 10,000 iterations, which was never true.)
+
+New and changed passwords now use scrypt. Credentials written before the change are migrated
+**lazily**: there is no plaintext to bulk-convert, so a legacy credential is verified with the old
+algorithm at login and, only on success, re-hashed with scrypt. Nobody is forced to reset a password.
+
+Operator note: until every account has signed in at least once, some credentials remain on the old
+scheme. There is no way to accelerate that without a password reset flow, which this product does
+not have. `db.auth.countDocuments({ salt: { $exists: true } })` reports how many are left.
 
 ## Credential separation (2026-08-22)
 

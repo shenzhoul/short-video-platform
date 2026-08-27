@@ -21,6 +21,18 @@ export class AdminUserCreatePayload extends UserCreatePayload {
   @HashedPassword(8)
   password: string;
 
+  /**
+   * Account status, chosen by the administrator.
+   *
+   * Optional so that omitting it means "the safe default" rather than a
+   * validation error — the service assigns `USER_STATUS.ACTIVE` when no intent
+   * is stated. Still validated against the enum when present: an unrecognised
+   * status is a rejected request, never a silently corrected one.
+   *
+   * The controller forwards this as *intent*; `createNewUserAccount` ignores any
+   * status left in the request body. See `CreateAccountIntent`.
+   */
+  @IsOptional()
   @IsString()
   @IsIn(Object.values(USER_STATUS))
   status: string;

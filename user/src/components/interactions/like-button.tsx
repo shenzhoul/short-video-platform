@@ -2,9 +2,9 @@
 
 import Button from '@components/ui/button';
 import { Tooltip } from '@components/ui/tooltip';
-import { toast } from '@douyin-clone/shared-toast';
 import { thousandToK } from '@lib/index';
 import { showErrorMessage } from '@lib/utils';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { toggleReaction } from '@services/reaction.service';
 import { useMutation } from '@tanstack/react-query';
 import { ReactNode, useEffect, useState } from 'react';
@@ -67,6 +67,7 @@ export default function LikeButton({
   animateOnLike = false
 }: LikeButtonProps) {
   const { loggedIn } = useProfile();
+  const { openAuthModal } = useAuthModal();
   const [isLiked, setIsLiked] = useState(initialIsLiked);
   const [totalLikes, setTotalLikes] = useState(initialTotalLikes);
   const [animating, setAnimating] = useState(false);
@@ -145,13 +146,16 @@ export default function LikeButton({
   const handleLike = () => {
     if (disabled || likeMutation.isPending) return;
 
+    // Blocked, then offered the login dialog over whatever the visitor is
+    // watching. The like is not queued for after sign-in: replaying a write the
+    // visitor pressed while signed out is how one tap becomes two.
     if (requireLogin !== null) {
       if (requireLogin?.()) {
-        toast.error('Please login to like this content');
+        openAuthModal();
         return;
       }
     } else if (!loggedIn) {
-      toast.error('Please login to like this content');
+      openAuthModal();
       return;
     }
 

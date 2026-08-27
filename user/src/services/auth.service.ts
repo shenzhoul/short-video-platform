@@ -10,6 +10,27 @@ export class AuthService extends APIRequest {
     return cookie.get(TOKEN) || '';
   };
 
+  /**
+   * Public self-registration.
+   *
+   * Posts to `/auth/register`, which is the open counterpart of the admin
+   * `POST /admin/users` route — same service underneath, but it accepts no role,
+   * status or internal flag. The password must already be SHA256-hashed by the
+   * caller, exactly as login sends it.
+   *
+   * No session comes back. The caller signs in through the normal credentials
+   * flow afterwards, so there is one place that issues a session.
+   */
+  register = (payload: {
+    email: string;
+    username: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string;
+    gender?: string;
+    password: string;
+  }) => this.post('/auth/register', payload);
+
   logout = async (): Promise<void> => {
     try {
       await this.post('/auth/logout', {});
@@ -74,6 +95,7 @@ export const authService = new AuthService();
 const authServiceInstance = new AuthService();
 
 export const clearToken = authServiceInstance.clearToken.bind(authServiceInstance);
+export const register = authServiceInstance.register.bind(authServiceInstance);
 export const getToken = authServiceInstance.getToken.bind(authServiceInstance);
 export const logout = authServiceInstance.logout.bind(authServiceInstance);
 export const handleOAuthCallback = authServiceInstance.handleOAuthCallback.bind(authServiceInstance);

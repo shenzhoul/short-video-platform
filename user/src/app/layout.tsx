@@ -5,6 +5,7 @@ import NotificationToaster from '@components/notification/notification-toast';
 import ServiceWorkerRegistration from '@components/service-worker-registration';
 import { SharedToastProvider } from '@douyin-clone/shared-toast';
 import { authOptions } from '@lib/auth-options';
+import { AuthModalProvider } from '@providers/auth-modal.provider';
 import { FollowListProvider } from '@providers/follow-list.provider';
 import { LeftMenuProvider } from '@providers/left-menu.provider';
 import { MainLayoutProvider } from '@providers/main-layout.provider';
@@ -106,9 +107,15 @@ export default async function RootLayout({
                         <MessageWorkspaceProvider>
                           <LeftMenuProvider>
                             <MainLayoutProvider settings={providerSettings}>
-                              <div id="main-content">
-                                {children}
-                              </div>
+                              {/* Inside MainLayoutProvider so the dialog can
+                                  read the site name and logo, and above the
+                                  page so every guarded action and guarded route
+                                  opens the same one. */}
+                              <AuthModalProvider>
+                                <div id="main-content">
+                                  {children}
+                                </div>
+                              </AuthModalProvider>
                             </MainLayoutProvider>
                           </LeftMenuProvider>
                           {/* Mounted once, beside the page rather than inside it.

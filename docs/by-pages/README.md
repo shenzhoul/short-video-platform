@@ -4,7 +4,7 @@ description: Implemented Next.js routes in the user and admin applications.
 audience: [user, admin, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-25
+updated: 2026-08-26
 tags: [routes, pages, user, admin]
 ---
 
@@ -17,13 +17,17 @@ tags: [routes, pages, user, admin]
 | `/` | Public | Home feed/landing entry |
 | `/for-you` | Public | Recommended video feed |
 | `/[creator]` | Public | Creator profile and posts |
+| `/following` | Authenticated | Feed from followed creators; renders `AuthRequiredGate` when signed out |
+| `/friend` | Authenticated | Feed from friends (mutual follow); added 2026-08-26, was a 404 |
 | `/pip` | Public | Picture-in-picture player surface |
-| `/auth/login` | Public | Credentials login |
+| `/auth/login` | Retired | No page. The proxy redirects to `/?authModal=login`, which opens the shared auth dialog |
 | `/auth/logout` | Public | Logout confirmation |
 | `/auth/oauth/callback/[provider]` | Public utility | Callback handler route; no OAuth provider is configured in NextAuth |
 | `/creator/publish` | Authenticated | Publishing entry for video, graphics, VR, and article tabs |
 | `/creator/publish/video` | Authenticated | Video publishing editor |
 | `/creator/publish/image` | Authenticated | Graphics publishing editor |
+
+Login and signup are a dialog, not a route (2026-08-26): every guarded action and guarded route opens `AuthModalProvider`'s dialog over the current URL. Authenticated routes render `AuthRequiredGate` instead of redirecting. See `docs/features/authentication.md`.
 
 Post details open in an in-place modal from the home feed or creator profile. Share links use `/?modal_id=<postId>` so the same modal can be restored without a standalone detail route.
 

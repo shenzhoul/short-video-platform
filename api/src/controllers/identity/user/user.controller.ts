@@ -131,7 +131,14 @@ export class UserController {
     await this.userService.selfUpdate(currentUser._id, payload);
     const creator = await this.userService.getDetails(currentUser._id);
     if (payload.password) {
-      await this.authService.createAuthPassword({
+      // A self password *change*: replace the existing credential rather than
+      // upserting one. `setAuthPassword` only creates when the account has never
+      // had a password, and says so explicitly instead of a silent upsert.
+      //
+      // NOTE: this route does not ask for the current password, and that is
+      // pre-existing behaviour left unchanged here — the payload has no field
+      // for one. It is worth revisiting separately.
+      await this.authService.setAuthPassword({
         userId: creator._id,
         type: 'password',
         key: creator.email,
@@ -152,6 +159,22 @@ export class UserController {
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<PageableData<Partial<UserDto>>>> {
     return DataResponse.ok(await this.followService.getFollowingUsers(user._id, query) as PageableData<Partial<UserDto>>);
+  }
+
+  @Get('/friends')
+  @UseGuards(AuthGuard, PaginationGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({
+    summary: 'List the friends of the current user',
+    description: 'Creators the current user follows who follow them back (mutual follow).'
+  })
+  async friends(
+    @Query() query: SearchRequest,
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<PageableData<Partial<UserDto>>>> {
+    return DataResponse.ok(await this.followService.getMutualFollowUsers(user._id, query) as PageableData<Partial<UserDto>>);
   }
 
   @Get('/:id/followings')

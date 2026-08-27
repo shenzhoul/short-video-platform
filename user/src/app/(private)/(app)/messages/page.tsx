@@ -1,7 +1,7 @@
+import AuthRequiredGate from '@components/auth/auth-required-gate';
 import MessagesPageClient from '@components/message/messages-page-client';
 import { getSession } from '@lib/server-auth';
 import { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 /**
  * Private by definition, so it is explicitly kept out of the index. It still
@@ -18,12 +18,13 @@ export const metadata: Metadata = {
  *
  * Client-rendered below this point: everything on it is private, interactive and
  * realtime, so there is nothing for server rendering to contribute and no SEO
- * cost to paying. The session check stays on the server so an unauthenticated
- * visitor is redirected before any of it is sent.
+ * cost to paying. The session check stays on the server, so an unauthenticated
+ * visitor never receives the conversation client at all — they get the gate,
+ * which opens the login dialog over this URL instead of navigating away from it.
  */
 export default async function MessagesPage() {
   const session = await getSession();
-  if (!session) redirect('/auth/login');
+  if (!session) return <AuthRequiredGate />;
 
   return <MessagesPageClient />;
 }

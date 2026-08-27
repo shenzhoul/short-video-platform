@@ -26,6 +26,7 @@ Start with `../.agents/instructions`.
 
 Load the matching repo skill before changing specialized workflows:
 
+- `../.agents/skills/auth-modal/SKILL.md`
 - `../.agents/skills/queue-message/SKILL.md`
 - `../.agents/skills/system-settings/SKILL.md`
 - `../.agents/skills/media-response-standardization/SKILL.md`

@@ -115,7 +115,8 @@ export default function OAuthCallbackHandler({ provider }: OAuthCallbackHandlerP
 
         // Redirect to login after 3 seconds on error
         setTimeout(() => {
-          router.push('/auth/login');
+          // No login page to fall back to — home, with the dialog opened.
+          router.replace('/?authModal=login');
         }, 3000);
       }
     };
@@ -164,7 +165,7 @@ export default function OAuthCallbackHandler({ provider }: OAuthCallbackHandlerP
               {error}
             </p>
             <p className="text-gray-500 text-xs">
-              Redirecting to login page...
+              Taking you back to sign in...
             </p>
           </div>
         ) : null}

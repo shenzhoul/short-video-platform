@@ -86,19 +86,40 @@ AuthSchema.index({ type: 1, userId: 1 }, {
 });
 
 /**
- * USER AUTHENTICATION MANAGEMENT INDEX
+ * CREDENTIAL UNIQUENESS INDEX
  *
- * Purpose: Efficiently manage all authentication methods for a user
- * Business Logic: User account management, multi-auth support, admin operations
+ * Purpose: one credential per user per credential type, enforced by the database
+ * Business Logic: account management, password change, admin operations
  *
- * Query Pattern:
- * - db.auth.find({ userId: userId })
+ * `{ userId, type }` is the logical credential key. It is the *whole* key today
+ * because `password` is the only type that exists: audited 2026-08-26, every row
+ * in the collection is `type: 'password'`, and the OAuth routes the schema
+ * comments allude to (`/auth/social/*`) are not implemented — they answer 404.
+ *
+ * ⚠️ If OAuth is added and several providers share a single `type`, this key is
+ * too narrow and would silently prevent a user from linking a second provider.
+ * The fix then is to widen the key (adding the provider), not to drop
+ * uniqueness — record the provider in its own field and index
+ * `{ userId, type, provider }`.
+ *
+ * Why unique matters: `createAuthPassword` used to read-then-write, so two
+ * concurrent calls for the same user could both find nothing and both insert,
+ * leaving two password rows for one account and making `getAuthPassword`'s
+ * answer depend on storage order — which is to say, on luck. The write is now a
+ * single atomic upsert, and this index is what makes that safe rather than
+ * merely likely.
+ *
+ * Query Pattern (unchanged — a unique index serves reads identically):
+ * - db.auth.findOne({ userId: userId, type: 'password' })
  * - db.auth.updateMany({ userId: userId, type: 'password' }, { $set: { key: newEmail } })
- * - Used for email updates, account management, admin operations
  *
- * Performance: Enables efficient user-centric auth operations
- * Use Case: Update email across all auth records, account deletion cleanup
+ * ⚠️ This replaces the non-unique `idx_userId_type_management`. `autoIndex`
+ * cannot change an existing index's options — `createIndex` fails with a
+ * conflict — so an existing database needs
+ * `node scripts/repair-auth-credential-duplicates.js --apply`, which collapses
+ * duplicates, drops the old index and creates this one.
  */
 AuthSchema.index({ userId: 1, type: 1 }, {
-  name: 'idx_userId_type_management'
+  name: 'idx_userId_type_unique_credential',
+  unique: true
 });

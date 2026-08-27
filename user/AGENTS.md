@@ -26,6 +26,7 @@ Start with `../.agents/instructions`.
 
 Load the matching repo skill before changing specialized workflows:
 
+- `../.agents/skills/auth-modal/SKILL.md`
 - `../.agents/skills/vercel-react-best-practices/SKILL.md`
 - `../.agents/skills/vercel-composition-patterns/SKILL.md`
 - `../.agents/skills/web-ssr/SKILL.md`

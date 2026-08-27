@@ -10,10 +10,10 @@ export default function NotFound() {
           Sorry, we couldn&apos;t find the page you&apos;re looking for.
         </p>
         <Link
-          href={`/auth/login?redirectUrl=${encodeURIComponent('/')}`}
+          href="/"
           className="inline-block px-6 py-3 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition-colors"
         >
-          Go to Login
+          Go to home
         </Link>
       </div>
     </div>

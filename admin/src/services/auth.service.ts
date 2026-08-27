@@ -31,7 +31,9 @@ export class AuthService extends APIRequest {
 
   updatePassword = (password: string, userId?: string) => this.put('/admin/auth/user/password', { userId, password });
 
-  resetPassword = (data: { email: string }) => this.post('/auth/forgot', data);
+  // `resetPassword` used to live here and posted to `/auth/forgot`, a route the
+  // API does not implement. Removed with the page that called it; do not add it
+  // back without the backend flow.
 }
 
 export const authService = new AuthService();

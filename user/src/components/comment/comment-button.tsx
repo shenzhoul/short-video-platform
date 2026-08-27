@@ -1,8 +1,8 @@
 'use client';
 
 import Button from '@components/ui/button';
-import { toast } from '@douyin-clone/shared-toast';
 import { thousandToK } from '@lib/index';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { AiOutlineComment } from 'react-icons/ai';
 
 interface CommentButtonProps {
@@ -76,12 +76,14 @@ export default function CommentButton({
   onClick,
   customText
 }: CommentButtonProps) {
+  const { openAuthModal } = useAuthModal();
+
   const handleClick = () => {
     // Check if login is required
     if (requireLogin !== null) {
       // Use custom requireLogin function if provided
       if (requireLogin && requireLogin()) {
-        toast.error('Please login to view comments');
+        openAuthModal();
         return;
       }
     }

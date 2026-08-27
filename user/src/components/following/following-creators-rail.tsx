@@ -11,6 +11,8 @@ type FollowingSort = 'recent' | 'earliest';
 
 interface FollowingCreatorsRailProps {
   creators: IUser[];
+  /** Heading above the list. Defaults to the following-page wording. */
+  title?: string;
   activeCreatorId?: string;
   onSelectCreator: (creatorId: string) => void;
   onUnfollowCreator: (creatorId: string) => Promise<void>;
@@ -21,7 +23,9 @@ const SORT_OPTIONS: Array<{ label: string; value: FollowingSort }> = [
   { label: 'Earliest', value: 'earliest' }
 ];
 
-export default function FollowingCreatorsRail({ creators, activeCreatorId, onSelectCreator, onUnfollowCreator }: FollowingCreatorsRailProps) {
+export default function FollowingCreatorsRail({
+  creators, activeCreatorId, onSelectCreator, onUnfollowCreator, title = 'My following'
+}: FollowingCreatorsRailProps) {
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<FollowingSort>('recent');
@@ -108,7 +112,7 @@ export default function FollowingCreatorsRail({ creators, activeCreatorId, onSel
 
         {expanded ? (
           <p className="mb-1 h-8 shrink-0 px-4 py-1.5 text-sm font-semibold text-(--text-muted)">
-            My following ({creators.length})
+            {title} ({creators.length})
           </p>
         ) : null}
 

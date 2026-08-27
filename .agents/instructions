@@ -29,6 +29,8 @@ edit. The link itself is not committed — see `.gitignore` for how to recreate 
 
 Load only the skills relevant to the task:
 
+- Authentication:
+  - `.agents/skills/auth-modal/SKILL.md`
 - API foundations:
   - `.agents/skills/api-auth-guards/SKILL.md`
   - `.agents/skills/api-exception-handling/SKILL.md`

@@ -4,7 +4,7 @@ import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { User, UserDocument } from "src/schemas";
 import { ObjectId } from 'mongodb';
-import { AdminUserCreatePayload, AdminUserUpdatePayload, CreatorSelfUpdatePayload, UserCreatePayload } from "src/payloads";
+import { AdminUserCreatePayload, AdminUserUpdatePayload, CreatorSelfUpdatePayload, RegisterPayload, UserCreatePayload } from "src/payloads";
 import { EntityNotFoundException, QueueMessageService, StringHelper } from "src/kernel";
 import { UserDto } from "src/dtos/identity/user";
 import { EmailHasBeenTakenException, UsernameTakenException } from "src/common/exceptions/user";
@@ -41,6 +41,29 @@ import { SocketUserService } from "src/services/socket";
  * @author ShenZhoul
  * @version 1.0.0
  */
+/**
+ * What kind of account the *server* has decided to create.
+ *
+ * Deliberately separate from the request payload. Every field here is a
+ * capability — suspending an account, minting an admin — so it may only be set
+ * by code that has already established the caller is entitled to it, never by
+ * spreading a request body. An omitted field takes the safe default.
+ */
+export interface CreateAccountIntent {
+  /**
+   * Account status. Omitted means `USER_STATUS.ACTIVE`.
+   *
+   * The admin controller forwards the value an authenticated administrator
+   * picked, already validated against `USER_STATUS` by `AdminUserCreatePayload`.
+   * Public registration hard-codes `ACTIVE` and never looks at the request.
+   */
+  status?: string;
+  /** Omitted leaves the schema default (`false`). */
+  isAdmin?: boolean;
+  /** Omitted leaves the field unset. */
+  isCreator?: boolean;
+}
+
 @Injectable()
 export class UserAccountManagementService extends BaseUserService {
   protected readonly logger = new Logger(UserAccountManagementService.name);
@@ -129,31 +152,35 @@ export class UserAccountManagementService extends BaseUserService {
   }
 
   /**
-   * Creates a new user account with comprehensive validation and setup.
-   * This method handles user registration with email/username uniqueness validation.
+   * Create a user account.
    *
-   * @param data - User creation payload with required user information
-   * @param options - Additional options for user creation (status, etc.)
-   * @returns Promise<UserDto> - The created user data
+   * The two parameters are a trust boundary, and the split is the whole point:
+   *
+   * - `data` is **request-shaped**. It carries profile fields and nothing that
+   *   decides what kind of account this is. Whatever `status`, `isAdmin` or
+   *   `isCreator` it happens to hold is ignored — those are read from `intent`
+   *   only, so no caller can widen an account by putting a field in a body.
+   * - `intent` is **server-decided**. Each caller states, in its own code, what
+   *   kind of account it is entitled to create: the admin controller forwards
+   *   the status an authenticated administrator chose; `registerNewUser` hard-codes
+   *   an ordinary active account and never consults the request.
+   *
+   * That is why `status` is assigned from `intent` unconditionally rather than
+   * merged with `data`: a merge is exactly how a public endpoint would inherit
+   * an admin capability the day somebody adds the field to a shared payload.
    *
    * @throws EntityNotFoundException - If email is missing
    * @throws EmailHasBeenTakenException - If email already exists
    * @throws UsernameTakenException - If username already exists
    *
-   * @example
+   * @example An administrator creating a suspended account
    * ```typescript
-   * const newUser = await userService.createNewUserAccount({
-   *   email: "user@example.com",
-   *   username: "newuser",
-   *   firstName: "John",
-   *   lastName: "Doe"
-   * });
-   * console.log(`User created: ${newUser.email}`);
+   * await userService.createNewUserAccount(payload, { status: payload.status });
    * ```
    */
   public async createNewUserAccount(
     data: UserCreatePayload | AdminUserCreatePayload,
-    options: Record<string, any> = {}
+    intent: CreateAccountIntent = {}
   ): Promise<UserDto> {
     if (!data.email) {
       throw new EntityNotFoundException();
@@ -176,21 +203,23 @@ export class UserAccountManagementService extends BaseUserService {
     }
     payload.createdAt = new Date();
     payload.updatedAt = new Date();
-    payload.status = options.status || USER_STATUS.ACTIVE;
+    // Assigned, never merged: `data.status` is request-shaped and is discarded
+    // here even if present. Callers that may choose one say so through `intent`.
+    payload.status = intent.status || USER_STATUS.ACTIVE;
 
-    // Set admin and creator flags from options
-    if (options.isAdmin !== undefined) {
-      payload.isAdmin = options.isAdmin;
+    // Same rule for the role flags.
+    if (intent.isAdmin !== undefined) {
+      payload.isAdmin = intent.isAdmin;
     }
-    if (options.isCreator !== undefined) {
-      payload.isCreator = options.isCreator;
+    if (intent.isCreator !== undefined) {
+      payload.isCreator = intent.isCreator;
     }
 
     if (!payload.name) {
       payload.name = UserDto.getName(payload.firstName, payload.lastName);
     }
 
-    const user = await this.UserModel.create(payload);
+    const user = await this.createUserDocument(payload);
 
     if (payload.password) {
       await this.authService.createAuthPassword({
@@ -207,6 +236,82 @@ export class UserAccountManagementService extends BaseUserService {
       data: dto
     });
     return dto;
+  }
+
+  /**
+   * Insert the user document, translating a unique-index collision into the
+   * same error the pre-check raises.
+   *
+   * The `isEmailOrUsernameTaken` check above is a read, so two registrations for
+   * the same address can both pass it and race to the insert. Only one wins:
+   * `idx_email_unique_auth` and `idx_username_unique_profile` decide, which is
+   * what keeps concurrent signups to at most one account. Without this
+   * translation the loser surfaced as a raw `MongoServerError` — an HTTP 500
+   * leaking the driver's message instead of "that email is taken".
+   *
+   * The code is checked against `keyPattern`, never `code === 11000` alone: a
+   * collision on some other index is a different failure and must not be
+   * reported as a taken email.
+   */
+  private async createUserDocument(payload: Record<string, any>) {
+    try {
+      return await this.UserModel.create(payload);
+    } catch (error: any) {
+      if (error?.code === 11000) {
+        if (error?.keyPattern?.email) throw new EmailHasBeenTakenException();
+        if (error?.keyPattern?.username) throw new UsernameTakenException();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Public self-registration.
+   *
+   * Deliberately a thin wrapper over `createNewUserAccount` rather than a second
+   * write path: uniqueness, normalisation, password hashing, the display-name
+   * fallback and the creator-created event all stay in one place, so the account
+   * a visitor makes for themselves is the same shape as the one an admin makes
+   * for them.
+   *
+   * What it adds is the allow-list. The controller already validates with
+   * `whitelist: true` against a payload that carries no role, status or internal
+   * flag, and this rebuilds the object field by field on top of that — so a
+   * field added to `RegisterPayload` later cannot reach the document by
+   * accident, and `isAdmin`/`status`/`verifiedEmail` are decided here rather
+   * than anywhere a request can reach.
+   */
+  public async registerNewUser(payload: RegisterPayload): Promise<UserDto> {
+    // A plain literal rather than `new UserCreatePayload(...)` on purpose: the
+    // payload classes are only ever *types* in this file, and constructing one
+    // would turn `import { ... } from 'src/payloads'` into a runtime import of
+    // the whole payload barrel — which pulls `isomorphic-dompurify` into every
+    // Jest suite that transitively reaches this service.
+    const allowed: Record<string, any> = {
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      name: payload.name,
+      email: payload.email,
+      username: payload.username,
+      gender: payload.gender,
+      // No `dateOfBirth`: `RegisterPayload` does not accept one, because the
+      // signup form does not ask for one. Reading a field the payload cannot
+      // carry would be the first step back towards trusting the request body.
+      // The client-hashed password, carried through to `createAuthPassword`,
+      // which salts and re-hashes it exactly as it does for an admin-created
+      // account.
+      password: payload.password,
+      // Never taken from the request: a visitor does not choose their own role,
+      // their own status, or whether their email counts as verified.
+      verifiedEmail: false
+    };
+
+    // Hard-coded, not forwarded. A visitor states no intent: they get an
+    // ordinary active account or nothing.
+    return this.createNewUserAccount(allowed as UserCreatePayload, {
+      status: USER_STATUS.ACTIVE,
+      isAdmin: false
+    });
   }
 
   /**

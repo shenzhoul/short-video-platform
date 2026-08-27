@@ -29,7 +29,7 @@ import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
 import { UserDto } from 'src/dtos/identity/user';
 import { DataResponse } from 'src/kernel';
 import { AdminUserCreatePayload, AdminUserUpdatePayload, UserSearchRequestPayload } from 'src/payloads';
-import { AuthService, UserAccountManagementService, UserSearchAndFilterService } from 'src/services/identity';
+import { UserAccountManagementService, UserSearchAndFilterService } from 'src/services/identity';
 
 @Injectable()
 @Controller('admin/users')
@@ -38,8 +38,7 @@ import { AuthService, UserAccountManagementService, UserSearchAndFilterService }
 export class AdminUserController {
   constructor(
     private readonly userService: UserAccountManagementService,
-    private readonly userSearchService: UserSearchAndFilterService,
-    private readonly authService: AuthService
+    private readonly userSearchService: UserSearchAndFilterService
   ) { }
 
   @Get('/search')
@@ -267,17 +266,24 @@ export class AdminUserController {
   async createUser(
     @Body() payload: AdminUserCreatePayload
   ): Promise<DataResponse<Partial<UserDto>>> {
-    const user = await this.userService.createNewUserAccount(payload);
+    // The status the administrator picked is forwarded as *intent*, not left in
+    // the payload, because the service ignores request-shaped status on purpose.
+    // This route is the boundary that makes it trustworthy: `RoleGuard` has
+    // established the caller is an admin, and `AdminUserCreatePayload` has
+    // already validated the value against `USER_STATUS`.
+    //
+    // Without this line the admin form's Status select was silently discarded and
+    // every account came out `active` — an administrator creating a suspended
+    // account got a working one, with no error to tell them otherwise.
+    const user = await this.userService.createNewUserAccount(payload, {
+      status: payload.status
+    });
 
-    if (payload.password) {
-      // generate auth if have pw, otherwise will create random and send to user email?
-      await this.authService.createAuthPassword({
-        type: 'password',
-        value: payload.password,
-        key: payload.email,
-        userId: user._id
-      });
-    }
+    // No second `createAuthPassword` call here. `createNewUserAccount` already
+    // stores the credential when the payload carries a password, so this route
+    // used to write it twice — the same hash, hashed again with a second salt,
+    // for no benefit. One credential write, in one place, shared with public
+    // registration.
 
     return DataResponse.ok(new UserDto(user).toResponse(true));
   }

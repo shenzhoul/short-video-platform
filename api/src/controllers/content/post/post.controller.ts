@@ -102,6 +102,24 @@ export class UserPostController {
     return DataResponse.ok(await this.contentService.getFollowingPosts(query, user) as PageableData<PostDto>);
   }
 
+  @Get('/friends')
+  @UseGuards(AuthGuard, PaginationGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiSecurity('token-auth')
+  @ApiOperation({
+    summary: 'Get posts from friends',
+    description: 'Posts from creators the current user follows who follow them back. "Friend" is mutual follow — the same relationship that lets two people message each other without a request.'
+  })
+  @ApiQuery({ type: PostSearchRequest })
+  async friendPosts(
+    @Query() query: PostSearchRequest,
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<PageableData<PostDto>>> {
+    return DataResponse.ok(await this.contentService.getFriendPosts(query, user) as PageableData<PostDto>);
+  }
+
   @Get('/home-posts')
   @UseGuards(LoadUser, PaginationGuard, CustomThrottlerGuard)
   @Throttle({ default: { limit: 120, ttl: 60000 } }) // 120 home posts requests per minute

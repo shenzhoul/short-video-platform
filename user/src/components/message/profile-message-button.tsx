@@ -1,8 +1,8 @@
 'use client';
 
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { useMessages } from '@providers/message.provider';
 import { useMessageWorkspace } from '@providers/message-workspace.provider';
-import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 
@@ -24,15 +24,15 @@ interface ProfileMessageButtonProps {
  * canonical conversation is reused rather than duplicated.
  *
  * The profile only renders this for other people's profiles, so self-messaging
- * cannot be reached from here; a signed-out visitor is sent to sign in, because
- * every conversation is private.
+ * cannot be reached from here; a signed-out visitor gets the login dialog over
+ * the profile they are looking at, because every conversation is private.
  */
 export default function ProfileMessageButton({
   creatorId,
   className = ''
 }: ProfileMessageButtonProps) {
   const { status } = useSession();
-  const router = useRouter();
+  const { openAuthModal } = useAuthModal();
   const { openConversationWith } = useMessages();
   const { openWorkspace } = useMessageWorkspace();
   const [opening, setOpening] = useState(false);
@@ -41,7 +41,9 @@ export default function ProfileMessageButton({
     if (!creatorId || opening) return;
 
     if (status !== 'authenticated') {
-      router.push('/auth/login');
+      // No conversation is resolved and nothing is replayed after signing in —
+      // the visitor clicks Message again, once, when they are able to.
+      openAuthModal();
       return;
     }
 

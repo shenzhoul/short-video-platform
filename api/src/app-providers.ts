@@ -43,6 +43,7 @@ import { WsUserConnectedGateway } from './gateways/socket/user-connected.gateway
 import {
   AppService,
   AuthService,
+  PasswordHasherService,
   SettingService,
   TokenService,
   BaseUserService,
@@ -141,6 +142,8 @@ export const appProviders = [
 
   // Auth services and guards
   AuthService,
+  // The single owner of how a password is stored and verified.
+  PasswordHasherService,
   TokenService,
   AuthGuard,
   RoleGuard,

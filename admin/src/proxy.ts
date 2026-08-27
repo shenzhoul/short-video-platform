@@ -38,6 +38,24 @@ export async function proxy(request: NextRequest) {
   // Check for NextAuth session token
   const session = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET }) as any;
 
+  /**
+   * `/auth/forgot` is retired.
+   *
+   * The page it served posted to `POST /auth/forgot`, a route the API has never
+   * implemented, and rendered the resulting 404 as "Account not found, please
+   * recheck the email" — a missing feature dressed up as a rejected address.
+   * Page, component and service call are gone; this keeps old bookmarks and
+   * links working by sending them to the login page instead of a 404. A redirect
+   * replaces the navigation rather than stacking on it, so there is no loop.
+   *
+   * This is *not* a placeholder for recovery. There is still no way to reset a
+   * password from the browser; an administrator recovers through another admin
+   * (`PUT /admin/auth/user/password`) or `api/scripts/reset-admin-pw.js`.
+   */
+  if (pathname === '/auth/forgot' || pathname.startsWith('/auth/forgot/')) {
+    return NextResponse.redirect(`${origin}/auth/login`);
+  }
+
   // Define auth pages
   const isAuthPage = pathname.startsWith('/auth/');
   const isLogoutPage = pathname === '/auth/logout';

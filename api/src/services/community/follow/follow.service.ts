@@ -239,6 +239,71 @@ export class FollowService {
     });
   }
 
+  /**
+   * The creators `userId` follows who follow them back — "friends".
+   *
+   * Mutual follow is the definition this product already uses for a peer
+   * relationship: it is what `MessagePermissionService` accepts as consent to
+   * message without a request, and what `areMutuallyFollowing` answers for a
+   * pair. Friends reuses it rather than inventing a second notion of who is
+   * connected to whom.
+   *
+   * Two queries, both server-side and both indexed. The follow set is bounded by
+   * how many creators the user follows — the same bound `getFollowingPosts`
+   * already accepts — and the second query narrows it to the ones pointing back.
+   * Nothing loads users or posts to filter them in memory.
+   */
+  async getMutualFollowCreatorIds(userId: string | ObjectId): Promise<ObjectId[]> {
+    const followingIds = await this.getFollowingCreatorIds(userId);
+    if (!followingIds.length) return [];
+
+    const followBackRows = await this.reactionModel.find({
+      createdBy: { $in: followingIds },
+      objectId: toObjectId(userId),
+      objectType: REACTION_TARGET_TYPES.CREATOR,
+      action: REACTION_TYPES.FOLLOW
+    }).select({ createdBy: 1 }).lean();
+
+    const followsMeBack = new Set(followBackRows.map(row => row.createdBy.toString()));
+    // Order preserved from the follow list, so the caller's pagination is stable.
+    return followingIds.filter(id => followsMeBack.has(id.toString()));
+  }
+
+  /**
+   * Paginated list of `userId`'s friends.
+   *
+   * Built on the same `listFollowRelations` that renders the following and
+   * follower lists, so the row shape, the `isFollowed` flag, the cursor and the
+   * active-account filter are identical. The only difference is that the base
+   * query is narrowed to the mutual set.
+   */
+  async getMutualFollowUsers(userId: string | ObjectId, request: SearchRequest, viewerId?: string | ObjectId) {
+    const mutualIds = await this.getMutualFollowCreatorIds(userId);
+    if (!mutualIds.length) {
+      return {
+        data: [],
+        total: 0,
+        hasMore: false,
+        nextCursor: null,
+        paginationInfo: { maxOffset: PAGINATION_DEFAULTS.MAX_OFFSET, cursorPaginationAvailable: true }
+      };
+    }
+
+    return this.listFollowRelations({
+      baseQuery: {
+        createdBy: toObjectId(userId),
+        objectId: { $in: mutualIds },
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW
+      },
+      relatedField: 'objectId',
+      request,
+      // Every friend is followed by definition, so the follow buttons render
+      // correctly without a second lookup.
+      viewerId: viewerId ?? userId
+    });
+  }
+
   async getFollowingCreatorIdSet(userId: string | ObjectId, creatorIds: Array<string | ObjectId>) {
     if (!creatorIds.length) return new Set<string>();
     const rows = await this.reactionModel.find({

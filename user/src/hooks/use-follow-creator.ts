@@ -1,6 +1,7 @@
 'use client';
 
 import { toast } from '@douyin-clone/shared-toast';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { useProfile } from '@providers/profile.provider';
 import { followCreator, unfollowCreator } from '@services/user.service';
 import { useCallback, useEffect, useState } from 'react';
@@ -28,6 +29,7 @@ export function useFollowCreator(
   onFollowChange?: (creatorId: string, isFollowed: boolean) => void
 ) {
   const { current } = useProfile();
+  const { openAuthModal } = useAuthModal();
   const [isFollowed, setIsFollowed] = useState(() => resolveInitialState(creatorId, initialIsFollowed));
   const [following, setFollowing] = useState(false);
   const isOwner = Boolean(creatorId && current?._id === creatorId);
@@ -65,7 +67,10 @@ export function useFollowCreator(
   const follow = useCallback(async () => {
     if (!creatorId || isOwner || isFollowed || following) return;
     if (!current?._id) {
-      toast.error('Please login to follow creators');
+      // The dialog is the message. Following is not retried automatically after
+      // signing in: a queued follow that fires later is a follow the visitor did
+      // not press.
+      openAuthModal();
       return;
     }
 
@@ -79,12 +84,12 @@ export function useFollowCreator(
     } finally {
       setFollowing(false);
     }
-  }, [applyChange, creatorId, current?._id, following, isFollowed, isOwner]);
+  }, [applyChange, creatorId, current?._id, following, isFollowed, isOwner, openAuthModal]);
 
   const unfollow = useCallback(async () => {
     if (!creatorId || isOwner || !isFollowed || following) return;
     if (!current?._id) {
-      toast.error('Please login to manage your following list');
+      openAuthModal();
       return;
     }
 
@@ -98,7 +103,7 @@ export function useFollowCreator(
     } finally {
       setFollowing(false);
     }
-  }, [applyChange, creatorId, current?._id, following, isFollowed, isOwner]);
+  }, [applyChange, creatorId, current?._id, following, isFollowed, isOwner, openAuthModal]);
 
   const toggleFollow = useCallback(async () => {
     if (isFollowed) await unfollow();

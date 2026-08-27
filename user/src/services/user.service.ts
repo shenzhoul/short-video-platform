@@ -14,6 +14,12 @@ export class UserService extends APIRequest {
     headers
   );
 
+  /** Creators the current user follows who follow back. */
+  friends = (query?: Record<string, any>, headers?: Record<string, string>) => this.get(
+    this.buildUrl('/users/friends', query),
+    headers
+  );
+
   followings = (userId: string, query?: Record<string, any>, headers?: Record<string, string>) => this.get(
     this.buildUrl(`/users/${userId}/followings`, query),
     headers
@@ -59,6 +65,7 @@ export const updateUserAvatar = (avatarId: string) => userService.updateAvatar(a
 export const followCreator = (creatorId: string) => userService.follow(creatorId);
 export const unfollowCreator = (creatorId: string) => userService.unfollow(creatorId);
 export const getFollowingUsers = (query?: Record<string, any>, headers?: Record<string, string>) => userService.following(query, headers);
+export const getFriendUsers = (query?: Record<string, any>, headers?: Record<string, string>) => userService.friends(query, headers);
 export const getCreatorFollowings = (userId: string, query?: Record<string, any>, headers?: Record<string, string>) => userService.followings(userId, query, headers);
 export const getCreatorFollowers = (userId: string, query?: Record<string, any>, headers?: Record<string, string>) => userService.followers(userId, query, headers);
 export const getFollowStats = (userId: string) => userService.followStats(userId);

@@ -1,7 +1,7 @@
 'use client';
 
 import { IPost } from '@interfaces/post';
-import { getFollowingPosts } from '@services/post.service';
+import { getFollowingPosts, getFriendPosts } from '@services/post.service';
 import { unfollowCreator as requestUnfollowCreator } from '@services/user.service';
 import { useCallback, useRef, useState } from 'react';
 
@@ -14,7 +14,34 @@ export interface FollowingFeedPage {
   total?: number;
 }
 
-export function useFollowingFeed(initialData?: FollowingFeedPage | null) {
+/**
+ * Which relationship the feed is scoped to.
+ *
+ * `following` is everyone the viewer follows; `friends` is the mutual subset.
+ * One hook rather than two because the paging, de-duplication, interaction
+ * updates and unfollow handling are identical — only the endpoint differs.
+ */
+export type FollowingFeedSource = 'following' | 'friends';
+
+const FEED_SOURCES: Record<FollowingFeedSource, {
+  fetchPage: typeof getFollowingPosts;
+  errorMessage: string;
+}> = {
+  following: {
+    fetchPage: getFollowingPosts,
+    errorMessage: 'Unable to load posts from followed creators.'
+  },
+  friends: {
+    fetchPage: getFriendPosts,
+    errorMessage: 'Unable to load posts from your friends.'
+  }
+};
+
+export function useFollowingFeed(
+  initialData?: FollowingFeedPage | null,
+  source: FollowingFeedSource = 'following'
+) {
+  const { fetchPage, errorMessage } = FEED_SOURCES[source] || FEED_SOURCES.following;
   const [posts, setPosts] = useState(initialData?.data || []);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [nextCursor, setNextCursor] = useState(initialData?.nextCursor || null);
@@ -29,7 +56,7 @@ export function useFollowingFeed(initialData?: FollowingFeedPage | null) {
     setLoading(true);
     setError(null);
     try {
-      const response = await getFollowingPosts({
+      const response = await fetchPage({
         limit: 10,
         sortBy: 'createdAt',
         sort: 'desc',
@@ -46,12 +73,12 @@ export function useFollowingFeed(initialData?: FollowingFeedPage | null) {
       setHasMore(Boolean(page.hasMore));
       setNextCursor(page.nextCursor || null);
     } catch {
-      setError('Unable to load posts from followed creators.');
+      setError(errorMessage);
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [hasMore, nextCursor]);
+  }, [errorMessage, fetchPage, hasMore, nextCursor]);
 
   const markCreatorFollowed = useCallback((creatorId: string) => {
     setPosts(current => current.map(post => post.user?._id === creatorId

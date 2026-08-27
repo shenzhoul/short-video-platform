@@ -3,6 +3,7 @@
 import { useHoverPopover } from '@hooks/use-hover-popover';
 import { ShareRecipient, useShareRecipients } from '@hooks/use-share-recipients';
 import { isDuplicateShare, resolveShareError } from '@lib/share-errors';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { sharePostToMessage } from '@services/message.service';
 import { useSession } from 'next-auth/react';
 import { ReactNode, useCallback, useState } from 'react';
@@ -50,8 +51,13 @@ export default function SharePopover({
   panelPositionClassName = 'bottom-0 right-full mr-3',
   onShared
 }: SharePopoverProps) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const currentUserId = (session?.user as any)?._id || null;
+  const { openAuthModal } = useAuthModal();
+  // Sharing a post *into a message* needs an account, and so does the recipient
+  // list it is chosen from. Resolved from the session rather than from whether a
+  // request happens to fail, so nothing private is requested at all.
+  const canShare = status === 'authenticated';
 
   const [activated, setActivated] = useState(false);
   const [rows, setRows] = useState<Record<string, RowState>>({});
@@ -60,7 +66,7 @@ export default function SharePopover({
   const popover = useHoverPopover({ onOpen: () => setActivated(true) });
   const {
     recipients, loading, loadingMore, error, hasMore, keyword, setKeyword, loadMore, retry
-  } = useShareRecipients({ currentUserId, enabled: activated });
+  } = useShareRecipients({ currentUserId, enabled: activated && canShare });
 
   const share = useCallback(async (recipient: ShareRecipient) => {
     setRows(current => ({ ...current, [recipient._id]: { status: 'sharing' } }));
@@ -110,24 +116,39 @@ export default function SharePopover({
           aria-label="Share this post"
           className={`absolute z-100 w-75 overflow-hidden rounded-xl border border-(--border-faint) bg-(--surface-raised) shadow-(--shadow-popover) ${panelPositionClassName}`}
         >
-          <div className="p-3 pb-1.5">
-            <label className="flex items-center gap-2 rounded-lg bg-(--field-bg) px-2.5 py-1.5">
-              <FiSearch aria-hidden="true" className="shrink-0 text-(--text-faint)" />
-              <input
-                value={keyword}
-                onChange={event => setKeyword(event.target.value)}
-                placeholder="Search"
-                aria-label="Search friends"
-                className="min-w-0 flex-1 bg-transparent text-[13px] leading-5 text-(--text-strong) outline-none placeholder:text-(--text-faint)"
-              />
-            </label>
-          </div>
+          {!canShare ? (
+            <div className="px-4 py-5 text-center">
+              <p className="text-[13px] leading-5 text-(--text-muted)">
+                Log in to send this post to a friend.
+              </p>
+              <button
+                type="button"
+                onClick={() => openAuthModal()}
+                className="mt-3 h-8 w-full cursor-pointer rounded-lg bg-[#fe2c55] text-[13px] font-medium text-white transition hover:bg-[#ff4772]"
+              >
+                Log in
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="p-3 pb-1.5">
+                <label className="flex items-center gap-2 rounded-lg bg-(--field-bg) px-2.5 py-1.5">
+                  <FiSearch aria-hidden="true" className="shrink-0 text-(--text-faint)" />
+                  <input
+                    value={keyword}
+                    onChange={event => setKeyword(event.target.value)}
+                    placeholder="Search"
+                    aria-label="Search friends"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] leading-5 text-(--text-strong) outline-none placeholder:text-(--text-faint)"
+                  />
+                </label>
+              </div>
 
-          <p className="px-3 py-1 text-[12px] leading-4 text-(--text-faint)">Share with friends</p>
+              <p className="px-3 py-1 text-[12px] leading-4 text-(--text-faint)">Share with friends</p>
 
-          <div className="max-h-70 overflow-y-auto">
-            {loading ? (
-              <p className="px-3 py-6 text-center text-[13px] text-(--text-faint)">Loading…</p>
+              <div className="max-h-70 overflow-y-auto">
+                {loading ? (
+                  <p className="px-3 py-6 text-center text-[13px] text-(--text-faint)">Loading…</p>
             ) : error ? (
               <div className="px-3 py-5 text-center">
                 <p className="text-[13px] text-(--text-muted)">{error}</p>
@@ -157,7 +178,7 @@ export default function SharePopover({
               </ul>
             )}
 
-            {!loading && !error && recipients.length ? (
+                {!loading && !error && recipients.length ? (
               hasMore ? (
                 <button
                   type="button"
@@ -171,7 +192,10 @@ export default function SharePopover({
                 <p className="py-2 text-center text-[12px] text-(--text-faint)">No more for now</p>
               )
             ) : null}
-          </div>
+              </div>
+
+            </>
+          )}
 
           <div className="flex items-center gap-2 border-t border-(--border-faint) p-3">
             <button

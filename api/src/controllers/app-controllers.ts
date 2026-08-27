@@ -3,8 +3,10 @@ import {
   AdminPermissionController,
   AdminUserController,
   AppController,
+  AdminAuthController,
   LoginController,
   LogoutController,
+  RegisterController,
   AdminSettingController,
   SettingController,
   SettingFileUploadController,
@@ -29,6 +31,12 @@ export const appControllers = [
   // auth
   LoginController,
   LogoutController,
+  RegisterController,
+  // Admin password change. Written, guarded and exported, but never listed here
+  // until 2026-08-26 — so `PUT /admin/auth/user/password` answered 404 and the
+  // only way to reset an administrator's password was a script on the server.
+  // A controller that compiles and is exported still does not exist as a route.
+  AdminAuthController,
 
   // users
   UserController,

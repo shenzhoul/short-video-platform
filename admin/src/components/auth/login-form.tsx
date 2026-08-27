@@ -12,7 +12,6 @@ import {
   Input
 } from 'antd';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { useEffect, useEffectEvent, useState } from 'react';
@@ -127,14 +126,16 @@ export default function FormLogin() {
             <Input.Password placeholder="Password" iconRender={passwordIconRender} style={{ height: '40px' }} />
           </Form.Item>
 
+          {/*
+            No "Forgot Password?" link. There is no password-recovery flow in
+            this product — the API has never exposed a forgot or reset endpoint —
+            and the link used to lead to a form that posted into a 404 and
+            reported it as "Account not found". An administrator who has lost
+            their password recovers through another admin
+            (`PUT /admin/auth/user/password`) or `api/scripts/reset-admin-pw.js`.
+          */}
           <Form.Item name="remember" className="align-center a" valuePropName="checked">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Checkbox onChange={() => setRemember(!remember)}>Remember me</Checkbox>
-
-              <Link href="/auth/forgot" className="font-bold">
-                Forgot Password?
-              </Link>
-            </div>
+            <Checkbox onChange={() => setRemember(!remember)}>Remember me</Checkbox>
           </Form.Item>
           {error ? (
             <Form.Item>

@@ -4,7 +4,7 @@ description: Current HTTP endpoints mapped to their primary web services, hooks,
 audience: [developer-agent]
 domain: cross
 status: active
-updated: 2026-07-31
+updated: 2026-08-26
 tags: [api, ui, mapping]
 ---
 
@@ -12,7 +12,7 @@ tags: [api, ui, mapping]
 
 | API area | Main endpoints | User/admin consumers |
 |---|---|---|
-| Authentication | `POST /auth/login`, `/auth/logout*` | user/admin `auth-options.ts`, login/logout components |
+| Authentication | `POST /auth/login`, `POST /auth/register`, `/auth/logout*` | user `providers/auth-modal.provider.tsx` + `components/auth/*`, admin `auth-options.ts` and login form, logout components |
 | Current/public user | `GET /users/me`, `GET /users/:username`, `PUT /users/manager` | `user.service.ts`, profile provider, creator profile/edit components |
 | Profile media | `POST /identity/files/user/avatar/upload`, `/creator/cover/upload`; `PUT /users/me/avatar`, `/users/cover` | avatar/cover upload components and `file-upload.service.ts` |
 | Public posts | `GET /posts/home-posts`, `/recommended`, `/:id` | `post.service.ts`, feed hooks, home/For You/post-detail components |

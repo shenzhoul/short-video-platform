@@ -1,12 +1,14 @@
 'use client';
 
 import Button from '@components/ui/button';
+import { useAuthModal } from '@providers/auth-modal.provider';
 import { clearToken } from '@services/auth.service';
 import { signOut } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 
 export default function Logout() {
   const [loggedOut, setLoggedOut] = useState(false);
+  const { openAuthModal } = useAuthModal();
 
   useEffect(() => {
     const logout = async () => {
@@ -33,7 +35,7 @@ export default function Logout() {
         <p className="mb-4">Thank you for using our service.</p>
         <div className='flex gap-2 justify-center'>
           <Button href="/" variant='border'className='min-w-[130px]'>Go home</Button>
-          <Button href="/auth/login">Login again</Button>
+          <Button onClick={() => openAuthModal()}>Login again</Button>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
+import AuthRequiredGate from '@components/auth/auth-required-gate';
 import PostPublishEntry from '@components/post/publish-entry/post-publish-entry';
 import { authOptions } from '@lib/auth-options';
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 
 export const metadata: Metadata = {
@@ -15,9 +15,9 @@ export const metadata: Metadata = {
 
 export default async function PostPage() {
   const session = await getServerSession(authOptions);
-  if (!session) {
-    redirect('/auth/login');
-  }
+  // Renders the login dialog over this URL rather than navigating to a login
+  // page, so signing in continues here.
+  if (!session) return <AuthRequiredGate />;
 
   return <PostPublishEntry />;
 }

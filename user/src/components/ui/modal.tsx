@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  CSSProperties, ReactNode, useEffect, useRef, useState
+  CSSProperties, ReactNode, RefObject, useEffect, useRef, useState
 } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -23,6 +23,17 @@ export interface ModalProps {
   maskClosable?: boolean;
   children?: ReactNode;
   noPadding?: boolean;
+  /**
+   * Accessible name for the dialog, for callers that render their own heading
+   * instead of passing `title`.
+   */
+  ariaLabel?: string;
+  /**
+   * What to focus when the dialog opens, for callers where the first focusable
+   * element is not the useful one — a form whose first field should receive the
+   * caret rather than the close button.
+   */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 function ModalComponent({
@@ -40,7 +51,9 @@ function ModalComponent({
   style = {},
   maskClosable = true,
   children,
-  noPadding
+  noPadding,
+  ariaLabel,
+  initialFocusRef
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -86,9 +99,11 @@ function ModalComponent({
     ).filter((el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true');
 
     // Focus moves into the dialog so a keyboard user is not left behind it.
+    // A caller may name the element it wants focused; otherwise the first
+    // focusable one gets it, which is usually the close button.
     const timer = setTimeout(() => {
       const [first] = focusable();
-      (first || panelRef.current)?.focus?.();
+      (initialFocusRef?.current || first || panelRef.current)?.focus?.();
     }, 20);
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -126,6 +141,8 @@ function ModalComponent({
       // place in the page.
       restoreFocusRef.current?.focus?.();
     };
+    // `initialFocusRef` is a ref object and stable across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, onCancel]);
 
   if (!open) return null;
@@ -159,6 +176,7 @@ function ModalComponent({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
         className={`rounded-lg shadow-lg relative flex flex-col transform transition-all max-w-[95%] duration-300 outline-none ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
