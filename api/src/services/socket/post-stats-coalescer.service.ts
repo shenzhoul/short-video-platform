@@ -8,9 +8,10 @@ import { POST_ROOM_EVENTS, POST_STATS_POLICY } from 'src/common/constants/commun
 import { Post, PostDocument } from 'src/schemas';
 
 import { PostRoomService } from './post-room.service';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 /** Redis set holding posts whose shared counters have moved since the last flush. */
-const DIRTY_POSTS_KEY = 'post:stats:dirty';
+const DIRTY_POSTS_KEY = REDIS_KEYS.dirtyPosts();
 
 /**
  * Coalesces shared post counters into bounded, authoritative snapshots.

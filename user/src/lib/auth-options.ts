@@ -17,6 +17,16 @@ declare module 'next-auth' {
   }
 }
 
+/**
+ * Typed API error codes the sign-in form branches on.
+ *
+ * An allow-list, not a pass-through: only a code that the dialog knows how to
+ * handle may reach the browser. Anything else stays behind the single generic
+ * failure message, which is what keeps a failed sign-in from revealing whether
+ * an account exists.
+ */
+export const AUTH_ERROR_CODES = ['EMAIL_VERIFICATION_REQUIRED'];
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -90,6 +100,24 @@ export const authOptions: NextAuthOptions = {
         } catch (e: any) {
           const { response } = e;
           const data = response?.data;
+
+          // A refusal the dialog has to *act* on, rather than merely report.
+          //
+          // The API answers 403 with `error: 'EMAIL_VERIFICATION_REQUIRED'` when
+          // the password was correct but the address is unconfirmed. The message
+          // thrown here is what NextAuth hands back as `result.error` from
+          // `signIn(..., { redirect: false })`, so forwarding the *code* is what
+          // lets the login pane switch to its "confirm your email" state with a
+          // Resend control instead of showing the generic failure toast.
+          //
+          // Only this one code is forwarded. Everything else still collapses to
+          // one message, because the API distinguishes "no such account" from
+          // "wrong password" and passing that difference to the browser would
+          // tell an attacker which usernames exist.
+          if (data?.error && AUTH_ERROR_CODES.includes(data.error)) {
+            throw new Error(data.error);
+          }
+
           if (data?.message) throw new Error(getResponseError(data.message));
           throw new Error('An error occurred, please try again later!');
         }

@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis, { Cluster, RedisOptions } from 'ioredis';
+import { REDIS_NAMESPACE } from 'src/kernel/infras/redis/redis-keys';
 
 /**
  * Redis configuration interface for Socket.IO adapter
@@ -146,7 +147,15 @@ export class RedisIoAdapter extends IoAdapter {
       this.updateConnectionHealth('subClient', { connected: true });
 
       // Create Socket.IO Redis adapter
-      this.adapterConstructor = createAdapter(this.pubClient, this.subClient);
+      // `@socket.io/redis-adapter` communicates over pub/sub *channels*, which
+      // ioredis's `keyPrefix` does not touch — it applies to keys, not to
+      // `PUBLISH`/`SUBSCRIBE` channel names. So the namespace has to be given
+      // through the adapter's own `key` option, which is what it prefixes every
+      // channel with. Without it two projects on one Redis would share the
+      // default `socket.io` channel and each would receive the other's events.
+      this.adapterConstructor = createAdapter(this.pubClient, this.subClient, {
+        key: `${REDIS_NAMESPACE}:socket.io`
+      });
 
       // Initialize health monitoring if enabled
       if (this.config.healthCheck?.enabled) {

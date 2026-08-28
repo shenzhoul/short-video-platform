@@ -6,9 +6,10 @@ import { uniq } from 'lodash';
 import { ObjectId } from 'mongodb';
 import { Server, Socket } from 'socket.io';
 import { SOCKET_ROOMS } from 'src/common/constants/community';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
-export const CONNECTED_USER_REDIS_KEY = 'connected_users';
-export const CONNECTED_ROOM_REDIS_KEY = 'user:';
+export const CONNECTED_USER_REDIS_KEY = REDIS_KEYS.connectedUsers();
+export const CONNECTED_ROOM_REDIS_KEY = `${REDIS_KEYS.userSockets('')}`;
 
 /**
  * Socket User Service

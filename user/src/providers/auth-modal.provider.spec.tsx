@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act, fireEvent, render, screen, waitFor, within
+} from '@testing-library/react';
 import React from 'react';
 
 import AuthRequiredGate from '../components/auth/auth-required-gate';
@@ -27,6 +29,8 @@ let pathname = '/for-you';
 let searchParams = new URLSearchParams();
 const push = jest.fn();
 const replace = jest.fn();
+const resendVerification = jest.fn().mockResolvedValue({});
+const forgotPassword = jest.fn().mockResolvedValue({});
 const refresh = jest.fn();
 jest.mock('next/navigation', () => ({
   usePathname: () => pathname,
@@ -48,7 +52,9 @@ jest.mock('@douyin-clone/shared-toast', () => ({
 
 const registerAccount = jest.fn();
 jest.mock('@services/auth.service', () => ({
-  register: (...args: any[]) => registerAccount(...args)
+  register: (...args: any[]) => registerAccount(...args),
+  resendVerification: (...args: any[]) => resendVerification(...args),
+  forgotPassword: (...args: any[]) => forgotPassword(...args)
 }));
 
 // jsdom has no `crypto.subtle`, and what the digest *is* does not matter here —
@@ -285,24 +291,190 @@ describe('logging in', () => {
   });
 });
 
-describe('password recovery is not advertised', () => {
+describe('an unconfirmed email address', () => {
   /**
-   * The retired login page carried a "Forgot password?" link to
-   * `/auth/forgot-password` — a route that never existed, pointing at a flow the
-   * API never had (`POST /auth/forgot` answers 404; `AuthService` has no
-   * `forgot` method). The dialog deliberately does not carry that link forward.
+   * The one login refusal that is not collapsed into the generic message.
    *
-   * This is a regression guard in the honest direction: if somebody re-adds the
-   * affordance, this fails and tells them the flow has to exist first.
+   * It is reachable *only* after the password has been verified — the API checks
+   * the credential first and answers the ordinary invalid-credentials error for
+   * a wrong password — so reaching it already proves the caller holds the
+   * account. That is what makes it safe to be specific here.
    */
-  it('offers no recovery link, because there is no recovery flow behind it', async () => {
+  async function loginWith(error: string | undefined, ok = false) {
+    signInMock.mockResolvedValue({ ok, error });
+    renderWithProvider(<GatedAction />);
+    act(() => { screen.getByText('Like').click(); });
+    await screen.findByRole('dialog');
+
+    fireEvent.change(screen.getByLabelText('Email or username'), { target: { value: 'visitor' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    await act(async () => { fireEvent.submit(document.querySelector('form')!); });
+  }
+
+  it('shows the confirm-your-email pane instead of the failure toast', async () => {
+    await loginWith('EMAIL_VERIFICATION_REQUIRED');
+
+    expect(await screen.findByText('Confirm your email address')).toBeInTheDocument();
+    // Not a toast: "your email is not confirmed" is useless without the means
+    // to do something about it, and the means is the button below.
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /send the link again/i })).toBeInTheDocument();
+  });
+
+  it('resends using whatever identifier was typed, address or username', async () => {
+    await loginWith('EMAIL_VERIFICATION_REQUIRED');
+    await screen.findByText('Confirm your email address');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /send the link again/i }));
+    });
+
+    expect(resendVerification).toHaveBeenCalledWith('visitor');
+  });
+
+  it('never claims a message was sent, because the API will not say', async () => {
+    await loginWith('EMAIL_VERIFICATION_REQUIRED');
+    await screen.findByText('Confirm your email address');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /send the link again/i }));
+    });
+
+    // The endpoint answers the same 200 for a registered address, an
+    // unregistered one and one inside its cooldown, so "sent!" would be a claim
+    // the browser has no way to know is true.
+    expect(await screen.findByText(/if that account still needs confirming/i)).toBeInTheDocument();
+  });
+
+  it('starts the cooldown so the button cannot be hammered', async () => {
+    await loginWith('EMAIL_VERIFICATION_REQUIRED');
+    await screen.findByText('Confirm your email address');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /send the link again/i }));
+    });
+
+    expect(await screen.findByRole('button', { name: /send again in \d+s/i })).toBeDisabled();
+  });
+
+  it('leaves every other failure as the single generic toast', async () => {
+    await loginWith('CredentialsSignin');
+
+    // The API distinguishes "no such account" from "wrong password"; forwarding
+    // that difference would tell an attacker which usernames exist.
+    expect(toastError).toHaveBeenCalledWith(
+      'Your username/email or password is incorrect',
+      expect.anything()
+    );
+    expect(screen.queryByText('Confirm your email address')).toBeNull();
+  });
+
+  it('goes back to the form without reloading anything', async () => {
+    await loginWith('EMAIL_VERIFICATION_REQUIRED');
+    await screen.findByText('Confirm your email address');
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Back to log in' })); });
+
+    expect(await screen.findByLabelText('Email or username')).toBeInTheDocument();
+    expect(navigationCalls()).toHaveLength(0);
+  });
+});
+
+describe('password recovery', () => {
+  /**
+   * This assertion is the inverse of the one it replaces.
+   *
+   * Until the reset flow existed, the dialog deliberately carried **no**
+   * "Forgot password?" affordance, and this suite asserted its absence — a link
+   * to a feature that answers 404 is worse than no link. `POST /auth/forgot-password`
+   * and `POST /auth/reset-password` are now real, so the link is real too, and
+   * the guard flips to making sure it stays.
+   *
+   * It is still a link to a *pane*, never to a URL: `/auth/forgot-password`
+   * remains a retired route that the proxy redirects, and an `href` pointing at
+   * it would be a dead end.
+   */
+  it('offers a recovery link now that the flow behind it exists', async () => {
     renderWithProvider(<GatedAction />);
     act(() => { screen.getByText('Like').click(); });
     const dialog = await screen.findByRole('dialog');
 
-    expect(dialog.textContent).not.toMatch(/forgot/i);
-    expect(dialog.textContent).not.toMatch(/reset .*password/i);
+    expect(within(dialog).getByRole('button', { name: /forgot password/i })).toBeInTheDocument();
+    // Not an anchor. The pane lives inside this dialog; the old URL is retired.
     expect(dialog.querySelector('a[href*="forgot"]')).toBeNull();
+  });
+
+  it('swaps to the recovery pane inside the same dialog', async () => {
+    renderWithProvider(<GatedAction />);
+    act(() => { screen.getByText('Like').click(); });
+    await screen.findByRole('dialog');
+
+    act(() => { screen.getByRole('button', { name: /forgot password/i }).click(); });
+
+    expect(await screen.findByRole('button', { name: 'Send reset link' })).toBeInTheDocument();
+    // One dialog throughout, and no navigation: the URL the visitor was on is
+    // still the URL they are on.
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  async function openForgot() {
+    renderWithProvider(<GatedAction />);
+    act(() => { screen.getByText('Like').click(); });
+    await screen.findByRole('dialog');
+    act(() => { screen.getByRole('button', { name: /forgot password/i }).click(); });
+    await screen.findByRole('button', { name: 'Send reset link' });
+  }
+
+  async function submitForgot(email: string) {
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: email } });
+    await act(async () => { fireEvent.submit(document.querySelector('form')!); });
+  }
+
+  it('never claims a message was sent', async () => {
+    await openForgot();
+    await submitForgot('someone@example.com');
+
+    // The API answers the same 200 for a registered address and an unregistered
+    // one, so "we sent it" is a claim the browser cannot make.
+    expect(await screen.findByText(/has an account/i)).toBeInTheDocument();
+  });
+
+  it('reports a rate-limited address exactly like an accepted one', async () => {
+    // The shape `APIRequest` really throws. Written against `error.response.status`
+    // this branch never matched, and a limited address rendered "could not reach
+    // the server" while an unlimited one rendered the generic copy — the limiter
+    // is per address, so that difference is an enumeration signal.
+    forgotPassword.mockRejectedValueOnce({ statusCode: 429, message: 'slow down' });
+
+    await openForgot();
+    await submitForgot('someone@example.com');
+
+    expect(await screen.findByText(/has an account/i)).toBeInTheDocument();
+    expect(screen.queryByText(/could not reach the server/i)).toBeNull();
+  });
+
+  it('shows the transport message only when nothing reached the API', async () => {
+    forgotPassword.mockRejectedValueOnce(new Error('Network Error'));
+
+    await openForgot();
+    await submitForgot('someone@example.com');
+
+    // Nothing reached the server, so there is no account information to leak.
+    expect(await screen.findByText(/could not reach the server/i)).toBeInTheDocument();
+    expect(screen.queryByText(/has an account/i)).toBeNull();
+  });
+
+  it('comes back to the login pane', async () => {
+    renderWithProvider(<GatedAction />);
+    act(() => { screen.getByText('Like').click(); });
+    await screen.findByRole('dialog');
+    act(() => { screen.getByRole('button', { name: /forgot password/i }).click(); });
+    await screen.findByRole('button', { name: 'Send reset link' });
+
+    act(() => { screen.getByRole('button', { name: 'Log in' }).click(); });
+
+    expect(await screen.findByLabelText('Email or username')).toBeInTheDocument();
   });
 });
 
@@ -379,9 +551,10 @@ describe('signing up', () => {
     await screen.findByLabelText('Display name');
   }
 
-  it('creates the account, signs in, and reports it once', async () => {
-    registerAccount.mockResolvedValue({ data: { _id: 'u1' } });
-    signInMock.mockResolvedValue({ ok: true });
+  it('creates the account and sends the visitor to their inbox', async () => {
+    registerAccount.mockResolvedValue({
+      data: { _id: 'u1', emailVerificationRequired: true, verificationEmailQueued: true }
+    });
 
     await openSignup();
     await fillSignup();
@@ -401,13 +574,32 @@ describe('signing up', () => {
     expect(Object.keys(registerAccount.mock.calls[0][0])).not.toContain('status');
     expect(Object.keys(registerAccount.mock.calls[0][0])).not.toContain('isAdmin');
 
-    expect(signInMock).toHaveBeenCalledWith('credentials', {
-      username: 'adalove',
-      password: 'hashed:password123',
-      redirect: false
-    });
-    expect(toastSuccess).toHaveBeenCalledTimes(1);
+    // **No automatic sign-in.** The account is created unconfirmed and
+    // `POST /auth/login` refuses it until the link is followed, so calling
+    // `signIn` here would be a guaranteed failure dressed up as an error.
+    expect(signInMock).not.toHaveBeenCalled();
+    expect(await screen.findByText('Check your email')).toBeInTheDocument();
+    expect(screen.getByText(/ada@example\.com/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send the link again/i })).toBeInTheDocument();
+    // The dialog stays open on the same URL — nothing navigated.
     expect(navigationCalls()).toHaveLength(0);
+  });
+
+  it('says so plainly when the account exists but the email did not go out', async () => {
+    registerAccount.mockResolvedValue({
+      data: { _id: 'u1', emailVerificationRequired: true, verificationEmailQueued: false }
+    });
+
+    await openSignup();
+    await fillSignup();
+    await act(async () => { fireEvent.submit(document.querySelector('form')!); });
+
+    // "The account was not created" and "the account exists but its email has
+    // not gone out" are different outcomes and must never be reported as each
+    // other. The second one still shows Resend.
+    expect(await screen.findByText('Your account is ready')).toBeInTheDocument();
+    expect(screen.getByText(/could not send the confirmation email/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send the link again/i })).toBeInTheDocument();
   });
 
   it('shows a taken email against the field rather than as a toast', async () => {

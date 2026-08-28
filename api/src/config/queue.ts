@@ -1,3 +1,5 @@
+import { QUEUE_PREFIX_NAMESPACE } from 'src/kernel/infras/redis/redis-keys';
+
 /**
  * Queue system configuration using Redis as the backing store
  * Handles background job processing for tasks like email sending, file processing, etc.
@@ -17,8 +19,16 @@ export default {
     db: process.env.REDIS_QUEUE_DB || 0,
     /** TLS configuration for secure connections (e.g., AWS ElastiCache) */
     tls: process.env.REDIS_QUEUE_TLS === 'true' ? {} : undefined,
-    /** Custom Redis prefix for queue keys (optional) */
-    redisPrefix: process.env.REDIS_QUEUE_PREFIX || undefined,
+    /**
+     * Project namespace for every BullMQ key.
+     *
+     * BullMQ builds its own keys as `<prefix>:<queue>:<id>` and needs the braces
+     * for Redis Cluster hash-tagging, so it takes a `prefix` option rather than
+     * an ioredis `keyPrefix`. Defaulting it means queue keys read
+     * `{douyin-clone-<queue-hash>}:…` instead of an anonymous `{<hash>}:…` in a
+     * Redis shared with another project.
+     */
+    redisPrefix: process.env.REDIS_QUEUE_PREFIX || QUEUE_PREFIX_NAMESPACE,
     /** Length of auto-generated prefix hash (default: 5) */
     prefixLength: parseInt(process.env.REDIS_QUEUE_PREFIX_LENGTH, 10) || 5,
     /** Skip Redis version compatibility check (default: false) */

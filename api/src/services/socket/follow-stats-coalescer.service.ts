@@ -6,9 +6,10 @@ import { POST_STATS_POLICY, USER_STATS_EVENTS } from 'src/common/constants/commu
 import { FollowService } from 'src/services/community/follow/follow.service';
 
 import { SocketUserService } from './socket-user.service';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 /** Redis set holding users whose follow counters have moved since the last flush. */
-const DIRTY_FOLLOW_USERS_KEY = 'user:follow-stats:dirty';
+const DIRTY_FOLLOW_USERS_KEY = REDIS_KEYS.dirtyFollowUsers();
 
 /**
  * Coalesces follow counters into bounded, authoritative snapshots.

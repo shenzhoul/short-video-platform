@@ -1,5 +1,6 @@
 'use client';
 
+import AuthForgotForm from '@components/auth/auth-forgot-form';
 import AuthLoginForm from '@components/auth/auth-login-form';
 import AuthQrPanel from '@components/auth/auth-qr-panel';
 import AuthSignupForm from '@components/auth/auth-signup-form';
@@ -18,7 +19,8 @@ import { useEffect, useRef } from 'react';
  * Layout follows the product it clones: a dark overlay, a centred panel, a close
  * control top-right, and — in login mode — a QR column beside the credentials
  * column. Signup drops the QR column, because scanning is a way of logging in to
- * an account that already exists.
+ * an account that already exists; so does the forgot-password pane, for the same
+ * reason.
  *
  * The overlay, the scroll lock, Escape, the focus trap, backdrop-click and
  * `role="dialog"` / `aria-modal` all come from the shared `ModalComponent`
@@ -30,7 +32,11 @@ export default function AuthModal() {
   const siteName = publicSettings?.siteName || 'Douyin';
 
   const isLogin = mode === 'login';
-  const title = isLogin ? `Log in to ${siteName}` : `Sign up for ${siteName}`;
+  const title = {
+    login: `Log in to ${siteName}`,
+    signup: `Sign up for ${siteName}`,
+    forgot: 'Reset your password'
+  }[mode];
 
   /**
    * Where the caret goes when the dialog opens, and again after a mode switch.
@@ -96,19 +102,28 @@ export default function AuthModal() {
           ) : null}
 
           <div>
-            {isLogin ? (
+            {mode === 'login' ? (
               <AuthLoginForm
                 key="login"
                 firstFieldRef={firstFieldRef}
                 onSwitchToSignup={() => setMode('signup')}
+                onSwitchToForgot={() => setMode('forgot')}
               />
-            ) : (
+            ) : null}
+            {mode === 'signup' ? (
               <AuthSignupForm
                 key="signup"
                 firstFieldRef={firstFieldRef}
                 onSwitchToLogin={() => setMode('login')}
               />
-            )}
+            ) : null}
+            {mode === 'forgot' ? (
+              <AuthForgotForm
+                key="forgot"
+                firstFieldRef={firstFieldRef}
+                onSwitchToLogin={() => setMode('login')}
+              />
+            ) : null}
           </div>
         </div>
       </div>

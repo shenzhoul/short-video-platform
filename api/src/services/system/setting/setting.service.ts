@@ -19,6 +19,7 @@ import { EntityNotFoundException } from 'src/kernel';
 import { SettingUpdatePayload } from 'src/payloads/system/setting';
 import { SETTING_KEYS } from 'src/common/constants/system';
 import { FileServerService } from 'src/services/shared/file-server';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 /**
  * Setting Service
@@ -115,7 +116,7 @@ export class SettingService implements OnModuleInit, OnModuleDestroy {
   public async syncCache(): Promise<void> {
     // Distributed lock: only one instance runs the full cache rebuild at a time.
     // TTL of 30s covers worst-case initialization; the lock is released in finally.
-    const LOCK_KEY = 'SETTING_CACHE_SYNC_LOCK';
+    const LOCK_KEY = REDIS_KEYS.settingCacheLock();
     const LOCK_TTL_SECONDS = 30;
     const acquired = await this.redisClient.set(LOCK_KEY, '1', 'EX', LOCK_TTL_SECONDS, 'NX');
     if (!acquired) return; // another instance is already syncing
@@ -158,6 +159,21 @@ export class SettingService implements OnModuleInit, OnModuleDestroy {
       }
       return results;
     }, groupSettings);
+  }
+
+  /**
+   * Read one setting's value from the in-process cache.
+   *
+   * Static because it is called from places that are not Nest providers — the
+   * email templates, most immediately, which are plain functions on purpose so
+   * they can be rendered in a unit test without a module.
+   *
+   * Returns `undefined` before `syncCache()` has run or for an unknown key.
+   * Every caller supplies its own fallback rather than relying on a setting
+   * being seeded.
+   */
+  public static getValueByKey(key: string): any {
+    return SettingService._settingCache[key]?.value;
   }
 
   getPublicValueByKeys(keys: string[]) {

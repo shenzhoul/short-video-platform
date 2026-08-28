@@ -1,6 +1,7 @@
 'use client';
 
 import { AuthPasswordField, AuthTextField } from '@components/auth/auth-fields';
+import AuthVerificationNotice from '@components/auth/auth-verification-notice';
 import Button from '@components/ui/button';
 import { toast } from '@douyin-clone/shared-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,6 +23,19 @@ import { z } from 'zod';
 export const LOGIN_FAILED_MESSAGE = 'Your username/email or password is incorrect';
 
 /**
+ * The one refusal that is *not* collapsed into the message above.
+ *
+ * The API answers 403 with this code only after the password has been verified,
+ * so reaching it already proves the caller holds the account's credentials —
+ * which is what makes it safe to be specific. A wrong password on an
+ * unconfirmed account still returns the generic failure.
+ *
+ * Reported as an actionable state rather than a toast, because "your email is
+ * not confirmed" is useless without the means to do something about it.
+ */
+const EMAIL_VERIFICATION_REQUIRED = 'EMAIL_VERIFICATION_REQUIRED';
+
+/**
  * A fixed id, so react-toastify collapses repeats.
  *
  * Two failed attempts in a row must not stack two identical toasts, and neither
@@ -39,12 +53,24 @@ type LoginFormValues = z.infer<typeof schema>;
 interface AuthLoginFormProps {
   /** Switches the dialog to the signup pane without closing it. */
   onSwitchToSignup: () => void;
+  /** Switches the dialog to the forgot-password pane without closing it. */
+  onSwitchToForgot: () => void;
   /** Focus target when the dialog opens. */
   firstFieldRef?: RefObject<HTMLInputElement | null>;
 }
 
-export default function AuthLoginForm({ onSwitchToSignup, firstFieldRef }: AuthLoginFormProps) {
+export default function AuthLoginForm({
+  onSwitchToSignup, onSwitchToForgot, firstFieldRef
+}: AuthLoginFormProps) {
   const [submitting, setSubmitting] = useState(false);
+
+  /**
+   * The identifier of an account that signed in correctly but has not confirmed
+   * its address. Local state rather than a provider mode: it belongs to this
+   * one submission, and lifting it would make the provider carry state that
+   * only this form can produce or clear.
+   */
+  const [unverifiedIdentifier, setUnverifiedIdentifier] = useState<string | null>(null);
 
   /**
    * Guards against a late response writing to a form that is gone.
@@ -99,6 +125,15 @@ export default function AuthLoginForm({ onSwitchToSignup, firstFieldRef }: AuthL
       if (result?.ok) return;
 
       if (!activeRef.current) return;
+
+      // The password was right; the address is not confirmed. No session was
+      // created — the API refuses before issuing one — so there is nothing to
+      // clean up, and the visitor needs the link rather than a toast.
+      if (result?.error === EMAIL_VERIFICATION_REQUIRED) {
+        setUnverifiedIdentifier(values.username.trim());
+        return;
+      }
+
       toast.error(LOGIN_FAILED_MESSAGE, { toastId: LOGIN_TOAST_ID });
     } catch {
       if (!activeRef.current) return;
@@ -109,6 +144,17 @@ export default function AuthLoginForm({ onSwitchToSignup, firstFieldRef }: AuthL
       if (activeRef.current) setSubmitting(false);
     }
   };
+
+  if (unverifiedIdentifier) {
+    return (
+      <AuthVerificationNotice
+        heading="Confirm your email address"
+        identifier={unverifiedIdentifier}
+        detail="Your password is correct, but this account still needs its email address confirmed before you can log in."
+        onBack={() => setUnverifiedIdentifier(null)}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-3">
@@ -141,6 +187,17 @@ export default function AuthLoginForm({ onSwitchToSignup, firstFieldRef }: AuthL
       >
         {submitting ? 'Logging in…' : 'Log in'}
       </Button>
+
+      {/* The recovery link exists only now that the flow behind it does. It was
+          deliberately absent while `POST /auth/forgot` answered 404, because a
+          link to a feature that does not work is worse than no link. */}
+      <button
+        type="button"
+        onClick={onSwitchToForgot}
+        className="cursor-pointer self-end text-[13px] text-(--text-muted) hover:text-(--text-strong) hover:underline"
+      >
+        Forgot password?
+      </button>
 
       <p className="mt-2 text-center text-[13px] text-(--text-muted)">
         Don&apos;t have an account?{' '}

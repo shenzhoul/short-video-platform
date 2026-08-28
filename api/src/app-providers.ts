@@ -44,6 +44,14 @@ import {
   AppService,
   AuthService,
   PasswordHasherService,
+  AuthTokenService,
+  AuthMailService,
+  AuthRateLimitService,
+  EmailVerificationService,
+  PasswordRecoveryService,
+  MailConfigService,
+  MailerService,
+  mailProviderFactory,
   SettingService,
   TokenService,
   BaseUserService,
@@ -82,6 +90,7 @@ import { PostStatsCoalescerService } from 'src/services/socket/post-stats-coales
 import { PostStatsFlushJob } from 'src/jobs/socket/post-stats-flush.job';
 import { SocketCleanupJob } from 'src/jobs/socket/socket-cleanup.job';
 import { CleanupUnusedFilesJob } from 'src/jobs/content/cleanup-unused-files.job';
+import { CleanupAuthTokensJob } from 'src/jobs/identity/cleanup-auth-tokens.job';
 import { TagTrendingJob } from 'src/jobs/content/tag-trending.job';
 import { CreatorAssetsListener, UserConnectedListener } from 'src/listeners/identity/user';
 import {
@@ -140,6 +149,13 @@ export const appProviders = [
   CleanupUnusedFilesJob,
   TagTrendingJob,
 
+  // Transactional email. `mailProviderFactory` binds the MAIL_PROVIDER token to
+  // exactly one of the SMTP or log implementations, chosen from validated
+  // configuration — see mail-provider.factory.ts.
+  MailConfigService,
+  mailProviderFactory,
+  MailerService,
+
   // Auth services and guards
   AuthService,
   // The single owner of how a password is stored and verified.
@@ -148,6 +164,14 @@ export const appProviders = [
   AuthGuard,
   RoleGuard,
   AuthUserCacheService,
+  // Single-use email verification / password reset tokens, and the two flows
+  // built on them.
+  AuthTokenService,
+  AuthMailService,
+  AuthRateLimitService,
+  EmailVerificationService,
+  PasswordRecoveryService,
+  CleanupAuthTokensJob,
 
   // Content services and listeners
   ContentService,

@@ -9,8 +9,19 @@ import {
   SOCKET_ROOMS
 } from 'src/common/constants/community';
 import { QueueMessageService, QueueService } from 'src/kernel';
-
-export const CONNECTED_USER_REDIS_KEY = 'connected_users';
+/**
+ * Imported, never re-declared.
+ *
+ * This file used to define its own copy of the literal `'connected_users'`
+ * alongside the identical one in `socket-user.service.ts`. Two declarations of
+ * one key is a latent bug that only bites when the key changes — as it did when
+ * the project namespace was introduced, at which point this job would have swept
+ * a set nobody writes to and presence would never have expired.
+ *
+ * It is no longer re-exported from here: nothing imported it from this module,
+ * and `socket-user.service.ts` is the one place that owns the name.
+ */
+import { CONNECTED_USER_REDIS_KEY } from 'src/services/socket/socket-user.service';
 const SCHEDULE_OFFLINE_SOCKETS = 'SCHEDULE_OFFLINE_SOCKETS';
 
 /** Cron pattern for socket cleanup job - runs every 2 minutes */

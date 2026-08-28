@@ -10,6 +10,7 @@ import ToggleSwitch from '@components/ui/toggle-switch';
 import { toast } from '@douyin-clone/shared-toast';
 import { useFollowStats } from '@hooks/use-follow-stats';
 import { useLikedPostCount } from '@hooks/use-liked-post-count';
+import { useLogout } from '@hooks/use-logout';
 import { IUser } from '@interfaces/user';
 import { useAuthModal } from '@providers/auth-modal.provider';
 import { useFollowListModal } from '@providers/follow-list.provider';
@@ -44,6 +45,7 @@ function LikedPostCount({ enabled }: { enabled: boolean }) {
 export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropdownProps) {
   const router = useRouter();
   const { openAuthModal } = useAuthModal();
+  const { logout, loggingOut } = useLogout();
   const displayName = loggedIn ? (user?.name || user?.username || 'Guest') : 'Not logged in';
   const { openFollowList } = useFollowListModal();
   // Seeded from the profile response — which counts the follow rows rather than
@@ -245,17 +247,22 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
           <div className="mt-3 flex items-center justify-between border-t border-(--divider) px-3 pt-3">
             <button
               type="button"
-              className="flex h-9 cursor-pointer items-center gap-2 text-left text-sm font-medium text-(--text-soft) transition hover:text-(--text-strong)"
+              // Disabled while the sign-out is in flight; `useLogout` also
+              // de-duplicates, so a double click cannot revoke twice.
+              disabled={loggingOut}
+              className="flex h-9 cursor-pointer items-center gap-2 text-left text-sm font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 if (!loggedIn) {
                   openAuthModal();
                   return;
                 }
-                window.location.href = '/auth/logout';
+                // Signs out in place: no logout page, no full reload, and the
+                // visitor lands on `/` rather than on a confirmation screen.
+                void logout();
               }}
             >
               <LogoutIcon className="text-[26px]" />
-              Logged out
+              {loggingOut ? 'Logging out…' : 'Logged out'}
             </button>
             <div className="flex items-center gap-2 text-xs font-semibold text-(--text-soft)">
               <span>Save login</span>

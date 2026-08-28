@@ -12,9 +12,10 @@ import {
 import { Comment, CommentDocument } from 'src/schemas/community/comment';
 
 import { PostRoomService } from './post-room.service';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 /** Redis set holding comments whose counters have moved since the last flush. */
-const DIRTY_COMMENTS_KEY = 'comment:stats:dirty';
+const DIRTY_COMMENTS_KEY = REDIS_KEYS.dirtyComments();
 
 /**
  * Coalesces per-comment counters into bounded, authoritative snapshots.

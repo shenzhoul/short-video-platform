@@ -10,7 +10,7 @@
     "base_model_not_initialized": "BaseUserModel is not initialized. Ensure the service constructor has been called.",
     "no_database_connection": "MongoDB connection not established. Check your MONGO_URI configuration.",
     "password_incorrect": "Password incorrect",
-    "email_not_verified": "Email not verified",
+    "email_not_verified": "Confirm your email address to continue. We have sent you a link.",
     "cannot_authenticate": "Cannot authenticate",
     "account_not_found": "Account not found",
     "account_inactive": "Account is inactive",
@@ -60,7 +60,11 @@
     "message_share_duplicate": "This post has already been shared with this person.",
     "category_not_found": "Category not found.",
     "category_inactive": "This category is no longer available.",
-    "category_key_taken": "A category with this key already exists."
+    "category_key_taken": "A category with this key already exists.",
+    "verification_token_invalid": "This confirmation link is no longer valid. It may have expired or already been used.",
+    "reset_token_invalid": "This password reset link is no longer valid. It may have expired or already been used.",
+    "auth_token_consume_failed": "We could not complete that just now. Please open the link again.",
+    "email_required_for_verification": "An email address is required unless the account is created as already verified."
   },
   "auth": {
     "no_valid_token": "No valid token found",
@@ -69,7 +73,10 @@
     "all_sessions_have_been_invalidated": "All sessions have been invalidated for security reasons",
     "security_logout_failed_contact_support": "Security logout failed, please contact support",
     "no_token_to_invalidate": "No token to invalidate",
-    "token_invalidated_successfully": "Token invalidated successfully"
+    "token_invalidated_successfully": "Token invalidated successfully",
+    "verification_email_sent": "Check your inbox for a link to confirm your email address.",
+    "email_verified": "Your email address is confirmed. You can log in now.",
+    "password_reset_done": "Your password has been updated. All other sessions have been signed out."
   },
   "identity": {
     "file": {

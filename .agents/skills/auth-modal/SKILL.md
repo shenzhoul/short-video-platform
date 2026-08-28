@@ -84,6 +84,37 @@ rather than gated or hidden — see `docs/features/authentication.md`; "friend"
 means mutual follow, reusing `FollowService` and `FollowingFeed` rather than a
 parallel system. `/minigame` is still unbuilt and still 404s for everyone.
 
+## 1c. There is no logout page either. Use `useLogout`
+
+`user/src/app/auth/logout/` and `components/auth/logout.tsx` were deleted on
+2026-08-26. Signing out is:
+
+```ts
+const { logout, loggingOut } = useLogout();   // @hooks/use-logout
+```
+
+It revokes first (`performLogout` → NextAuth `signOut` → the `signOut` event
+revokes the API token), then `router.replace('/')` and `router.refresh()`.
+`replace` so Back cannot return to the protected page; `/` so a route guard does
+not reopen the dialog the instant the visitor logs out; `refresh` so the server
+tree and RSC cache come back signed-out. No `window.location.href`.
+
+**A failed revoke must not navigate.** Showing a signed-out page while the
+session is live on the server is worse than an error toast.
+
+For the *involuntary* case — a 401, a deactivated account, a socket disconnect —
+use `endExpiredSession` (`@lib/session-expired`). It does the same revoke but
+finishes with `window.location.replace('/')`, because it runs from modules with
+no router and the client cache is stale anyway. It de-duplicates, so several
+simultaneous 401s produce one sign-out.
+
+**`/auth/logout` redirects to `/` and performs no logout.** The old page ran
+`signOut()` in a `useEffect`, which made a GET a state change — a prefetch or an
+`<img src>` could sign somebody out. Keep logout on the POST path.
+
+`retired-auth-pages.spec.ts` fails the build if either page or any navigation to
+them comes back.
+
 ## 2. One dialog, mounted once
 
 `AuthModalProvider` lives in `user/src/app/layout.tsx`, inside
@@ -138,19 +169,73 @@ Guard every post-await write with the form's `activeRef`: the dialog unmounts
 the moment the session turns authenticated, and switching modes unmounts the
 form too.
 
-## 7b. There is no password recovery, anywhere. Do not link to one
+## 7b. Email confirmation and recovery (added 2026-08-27)
 
-Audited 2026-08-26: `user/src/app/auth/forgot-password/` never existed in git
-history, `AuthService` has no `forgot()` method (only a JSDoc example that
-described one, since corrected), and `POST /auth/forgot` answers **404**. The
-retired login page's "Forgot password?" link pointed at nothing.
+This section used to say "there is no password recovery, do not link to one".
+The flow now exists. Read
+`docs/features/email-verification-and-password-reset.md` for the whole design;
+what follows is what the dialog specifically has to get right.
 
-So the dialog deliberately carries no recovery affordance, and
-`auth-modal.provider.spec.tsx` asserts its absence. If you are about to add the
-link, build the flow first — token storage, expiry, mail delivery — because the
-link on its own is worse than nothing. `admin/` demonstrates why: its
-`/auth/forgot` page posts to that 404 and renders it as "Account not found,
-please recheck the email" (`bug-admin-forgot-password-posts-to-missing-endpoint`).
+**Registration issues no session and the client must not try to make one.**
+`registerNewUser` hard-codes `verifiedEmail: false` and `POST /auth/login`
+refuses an unconfirmed account, so the `signIn()` that used to follow
+registration is now a guaranteed failure dressed up as an error. The signup pane
+switches to a check-your-email state instead.
+
+**`EMAIL_VERIFICATION_REQUIRED` is the only API error code the browser sees.**
+`authorize()` in `user/src/lib/auth-options.ts` forwards it through an
+allow-list (`AUTH_ERROR_CODES`) and collapses everything else into
+`LOGIN_FAILED_MESSAGE`. The API distinguishes "no such account" from "wrong
+password"; passing that difference to the browser would tell an attacker which
+usernames exist. It is safe to be specific about *this* one because the API only
+returns it **after** verifying the password.
+
+**Never claim an email was sent.** `POST /auth/verification/resend` and
+`POST /auth/forgot-password` answer the same 200 for a registered address, an
+unregistered one, an already-confirmed one and one inside its cooldown. So the UI
+says "if that account still needs confirming…" and "if that address has an
+account…". A 429 is folded into the same success state, because a visible
+per-address rate limit is itself an enumeration signal. Only a transport failure
+gets its own wording.
+
+**One resend control, not three.** `auth-resend-verification.tsx` is shared by
+the signup pane, the login pane's unconfirmed state and the expired-link page, so
+there is one cooldown rule and one piece of copy. Its timer is a courtesy; the
+server enforces the real limit and refuses silently.
+
+**`forgot` is a provider mode; check-your-email is not.** `AuthModalMode` gained
+`'forgot'` because it is a genuine third pane with its own form and endpoint. The
+narrower states belong to a single submission of a single form and stay in that
+form's local state — lifting them would make the provider carry state only that
+form can produce or clear. `?authModal=forgot` is deliberately **not** accepted
+from the URL: a link that opens a password-reset pane is a link worth putting in
+a phishing email.
+
+**The two public token pages must never be gated.** `/auth/verify-email` and
+`/auth/reset-password` are reached from an email by somebody who by definition
+cannot sign in. They live under `user/src/app/auth/` (outside
+`(public)/(main)`, so no `AuthRequiredGate`), they are listed in
+`publicTokenPaths` in `user/src/proxy.ts`, and `proxy.spec.ts` asserts they pass
+through **signed in and signed out**. Do not confuse `/auth/reset-password` (a
+real page) with `/auth/forgot-password` (a retired URL that is redirected).
+
+**Neither page opens the dialog before it has handled its token.** A login form
+over a verification result asks somebody to sign in to read an answer about the
+account they cannot sign in to yet. The dialog is offered afterwards, as a next
+step — and success never auto-logs-in, because one place issues sessions.
+
+**The confirmation link is a GET to a page; the mutation is a POST.** Gmail and
+most security appliances pre-fetch the URLs in a message, so a GET that consumed
+the token would be spent by the scanner before the recipient clicked. The panel's
+POST is guarded by a **ref**, not by effect dependencies — StrictMode runs
+effects twice and the second run would consume what the first spent.
+
+**The reset form hashes with `hashPassword()`.** Same as login, registration and
+the admin create form. Sending the plaintext stores a hash of the wrong input and
+the new password silently does not work.
+
+`admin/` still has no recovery UI, and `admin/scripts/verify-auth-ui.js` still
+guards its absence. That is a separate product decision, not an oversight.
 
 ## 8. Signup mirrors the admin create-user form, minus the admin fields
 
@@ -328,11 +413,18 @@ is why `auth-fields.tsx` exists.
 | Route guard | `user/src/components/auth/auth-required-gate.tsx` |
 | Retired URLs | `user/src/proxy.ts` |
 | Public endpoint | `api/src/controllers/identity/auth/register.controller.ts` |
+| Confirmation + resend | `api/src/controllers/identity/auth/verification.controller.ts` |
+| Forgot + reset | `api/src/controllers/identity/auth/password-recovery.controller.ts` |
+| Token lifecycle | `api/src/services/identity/auth/auth-token.service.ts` |
+| Dialog recovery pane | `user/src/components/auth/auth-forgot-form.tsx` |
+| Shared resend control | `user/src/components/auth/auth-resend-verification.tsx`, `auth-verification-notice.tsx` |
+| Public token pages | `user/src/app/auth/verify-email/`, `user/src/app/auth/reset-password/` |
 | Payload | `api/src/payloads/identity/auth/register.payload.ts` |
 | Service | `api/src/services/identity/user/user.service.ts` (`registerNewUser`, `createUserDocument`) |
 | Tests | `user/src/providers/auth-modal.provider.spec.tsx`, `user/src/proxy.spec.ts`, `api/src/services/identity/user/user-registration.spec.ts`, `api/src/controllers/identity/auth/register.controller.spec.ts` |
 | Password hashing | `api/src/services/identity/auth/password-hasher.service.ts` |
 | Protected data page | `user/src/app/(public)/(main)/following/page.tsx` |
+| Signing out | `user/src/hooks/use-logout.ts`, `user/src/lib/session-expired.ts` |
 | Friends (mutual follow) | `api/src/services/community/follow/follow.service.ts`, `user/src/app/(public)/(main)/friend/page.tsx` |
 | Live probes (disposable DB, real indexes) | `api/scripts/verify-registration-concurrency.js`, `verify-password-migration.js`, `verify-password-change.js`, `verify-auth-credential-uniqueness.js` |
 | Maintenance | `api/scripts/repair-auth-credential-duplicates.js` |

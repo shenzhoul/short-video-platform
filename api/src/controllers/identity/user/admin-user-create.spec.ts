@@ -50,17 +50,23 @@ function buildController() {
     }
   };
 
+  const sendVerificationEmail = jest.fn().mockResolvedValue(undefined);
+
   const service = new UserAccountManagementService(
     model,
     { publish: jest.fn().mockResolvedValue(undefined) } as any,
     { createAuthPassword } as any,
-    null as any, null as any, null as any, null as any
+    null as any, null as any, null as any, null as any,
+    // A fake mail service. Nothing in this repository's test suite opens a
+    // connection to a mail server; see `mail-provider.spec.ts`.
+    { sendVerificationEmail } as any,
+    { supersedeSiblings: jest.fn().mockResolvedValue(0) } as any
   );
 
   const controller = new AdminUserController(service, null as any);
 
   return {
-    controller, service, written, createAuthPassword
+    controller, service, written, createAuthPassword, sendVerificationEmail
   };
 }
 

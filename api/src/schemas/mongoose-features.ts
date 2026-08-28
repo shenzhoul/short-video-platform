@@ -2,6 +2,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import {
   // Identity schemas
   Auth, AuthSchema,
+  AuthToken, AuthTokenSchema,
   // User schemas
   User, UserSchema,
   // System schemas
@@ -55,6 +56,8 @@ import {
 export const mongooseFeatures = MongooseModule.forFeature([
   // Identity schemas - Auth
   { name: Auth.name, schema: AuthSchema },
+  // Single-use email verification / password reset tokens
+  { name: AuthToken.name, schema: AuthTokenSchema },
 
   // Identity schemas - User
   { name: User.name, schema: UserSchema },

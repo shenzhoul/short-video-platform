@@ -34,9 +34,11 @@ import { UserAccountManagementService } from 'src/services/identity';
  * Both end up in `createNewUserAccount`, so there is one implementation of what
  * creating an account means.
  *
- * No session is issued here. The client signs in through the existing
- * `POST /auth/login` immediately afterwards, which keeps token issuance,
- * device-info capture and session expiry in exactly one place.
+ * No session is issued here, and the client no longer signs in immediately
+ * afterwards either: the account is created with `verifiedEmail: false` and
+ * `POST /auth/login` refuses it until the address is confirmed. The response
+ * says so explicitly through `emailVerificationRequired`, and the signup pane
+ * switches to its check-your-email state.
  */
 @Controller('auth')
 @ApiTags('Authentication')
@@ -81,6 +83,18 @@ export class RegisterController {
     @Body() payload: RegisterPayload
   ): Promise<DataResponse<Partial<UserDto>>> {
     const user = await this.userService.registerNewUser(payload);
-    return DataResponse.ok(new UserDto(user).toResponse(true));
+
+    return DataResponse.ok({
+      ...new UserDto(user).toResponse(true),
+      // Always true for a self-registered account: `registerNewUser` hard-codes
+      // `verifiedEmail: false`. Sent explicitly so the client renders the
+      // check-your-email state from the response rather than from an assumption
+      // about what registration does.
+      emailVerificationRequired: true,
+      // Whether the confirmation email reached the queue. `false` is not a
+      // failure — the account exists and is correct — but it is the difference
+      // between "check your inbox" and "we could not send it, try Resend".
+      verificationEmailQueued: (user as any).verificationEmailQueued !== false
+    });
   }
 }

@@ -25,6 +25,7 @@
 'use client';
 
 import SidebarBottom from '@components/layout/sidebar-bottom';
+import { useLogout } from '@hooks/use-logout';
 import { IUser } from '@interfaces/user';
 import { useProfile } from '@providers/profile.provider';
 import { useCallback, useMemo } from 'react';
@@ -41,11 +42,13 @@ export function LeftNavigation({ serverUser }: LeftNavigationProps) {
 
   // While fetching, prefer serverUser. After load, prefer clientUser if it exists
   const user = fetching ? (serverUser || clientUser) : (clientUser || serverUser);
-  // Handle logout with proper error handling
+  // Signs out through the shared hook: a real revoke, then `replace('/')` and
+  // `refresh()`. It used to navigate to `/auth/logout`, a page that existed only
+  // to show a confirmation screen and that Back could return to.
+  const { logout } = useLogout();
   const handleLogout = useCallback(async () => {
-    // Force redirect to clear all client-side state
-    window.location.href = '/auth/logout';
-  }, []);
+    await logout();
+  }, [logout]);
 
   const menuProps = useMemo(
     () => ({

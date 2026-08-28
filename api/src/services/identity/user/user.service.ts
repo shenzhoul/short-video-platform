@@ -16,6 +16,10 @@ import { FileServerService } from "src/services/shared/file-server";
 import { CreatorAnalyticsService } from "src/services/identity/user/creator-analytics.service";
 import { isObjectId } from "src/kernel/helpers/string.helper";
 import { SocketUserService } from "src/services/socket";
+import { AuthMailService } from "../auth/auth-mail.service";
+import { AuthTokenService } from "../auth/auth-token.service";
+import { AUTH_TOKEN_TYPE } from "src/schemas/identity/auth";
+import { __t } from "src/utils/translation";
 
 /**
  * UserAccountManagementService handles comprehensive user account operations and lifecycle management.
@@ -62,6 +66,17 @@ export interface CreateAccountIntent {
   isAdmin?: boolean;
   /** Omitted leaves the field unset. */
   isCreator?: boolean;
+  /**
+   * Whether the address counts as already confirmed.
+   *
+   * Only an administrator may state this, through the switch the admin
+   * create-user form already renders. Public registration never sets it, so a
+   * self-registered account is always `false` and always has to confirm.
+   *
+   * Omitted means `false` — the safe default, and the one that produces a
+   * verification email.
+   */
+  verifiedEmail?: boolean;
 }
 
 @Injectable()
@@ -80,7 +95,9 @@ export class UserAccountManagementService extends BaseUserService {
     private readonly authUserCacheService: AuthUserCacheService,
     fileServerService: FileServerService,
     private readonly creatorAnalyticsService: CreatorAnalyticsService,
-    private readonly socketUserService: SocketUserService
+    private readonly socketUserService: SocketUserService,
+    private readonly authMailService: AuthMailService,
+    private readonly authTokenService: AuthTokenService
   ) {
     super(UserModel, fileServerService);
   }
@@ -219,15 +236,39 @@ export class UserAccountManagementService extends BaseUserService {
       payload.name = UserDto.getName(payload.firstName, payload.lastName);
     }
 
+    // Assigned from intent, never merged: a visitor cannot mark their own
+    // address confirmed. Absent intent means `false`, which is what triggers the
+    // verification email below.
+    payload.verifiedEmail = intent.verifiedEmail === true;
+
+    // An account that must confirm an address needs an address to confirm. The
+    // alternative — creating it anyway — produces an account that can never log
+    // in and that nothing will ever mail: a permanent lockout with no signal.
+    // Refusing here is the only honest option; inventing an address or silently
+    // skipping the mail both hide the problem. (`data.email` is already required
+    // above, so this only fires for a caller that bypassed the payload class.)
+    if (!payload.verifiedEmail && !payload.email) {
+      throw new HttpException(__t('errors.email_required_for_verification'), 400);
+    }
+
     const user = await this.createUserDocument(payload);
 
     if (payload.password) {
-      await this.authService.createAuthPassword({
-        userId: user._id,
-        type: 'password',
-        value: payload.password,
-        key: payload.email
-      });
+      try {
+        await this.authService.createAuthPassword({
+          userId: user._id,
+          type: 'password',
+          value: payload.password,
+          key: payload.email
+        });
+      } catch (error) {
+        // Compensation. Without it a failed credential write leaves a profile
+        // with no password: login answers "invalid credentials" for ever and
+        // registering again answers "that email is taken", so the address is
+        // permanently unusable and nothing reports why.
+        await this.discardIncompleteAccount(user._id);
+        throw error;
+      }
     }
 
     const dto = new UserDto(user);
@@ -235,7 +276,143 @@ export class UserAccountManagementService extends BaseUserService {
       eventName: EVENT.CREATED,
       data: dto
     });
+
+    // Past this line the account is complete and correct. Mail is best-effort
+    // from here: see `requestEmailVerification`.
+    const emailQueued = payload.verifiedEmail
+      ? true
+      : await this.requestEmailVerification(dto);
+
+    // Carried on the DTO rather than thrown, so the caller can tell "the account
+    // was not created" apart from "the account exists but the email has not gone
+    // out yet". Those need different words in front of a user.
+    (dto as any).verificationEmailQueued = emailQueued;
+
     return dto;
+  }
+
+  /**
+   * Remove a half-built account, and only the one this attempt built.
+   *
+   * Deletion is keyed on `_id` — the id of the document *this* call inserted —
+   * never on the email or username. That distinction is the whole point: two
+   * registrations racing for the same address produce one winner at the unique
+   * index and one loser at `createUserDocument`, which throws before ever
+   * reaching here. A compensation that deleted by email would let the loser of a
+   * later race delete the winner's live account.
+   *
+   * ## The user document goes first
+   *
+   * This is not arbitrary, and the original order was wrong. Compensation is two
+   * writes with no transaction between them, so a crash — or a failure — can
+   * leave either one done and the other not. The order decides which of the two
+   * halfway states a crash can produce, and they are not equally bad:
+   *
+   * | Leftover | Consequence |
+   * |---|---|
+   * | credential with no user | Harmless. It holds no email and no username, so it blocks nothing; the address is free and the visitor can register again. Reclaimed by the audit script. |
+   * | user with no credential | **The original bug.** Login answers "invalid credentials" for ever, and registering again answers "that email is taken". The address is permanently unusable and nothing reports why. |
+   *
+   * Deleting the user first means the only state a crash can strand is the
+   * harmless one. The previous order — credential first — could still produce
+   * exactly the state compensation exists to prevent.
+   *
+   * ## What it does not claim
+   *
+   * This is best-effort, not a transaction and not crash-proof. A process that
+   * dies between the two deletes leaves an orphan credential; a process that
+   * dies before either leaves the bad state. `scripts/audit-incomplete-accounts.js`
+   * is the other half, and it is what makes those windows detectable rather than
+   * merely unlikely.
+   *
+   * Never throws. It runs while another failure is already being reported, and
+   * an exception here would replace a useful error with a confusing one — the
+   * original cause is what the caller needs to see.
+   */
+  private async discardIncompleteAccount(userId: ObjectId): Promise<void> {
+    let userRemoved = false;
+
+    // First, and separately, so a failure here is reported on its own terms.
+    try {
+      await this.UserModel.deleteOne({ _id: userId });
+      userRemoved = true;
+    } catch (error: any) {
+      // The bad state survives. This is the one worth shouting about: the
+      // address is now unusable until somebody runs the audit script.
+      this.logger.error(
+        `INCOMPLETE ACCOUNT ${userId}: credential write failed and the user document could not be `
+        + `removed. The address is registered but unusable — run `
+        + `scripts/audit-incomplete-accounts.js. Cause: ${error?.message}`
+      );
+    }
+
+    try {
+      await this.authService.removeAuthPassword(userId);
+    } catch (error: any) {
+      // Only a leftover credential row, and only if one was written at all.
+      // Harmless on its own: it carries no email or username, so it blocks
+      // nothing. Logged so the audit script's findings have a matching entry.
+      this.logger.warn(
+        `ORPHAN CREDENTIAL ${userId}: user document ${userRemoved ? 'removed' : 'NOT removed'}, `
+        + `credential could not be removed: ${error?.message}`
+      );
+      return;
+    }
+
+    if (userRemoved) {
+      this.logger.warn(`Rolled back incomplete account ${userId} after a credential write failure`);
+    }
+  }
+
+  /**
+   * Sign every session out after an address change forced re-confirmation.
+   *
+   * Never throws. The email change has already been written and is the final
+   * state; failing the administrator's request over a Redis error would report a
+   * change that did happen as having not happened. Logged at error level instead
+   * — an un-revoked session is a real gap, and it expires on its own TTL.
+   */
+  private async revokeSessionsAfterEmailChange(userId: ObjectId): Promise<void> {
+    try {
+      const removed = await this.authService.removeAllUserTokens(userId);
+      this.logger.log(`Email change for user ${userId}: ${removed} session(s) invalidated`);
+    } catch (error: any) {
+      this.logger.error(
+        `Email change for user ${userId} SUCCEEDED but session revocation failed — an existing `
+        + `session can keep using the account until it expires: ${error?.message}`
+      );
+    }
+  }
+
+  /**
+   * Queue a verification email, reporting whether it was queued.
+   *
+   * **Never throws.** By the time this runs the account is written, the
+   * credential is stored and the created event has been published — the
+   * operation the caller asked for has succeeded. Failing it now would tell
+   * somebody their registration did not work while leaving them an account that
+   * does, and rolling the account back over a mail-queue hiccup would destroy
+   * something recoverable to avoid something that is merely inconvenient.
+   *
+   * The recovery path is the resend control, which every screen that can reach
+   * this state offers. That matters more than usual on the deployment target: a
+   * web service that sleeps when idle can suspend between the enqueue and the
+   * worker picking the job up.
+   */
+  public async requestEmailVerification(user: UserDto): Promise<boolean> {
+    if (!user?.email) return false;
+
+    try {
+      await this.authMailService.sendVerificationEmail({
+        userId: user._id,
+        email: user.email,
+        name: user.name || user.username
+      });
+      return true;
+    } catch (error: any) {
+      this.logger.error(`Could not queue verification email for user ${user._id}: ${error?.message}`);
+      return false;
+    }
   }
 
   /**
@@ -300,17 +477,20 @@ export class UserAccountManagementService extends BaseUserService {
       // The client-hashed password, carried through to `createAuthPassword`,
       // which salts and re-hashes it exactly as it does for an admin-created
       // account.
-      password: payload.password,
-      // Never taken from the request: a visitor does not choose their own role,
-      // their own status, or whether their email counts as verified.
-      verifiedEmail: false
+      password: payload.password
+      // No `verifiedEmail` here either. It is stated as *intent* below, so a
+      // visitor cannot mark their own address confirmed however the payload
+      // class changes.
     };
 
     // Hard-coded, not forwarded. A visitor states no intent: they get an
     // ordinary active account or nothing.
     return this.createNewUserAccount(allowed as UserCreatePayload, {
       status: USER_STATUS.ACTIVE,
-      isAdmin: false
+      isAdmin: false,
+      // Always. A self-registered account confirms its address by following the
+      // link, and cannot log in until it has.
+      verifiedEmail: false
     });
   }
 
@@ -378,21 +558,78 @@ export class UserAccountManagementService extends BaseUserService {
       }
       data.username = data.username.trim().toLowerCase();
     }
-    if (data.email && data.email !== user.email) {
-      const emailCheck = await this.UserModel.countDocuments({
-        email: data.email.toLowerCase(),
-        _id: { $ne: user._id }
-      });
-      if (emailCheck) {
-        throw new EmailHasBeenTakenException();
+    /**
+     * An email change invalidates the confirmation: the new address is unproven,
+     * whatever the old one was.
+     *
+     * The comparison is between **normalised** values on both sides. It used to
+     * compare the raw payload against the stored address, which is already
+     * lowercased and trimmed — so re-submitting the same address with different
+     * capitalisation read as a change, silently unset `verifiedEmail`, and
+     * locked the account out of a login it had every right to. Normalising both
+     * sides means only a genuine change counts.
+     */
+    const normalisedEmail = typeof data.email === 'string'
+      ? data.email.trim().toLowerCase()
+      : undefined;
+    const emailActuallyChanged = !!normalisedEmail && normalisedEmail !== user.email;
+
+    // Explicit administrator intent, captured *before* anything below can
+    // overwrite it. Ticking "Verified email" while changing the address means
+    // the administrator is vouching for the new one; assignment order must not
+    // quietly turn that back into `false`.
+    const adminVouchedForAddress = data.verifiedEmail === true;
+
+    if (normalisedEmail) {
+      if (emailActuallyChanged) {
+        const emailCheck = await this.UserModel.countDocuments({
+          email: normalisedEmail,
+          _id: { $ne: user._id }
+        });
+        if (emailCheck) {
+          throw new EmailHasBeenTakenException();
+        }
       }
-      data.email = data.email.toLowerCase();
+      // Written normalised either way, so a case-only edit still tidies the
+      // stored value without being treated as a new address.
+      data.email = normalisedEmail;
+    }
+
+    const requiresReconfirmation = emailActuallyChanged && !adminVouchedForAddress;
+    if (requiresReconfirmation) {
       data.verifiedEmail = false;
     }
 
     await this.UserModel.updateOne({ _id: id }, data);
 
     const newUser = await this.UserModel.findById(id);
+
+    if (requiresReconfirmation) {
+      // Order matters here, and each step is independent of the last.
+      //
+      // 1. Kill the outstanding links. They were issued for the *previous*
+      //    address; `markEmailVerified` also matches on the token's email so
+      //    they could not confirm the new one, but leaving them active means a
+      //    later successful confirmation would supersede a set that should
+      //    already be empty.
+      await this.authTokenService.supersedeSiblings({
+        userId: newUser._id,
+        type: AUTH_TOKEN_TYPE.EMAIL_VERIFICATION
+      });
+
+      // 2. Revoke live sessions. Login now refuses this account, so a session
+      //    minted before the change is a claim that outlives the check that
+      //    granted it — the enforcement bypass this whole flow exists to close.
+      //    The admin password-change route already sets this precedent.
+      await this.revokeSessionsAfterEmailChange(newUser._id);
+
+      // 3. Mail the *new* address, never the old one: `requestEmailVerification`
+      //    reads `user.email`, which is the value just written. Best-effort and
+      //    last, because the update has already succeeded and a mail failure
+      //    must not undo it — the account simply stays unconfirmed with resend
+      //    available.
+      await this.requestEmailVerification(new UserDto(newUser));
+    }
     // Update auth user cache when user data changes
     await this.authUserCacheService.set(newUser);
 

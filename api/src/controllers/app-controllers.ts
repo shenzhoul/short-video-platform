@@ -7,6 +7,8 @@ import {
   LoginController,
   LogoutController,
   RegisterController,
+  VerificationController,
+  PasswordRecoveryController,
   AdminSettingController,
   SettingController,
   SettingFileUploadController,
@@ -32,6 +34,10 @@ export const appControllers = [
   LoginController,
   LogoutController,
   RegisterController,
+  // Email confirmation and resend.
+  VerificationController,
+  // Forgot password and reset. The only self-service password change in the API.
+  PasswordRecoveryController,
   // Admin password change. Written, guarded and exported, but never listed here
   // until 2026-08-26 — so `PUT /admin/auth/user/password` answered 404 and the
   // only way to reset an administrator's password was a script on the server.

@@ -276,7 +276,13 @@ export class AdminUserController {
     // every account came out `active` — an administrator creating a suspended
     // account got a working one, with no error to tell them otherwise.
     const user = await this.userService.createNewUserAccount(payload, {
-      status: payload.status
+      status: payload.status,
+      // The administrator's own "Verified email" switch, forwarded as intent
+      // rather than left in the payload for the same reason `status` is. Left
+      // off (the default), the account is created unconfirmed and is sent a
+      // confirmation email exactly like a self-registered one; switched on, the
+      // administrator is vouching for the address and no mail is sent.
+      verifiedEmail: payload.verifiedEmail === true
     });
 
     // No second `createAuthPassword` call here. `createNewUserAccount` already
@@ -285,7 +291,14 @@ export class AdminUserController {
     // for no benefit. One credential write, in one place, shared with public
     // registration.
 
-    return DataResponse.ok(new UserDto(user).toResponse(true));
+    // `verificationEmailQueued` distinguishes "the account was not created" from
+    // "the account exists but its confirmation email has not gone out yet".
+    // Those need different words in front of an administrator, and only one of
+    // them is a reason to try again.
+    return DataResponse.ok({
+      ...new UserDto(user).toResponse(true),
+      verificationEmailQueued: (user as any).verificationEmailQueued !== false
+    });
   }
 
   @Put('/:id')

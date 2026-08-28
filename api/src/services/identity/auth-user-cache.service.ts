@@ -3,6 +3,7 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Redis } from 'ioredis';
 import { ObjectId } from 'mongodb';
 import { AuthUserDto } from 'src/dtos/identity/auth-user.dto';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 /**
  * Authentication User Cache Service
@@ -80,6 +81,6 @@ export class AuthUserCacheService {
   }
 
   private getKey(userId: string | ObjectId): string {
-    return `auth_user:${userId.toString()}`;
+    return REDIS_KEYS.authUserCache(userId.toString());
   }
 }

@@ -37,6 +37,45 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(`${origin}/?authModal=login`);
   }
 
+  /**
+   * `/auth/logout` no longer exists as a page either.
+   *
+   * It used to render a "You have been logged out" screen whose `useEffect`
+   * called `signOut`. Two things were wrong with that: it put a dead-end page in
+   * the history that Back could return to, and it made a **GET** perform the
+   * state-changing revoke — so a prefetch, a crawler or an `<img src>` pointed at
+   * this URL could sign somebody out.
+   *
+   * This redirect deliberately performs **no** logout. Signing out happens only
+   * through the Logout control (`useLogout` → `performLogout` → NextAuth's
+   * `signOut` POST) or through `endExpiredSession`. A bookmark simply lands home.
+   */
+  if (pathname === '/auth/logout') {
+    return NextResponse.redirect(`${origin}/`);
+  }
+
+  /**
+   * Routes reached from a link in an email, and therefore by somebody who by
+   * definition cannot sign in yet.
+   *
+   * They are listed here as documentation and as a guard rather than as
+   * behaviour: nothing above redirects them today, and this loop exists so that
+   * a future rule which starts intercepting `/auth/*` cannot swallow them by
+   * accident. Signed in or out, they pass straight through — a signed-in visitor
+   * following a confirmation link for a second account must still reach the page
+   * rather than being bounced to the home page.
+   *
+   * `/auth/forgot-password` above is a *different* URL: it never had a page, and
+   * the forgot-password flow lives in the dialog. Do not confuse the two.
+   */
+  const publicTokenPaths = ['/auth/verify-email', '/auth/reset-password'];
+
+  if (publicTokenPaths.includes(pathname)) {
+    const passThrough = NextResponse.rewrite(url);
+    passThrough.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    return passThrough;
+  }
+
   // Set cache control headers and continue
   const response = NextResponse.rewrite(url);
   response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

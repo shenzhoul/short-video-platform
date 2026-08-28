@@ -31,6 +31,44 @@ export class AuthService extends APIRequest {
     password: string;
   }) => this.post('/auth/register', payload);
 
+  /**
+   * Confirm an email address from a mailed link.
+   *
+   * The link in the email is a GET to `/auth/verify-email`; the page then posts
+   * the token here. That split is not incidental — mail clients and security
+   * appliances pre-fetch the URLs in a message, so a GET that consumed the token
+   * would be consumed by Gmail's own scanner before the recipient ever clicked.
+   */
+  verifyEmail = (token: string) => this.post('/auth/verify-email', { token });
+
+  /**
+   * Ask for the confirmation link again.
+   *
+   * `identifier` is an email address *or* a username, because somebody who
+   * signed in with a username has no address to hand. Always answers 200 with
+   * the same body, whatever the input.
+   */
+  resendVerification = (identifier: string) => this.post('/auth/verification/resend', { identifier });
+
+  /**
+   * Start a password reset.
+   *
+   * Answers identically for a registered address and an unregistered one, so
+   * the caller cannot use it to find out who has an account. The UI must not
+   * try to be more helpful than the API here.
+   */
+  forgotPassword = (email: string) => this.post('/auth/forgot-password', { email });
+
+  /**
+   * Finish a password reset.
+   *
+   * `password` must already be SHA256-hashed with `hashPassword()`, exactly as
+   * login and registration send it — the API stores a salted scrypt hash of
+   * *that* value, so sending the plaintext would store the wrong thing and the
+   * new password simply would not work.
+   */
+  resetPassword = (token: string, password: string) => this.post('/auth/reset-password', { token, password });
+
   logout = async (): Promise<void> => {
     try {
       await this.post('/auth/logout', {});
@@ -100,3 +138,7 @@ export const getToken = authServiceInstance.getToken.bind(authServiceInstance);
 export const logout = authServiceInstance.logout.bind(authServiceInstance);
 export const handleOAuthCallback = authServiceInstance.handleOAuthCallback.bind(authServiceInstance);
 export const initOAuth = authServiceInstance.initOAuth.bind(authServiceInstance);
+export const verifyEmail = authServiceInstance.verifyEmail.bind(authServiceInstance);
+export const resendVerification = authServiceInstance.resendVerification.bind(authServiceInstance);
+export const forgotPassword = authServiceInstance.forgotPassword.bind(authServiceInstance);
+export const resetPassword = authServiceInstance.resetPassword.bind(authServiceInstance);

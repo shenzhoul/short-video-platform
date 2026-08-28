@@ -79,6 +79,104 @@ describe('the retired /auth/login URL', () => {
   });
 });
 
+/**
+ * The two routes reached from a link in an email.
+ *
+ * Whoever follows one is, by definition, somebody who cannot sign in — they have
+ * either not confirmed their address or forgotten their password. Any redirect
+ * here, in either session state, strands them.
+ *
+ * The signed-in cases matter as much as the signed-out ones: a visitor who
+ * confirms a second account, or resets a password while a session from another
+ * device is still live, must still reach the page rather than being bounced to
+ * the home page.
+ */
+describe('public token routes', () => {
+  it.each([
+    '/auth/verify-email',
+    '/auth/reset-password'
+  ])('lets a signed-out visitor through to %s', async (pathname) => {
+    const result: any = await proxy(request(pathname));
+
+    expect(redirect).not.toHaveBeenCalled();
+    expect(result.kind).toBe('rewrite');
+    expect(result.url.pathname).toBe(pathname);
+  });
+
+  it.each([
+    '/auth/verify-email',
+    '/auth/reset-password'
+  ])('lets a signed-in visitor through to %s too', async (pathname) => {
+    token = { user: { _id: 'u1' } };
+
+    const result: any = await proxy(request(pathname));
+
+    expect(redirect).not.toHaveBeenCalled();
+    expect(result.kind).toBe('rewrite');
+    expect(result.url.pathname).toBe(pathname);
+  });
+
+  it('keeps the token in the query string', async () => {
+    const result: any = await proxy(request('/auth/verify-email?token=abc123'));
+
+    // The page reads it from `useSearchParams` and posts it to the API. Losing
+    // it here would turn every confirmation link into an "invalid link" page.
+    expect(result.url.searchParams.get('token')).toBe('abc123');
+  });
+
+  it('is not confused with the retired forgot-password URL', async () => {
+    // `/auth/forgot-password` is a *different* path: it never had a page and is
+    // redirected into the dialog. `/auth/reset-password` is a real page.
+    const retired: any = await proxy(request('/auth/forgot-password'));
+    const real: any = await proxy(request('/auth/reset-password'));
+
+    expect(retired.url).toBe('http://localhost:8081/?authModal=login');
+    expect(real.kind).toBe('rewrite');
+  });
+});
+
+describe('the retired /auth/logout URL', () => {
+  it('redirects to the home page', async () => {
+    const result: any = await proxy(request('/auth/logout'));
+
+    expect(result.kind).toBe('redirect');
+    expect(result.url).toBe('http://localhost:8081/');
+  });
+
+  it('does the same for a signed-in visitor', async () => {
+    token = { user: { _id: 'u1' } };
+
+    const result: any = await proxy(request('/auth/logout'));
+
+    expect(result.url).toBe('http://localhost:8081/');
+  });
+
+  it('carries no auth-dialog marker — this is not a login prompt', async () => {
+    const result: any = await proxy(request('/auth/logout'));
+
+    // `/auth/login` lands on `/?authModal=login`. `/auth/logout` must not: a
+    // bookmark that used to sign somebody out should leave them on the home
+    // page, not stare a login form at them.
+    expect(result.url).not.toContain('authModal');
+  });
+
+  /**
+   * The page this replaced ran `signOut()` from a `useEffect`, which made a
+   * plain GET perform a state change — reachable by a prefetch, a crawler, or an
+   * `<img src>`. The redirect below performs no logout at all; signing out
+   * happens only through the Logout control or `endExpiredSession`.
+   */
+  it('performs no session revoke — a GET must not change state', async () => {
+    token = { user: { _id: 'u1' } };
+
+    const result: any = await proxy(request('/auth/logout'));
+
+    // A redirect and nothing else: no rewrite, no cookie clearing, no call out.
+    expect(result.kind).toBe('redirect');
+    expect(rewrite).not.toHaveBeenCalled();
+  });
+});
+
 describe('protected routes', () => {
   it('are no longer redirected away from at the edge', async () => {
     const result: any = await proxy(request('/creator/publish'));

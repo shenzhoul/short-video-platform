@@ -18,6 +18,16 @@ export default function UserCreateForm() {
     mutationFn: (payload: any) => userService.create(payload),
     onSuccess: async (response) => {
       const userData = response.data;
+
+      // An account created with "Verified Email" left off is sent a
+      // confirmation link and cannot log in until the recipient follows it.
+      // `verificationEmailQueued: false` means the account exists but the email
+      // did not reach the queue — a different outcome from "creation failed",
+      // and one an administrator has to be told about, because the person they
+      // just created an account for is otherwise locked out with no explanation.
+      const awaitingConfirmation = userData?.verifiedEmail !== true;
+      const verificationQueued = userData?.verificationEmailQueued !== false;
+
       if (avatar) {
         // Upload avatar after user creation
         try {
@@ -30,6 +40,16 @@ export default function UserCreateForm() {
       } else {
         message.success('User created successfully');
       }
+
+      if (awaitingConfirmation && !verificationQueued) {
+        message.warning(
+          'The confirmation email could not be sent. The account exists but cannot log in until '
+          + 'its address is confirmed — the user can request a new link from the login screen.'
+        );
+      } else if (awaitingConfirmation) {
+        message.info('A confirmation email has been sent. This account cannot log in until the address is confirmed.');
+      }
+
       router.push('/identity/users');
     },
     onError: (error: any) => {

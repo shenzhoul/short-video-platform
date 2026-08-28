@@ -15,7 +15,17 @@ import {
   useState
 } from 'react';
 
-export type AuthModalMode = 'login' | 'signup';
+/**
+ * Which pane the dialog is showing.
+ *
+ * `forgot` is a genuine third pane with its own form and its own endpoint, so it
+ * belongs here. The narrower states — "check your email" after signing up, and
+ * "confirm your address" after a correct password on an unconfirmed account —
+ * deliberately do **not**: they are local to a single submission of a single
+ * form, and lifting them would make the provider carry state only that form can
+ * produce or clear.
+ */
+export type AuthModalMode = 'login' | 'signup' | 'forgot';
 
 /**
  * Why the modal was opened, which is the only thing that decides what closing it
@@ -76,6 +86,9 @@ function AuthModalUrlTrigger({ onRequest }: { onRequest: (mode: AuthModalMode) =
   const requested = params.get(AUTH_MODAL_PARAM);
 
   useEffect(() => {
+    // `forgot` is intentionally not accepted from the URL. The pane is reached
+    // from the login form, and a link that opens it directly would be a link
+    // worth sending to somebody in a phishing email.
     if (requested !== 'login' && requested !== 'signup') return;
 
     onRequest(requested);

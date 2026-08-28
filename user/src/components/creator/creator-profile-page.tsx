@@ -60,7 +60,7 @@ export default function CreatorProfilePage({
   const [scrollStage, setScrollStage] = useState(0);
   const [previewName, setPreviewName] = useState(creator?.name || creator?.username || '');
   const [previewBio, setPreviewBio] = useState(creator?.bio || '');
-  const [previewAvatar, setPreviewAvatar] = useState(creator?.avatar || '');
+  const [previewAvatar, setPreviewAvatar] = useState(creator?.avatar || '/no_avatar.jpeg');
   const [previewCover, setPreviewCover] = useState(creator?.cover || '');
   const [previewCoverBgColor, setPreviewCoverBgColor] = useState(creator?.coverBgColor || 'hsl(313deg 26.38% 15%)');
   const canEditProfile = currentUser?._id === creator._id;

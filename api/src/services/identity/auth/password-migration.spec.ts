@@ -68,6 +68,11 @@ function buildAuthService(credential: any, userOverrides: Record<string, any> = 
     _id: credential?.userId || new ObjectId(),
     email: 'someone@example.com',
     status: 'active',
+    // Login refuses an unconfirmed address before it reaches the credential
+    // upgrade. Nothing here is about email verification, so the fixture states
+    // the confirmed case; the ordering itself is covered by
+    // `auth-login-verification.spec.ts`.
+    verifiedEmail: true,
     toResponse: () => ({ _id: 'u1' }),
     ...userOverrides
   };

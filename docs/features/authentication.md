@@ -4,8 +4,8 @@ description: Login and signup dialog on the user web app, admin login page, sess
 audience: [user, admin, developer-agent]
 domain: identity
 status: active
-updated: 2026-08-26
-tags: [authentication, nextauth, session, registration, modal, scrypt]
+updated: 2026-08-27
+tags: [authentication, nextauth, session, registration, modal, scrypt, email-verification, password-reset]
 ---
 
 # Credentials Authentication
@@ -66,25 +66,58 @@ and is labelled "Coming soon — scan login is still in development". It calls n
 API, polls nothing, and cannot put the app into a signed-in state. Real QR
 authentication is not implemented.
 
+### Signing up now ends at the inbox (updated 2026-08-27)
+
+Registration no longer signs the visitor in. An account is created with
+`verifiedEmail: false`, `POST /auth/login` refuses it, and the signup pane
+switches to a **check-your-email** state with a Resend control. See
+`docs/features/email-verification-and-password-reset.md` for the whole flow.
+
+### Signing out
+
+There is no logout page. The Logout control calls `useLogout`, which:
+
+1. runs `performLogout` — NextAuth `signOut`, whose `signOut` event revokes the
+   token on the API, then clears the local token cookie;
+2. only once that resolves, `router.replace('/')` — `replace` so Back cannot
+   return to the protected page just left, and `/` specifically so a route guard
+   does not immediately reopen the login dialog;
+3. `router.refresh()`, so the server tree re-renders signed-out and the RSC cache
+   stops holding private data.
+
+No full reload, no confirmation screen, one revoke per click (the hook
+de-duplicates, and the button disables). If the revoke fails the visitor is
+**not** navigated away — telling somebody they are signed out while the session
+is still live is worse than an error message.
+
+The involuntary case — a 401, a deactivated account, a socket the server hung up
+on — goes through `endExpiredSession` instead. It does the same revoke but
+finishes with `window.location.replace('/')`, because it runs from places with no
+router (`api-request.ts` is shared with server rendering) and the client cache is
+stale anyway.
+
 ### `/auth/login` and `/auth/forgot-password`
 
-Both are retired. The proxy (`user/src/proxy.ts`) redirects them to
+Both are retired URLs. The proxy (`user/src/proxy.ts`) redirects them to
 `/?authModal=login`, which opens the dialog on the home page and then strips the
 parameter. A signed-in visitor is redirected to `/` with no dialog.
 
-`/auth/forgot-password` never had a page. Audited 2026-08-26: no such route ever
-existed in the user app, the old login page's "Forgot password?" link resolved to
-not-found, and the API has never exposed a recovery endpoint (`POST /auth/forgot`
-answers 404). The redirect therefore replaces a dead link and removes nothing.
+`/auth/forgot-password` never had a page, and still does not — password recovery
+lives in the dialog's third pane, not at a URL. Do not confuse it with
+**`/auth/reset-password`**, which is a real public page reached from a link in an
+email and must never be redirected.
 
-### No password recovery
+### Password recovery (added 2026-08-27)
 
-There is no self-service password reset for users, and the dialog deliberately
-shows no "Forgot password?" link — advertising a flow that does not exist is
-worse than omitting it. Changing a password is currently only possible through
-the admin route `PUT /admin/auth/user/password`. (The admin app's own
-`/auth/forgot` page posts to the missing endpoint and misreports the 404; tracked
-as `bug-admin-forgot-password-posts-to-missing-endpoint`.)
+The dialog now carries a "Forgot password?" link, because the flow behind it
+exists: `POST /auth/forgot-password` → email → `/auth/reset-password?token=…` →
+`POST /auth/reset-password`. Both endpoints answer generically and neither
+reveals whether an address is registered.
+
+`admin/` deliberately has **no** recovery UI. An administrator still recovers
+through another admin (`PUT /admin/auth/user/password`) or
+`api/scripts/reset-admin-pw.js`; `admin/scripts/verify-auth-ui.js` guards that
+absence and is unchanged.
 
 ## Protected pages (updated 2026-08-26)
 
@@ -166,7 +199,9 @@ database are cleared by
 `node api/scripts/repair-auth-credential-duplicates.js --apply` (dry-run by
 default).
 
-There is still no password reset. See "No password recovery" above.
+A password now has three ways to change: the reset flow above, the admin-only
+`PUT /admin/auth/user/password`, and nothing else. There is still no
+self-service "change my password while signed in" route.
 
 ## Admin app
 
@@ -191,11 +226,17 @@ body, which is what keeps public registration unable to choose one.
 
 ## API flow
 
-1. `POST /auth/login` — validates the password credential and account status,
-   returns the API token and profile. Rate limited to 5 attempts per minute.
+1. `POST /auth/login` — verifies the password **first**, then the account status,
+   then `verifiedEmail`. Returns the API token and profile. Rate limited to 5
+   attempts per minute. An unconfirmed address gets `403` with
+   `error: 'EMAIL_VERIFICATION_REQUIRED'` and **no session**.
 2. `POST /auth/register` — public self-registration, rate limited to 5 attempts
-   per 5 minutes. Returns the created profile and **no session**; the client then
-   signs in through `POST /auth/login`, so session issuance stays in one place.
+   per 5 minutes. Returns the created profile, `emailVerificationRequired: true`
+   and **no session**. The client shows the check-your-email state; it no longer
+   signs in afterwards, because the account cannot log in yet.
+2b. `POST /auth/verify-email`, `POST /auth/verification/resend`,
+   `POST /auth/forgot-password`, `POST /auth/reset-password` — see
+   `docs/features/email-verification-and-password-reset.md`.
 3. `POST /admin/users` — unchanged, still behind `@Roles('admin')` and
    `RoleGuard`, still accepting the admin-only fields (status, verified email).
 4. NextAuth stores the token/session fields used by the server and browser API
@@ -219,7 +260,8 @@ the second request before it reaches the database.
 ## Main implementation
 
 - API controllers: `api/src/controllers/identity/auth/login.controller.ts`,
-  `register.controller.ts`, `logout.controller.ts`
+  `register.controller.ts`, `logout.controller.ts`, `verification.controller.ts`,
+  `password-recovery.controller.ts`
 - API payload: `api/src/payloads/identity/auth/register.payload.ts`
 - API service: `api/src/services/identity/auth/auth.service.ts`,
   `api/src/services/identity/user/user.service.ts` (`registerNewUser`)
@@ -238,10 +280,11 @@ the second request before it reaches the database.
 ## Boundaries
 
 - User and admin NextAuth configurations use credentials providers only.
-- QR login, phone login, OTP, social login, password reset, email verification
-  and CAPTCHA are **not** shipped. `AuthService` has no `forgot()` method and the
-  API has no forgot/reset route — an earlier JSDoc example claimed otherwise and
-  has been corrected.
+- QR login, phone login, OTP, social login and CAPTCHA are **not** shipped.
+- Email verification and password reset **are** shipped as of 2026-08-27 —
+  `EmailVerificationService` and `PasswordRecoveryService`, over
+  `AuthTokenService`. Mail is Gmail SMTP configured entirely from the API's
+  environment; `MAIL_PROVIDER=log` is the local-development transport.
 - The existing OAuth callback page is a utility route, not evidence of an enabled
   provider.
 - No admin configuration is required to enable signup; it is open by default.

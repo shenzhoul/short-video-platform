@@ -24,6 +24,7 @@ import { setTranslationService } from './utils/translation';
 import { AcceptLanguageResolver, I18N_OPTIONS, I18nJsonLoader, I18nMiddleware, I18nModule, QueryResolver } from 'nestjs-i18n';
 import { I18nMessageFormat } from 'nestjs-i18n/dist/utils';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { THROTTLER_KEY_PREFIX } from 'src/kernel/infras/redis/redis-keys';
 import { CoreQueueModule } from 'src/kernel';
 import { DBLoggerService } from './common/lib/logger';
 import { RequestLoggerMiddleware } from './common/lib/logger/request-log.middleware';
@@ -137,7 +138,21 @@ const resolveI18nPath = () => {
 
         // Conditionally add Redis storage if configured
         if (throttlerConfig.storageType === 'redis' && redisConfig) {
-          const redis = new Redis(redisConfig.options);
+          // The throttler gets its own client with an ioredis `keyPrefix`, which
+          // is safe here and nowhere else in this application:
+          // `@nest-lab/throttler-storage-redis` only ever addresses its counters
+          // through `EVAL`, and EVAL key arguments *are* prefixed — including
+          // suffixes its Lua script appends, since those are built from the
+          // already-prefixed `KEYS[1]`. Services that use `KEYS`/`SCAN` cannot
+          // use `keyPrefix` (patterns are not prefixed) and namespace themselves
+          // explicitly instead; see `kernel/infras/redis/redis-keys.ts`.
+          //
+          // Without this the counters were bare `{<hash>:default}:hits`, which
+          // named no owner in a Redis shared with another project.
+          const redis = new Redis({
+            ...redisConfig.options,
+            keyPrefix: THROTTLER_KEY_PREFIX
+          });
 
           // Suppress unhandled error events during shutdown
           redis.on('error', (err: any) => {

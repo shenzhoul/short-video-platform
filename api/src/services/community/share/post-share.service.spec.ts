@@ -236,7 +236,10 @@ describe('duplicate guard scope', () => {
     await service.shareToMessage(postId, bob, sender);
 
     const [key, , mode, ttl, flag] = redisClient.set.mock.calls[0];
-    expect(key).toBe(`share:post:${sender._id}:${postId}:${bob}`);
+    // Namespaced to this project: the development Redis is shared with another
+    // application, and a bare key names no owner. See
+    // `kernel/infras/redis/redis-keys.ts`.
+    expect(key).toBe(`douyin-clone:share:post:${sender._id}:${postId}:${bob}`);
     // Set-if-absent with an expiry: the whole guard in one round trip, and it
     // cannot outlive the click it is protecting.
     expect(mode).toBe('EX');

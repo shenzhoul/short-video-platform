@@ -11,6 +11,7 @@ import { QueueMessageService } from 'src/kernel';
 
 import { CommunicationService } from '../communication.service';
 import { MessageService } from '../message/message.service';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 
 export interface PostShareResult {
   message: MessageDto;
@@ -158,6 +159,6 @@ export class PostShareService {
     postId: string | ObjectId,
     recipientId: string | ObjectId
   ): string {
-    return `share:post:${senderId}:${postId}:${recipientId}`;
+    return REDIS_KEYS.sharePost(`${senderId}:${postId}:${recipientId}`);
   }
 }

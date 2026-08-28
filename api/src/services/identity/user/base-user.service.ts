@@ -133,12 +133,64 @@ export class BaseUserService {
 
   public async findByUsernameOrEmail(text: string): Promise<UserDto> {
     if (!text) return null;
+    const identifier = text.trim().toLowerCase();
+    // Both branches normalise identically. The email branch used to lowercase
+    // without trimming, so an address pasted with a trailing space matched
+    // nothing while the same string as a username matched fine.
     const user = await this.getCollection().findOne({
-      $or: [{ username: text.trim().toLowerCase() }, { email: text.toLowerCase() }]
+      $or: [{ username: identifier }, { email: identifier }]
     });
     if (!user) return null;
 
     return UserDto.fromModel(user);
+  }
+
+  /**
+   * Look an account up by email alone.
+   *
+   * Separate from `findByUsernameOrEmail` because password recovery must key on
+   * the address and nothing else: accepting a username there would let somebody
+   * aim a reset email at an account whose address they do not know.
+   *
+   * Normalisation matches what `createNewUserAccount` writes — the schema also
+   * declares `lowercase: true, trim: true` on the field, so a stored address is
+   * always in this form.
+   */
+  public async findByEmail(email: string): Promise<UserDto> {
+    if (!email) return null;
+    const user = await this.getCollection().findOne({ email: email.trim().toLowerCase() });
+    if (!user) return null;
+
+    return UserDto.fromModel(user);
+  }
+
+  /**
+   * Flip `verifiedEmail` to true, and nothing else.
+   *
+   * The filter carries `verifiedEmail: { $ne: true }` so the return value
+   * answers "did this call perform the transition", which is what lets the
+   * verify endpoint distinguish a first use from a repeat without a second read.
+   *
+   * The update deliberately touches one field. A verification link must not be
+   * able to change an account's status, role or credential — an account an
+   * administrator has suspended stays suspended after its owner confirms their
+   * address, and login evaluates both conditions independently.
+   *
+   * `email` is part of the filter for the stale-link case: an administrator
+   * changing somebody's address already forces `verifiedEmail: false`, and a
+   * link mailed to the previous address must not undo that.
+   */
+  public async markEmailVerified(id: string | ObjectId, email: string): Promise<boolean> {
+    const result = await this.getCollection().updateOne(
+      {
+        _id: toObjectId(id),
+        email: email.trim().toLowerCase(),
+        verifiedEmail: { $ne: true }
+      },
+      { $set: { verifiedEmail: true, updatedAt: new Date() } }
+    );
+
+    return result.modifiedCount > 0;
   }
 
   /**

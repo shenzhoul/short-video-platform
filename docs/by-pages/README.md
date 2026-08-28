@@ -21,7 +21,7 @@ tags: [routes, pages, user, admin]
 | `/friend` | Authenticated | Feed from friends (mutual follow); added 2026-08-26, was a 404 |
 | `/pip` | Public | Picture-in-picture player surface |
 | `/auth/login` | Retired | No page. The proxy redirects to `/?authModal=login`, which opens the shared auth dialog |
-| `/auth/logout` | Public | Logout confirmation |
+| `/auth/logout` | Retired | No page (removed 2026-08-26). The proxy redirects to `/`; the GET performs no logout |
 | `/auth/oauth/callback/[provider]` | Public utility | Callback handler route; no OAuth provider is configured in NextAuth |
 | `/creator/publish` | Authenticated | Publishing entry for video, graphics, VR, and article tabs |
 | `/creator/publish/video` | Authenticated | Video publishing editor |

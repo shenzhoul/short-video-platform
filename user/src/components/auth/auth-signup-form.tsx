@@ -1,12 +1,12 @@
 'use client';
 
 import { AuthPasswordField, AuthSelectField, AuthTextField } from '@components/auth/auth-fields';
+import AuthVerificationNotice from '@components/auth/auth-verification-notice';
 import Button from '@components/ui/button';
 import { normalizeErrorMessage, toast } from '@douyin-clone/shared-toast';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { hashPassword } from '@lib/crypto';
 import { register as registerAccount } from '@services/auth.service';
-import { signIn } from 'next-auth/react';
 import { RefObject, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -57,6 +57,15 @@ interface AuthSignupFormProps {
 export default function AuthSignupForm({ onSwitchToLogin, firstFieldRef }: AuthSignupFormProps) {
   const [submitting, setSubmitting] = useState(false);
 
+  /**
+   * Set once the account exists. Switching the pane rather than closing the
+   * dialog, because the visitor is not finished — there is a link in their inbox
+   * and a Resend control here if it never arrives.
+   */
+  const [createdAccount, setCreatedAccount] = useState<
+    { email: string; emailQueued: boolean } | null
+  >(null);
+
   /** See the note in `auth-login-form.tsx`: no late writes after unmount. */
   const activeRef = useRef(true);
   useEffect(() => {
@@ -85,7 +94,7 @@ export default function AuthSignupForm({ onSwitchToLogin, firstFieldRef }: AuthS
     try {
       const password = await hashPassword(values.password);
 
-      await registerAccount({
+      const response = await registerAccount({
         email: values.email.trim(),
         username: values.username.trim(),
         name: values.name.trim(),
@@ -95,27 +104,19 @@ export default function AuthSignupForm({ onSwitchToLogin, firstFieldRef }: AuthS
         password
       });
 
-      // Signed in through the ordinary credentials flow rather than a token
-      // handed back by registration, so session issuance stays in one place.
-      const result = await signIn('credentials', {
-        username: values.username.trim(),
-        password,
-        redirect: false
-      });
-
       if (!activeRef.current) return;
 
-      if (result?.ok) {
-        // One toast, and the provider closes the dialog when the session turns
-        // authenticated — the visitor stays exactly where they were.
-        toast.success('Your account is ready. Welcome!', { toastId: SIGNUP_TOAST_ID });
-        return;
-      }
-
-      // The account exists; only the automatic sign-in failed. Say so once and
-      // hand them the login pane rather than pretending registration failed.
-      toast.info('Your account was created. Please log in.', { toastId: SIGNUP_TOAST_ID });
-      onSwitchToLogin();
+      // **No sign-in here.** The account is created with an unconfirmed address
+      // and `POST /auth/login` refuses it until the link is followed, so calling
+      // `signIn` would produce a guaranteed failure and a misleading error. The
+      // visitor's next step is their inbox, not this form.
+      setCreatedAccount({
+        email: values.email.trim(),
+        // `false` means the account exists but the email did not reach the
+        // queue. Not a failure — the account is fine — but it is the difference
+        // between "check your inbox" and "press Resend".
+        emailQueued: response?.data?.verificationEmailQueued !== false
+      });
     } catch (error) {
       if (!activeRef.current) return;
 
@@ -138,6 +139,20 @@ export default function AuthSignupForm({ onSwitchToLogin, firstFieldRef }: AuthS
       if (activeRef.current) setSubmitting(false);
     }
   };
+
+  if (createdAccount) {
+    return (
+      <AuthVerificationNotice
+        heading={createdAccount.emailQueued ? 'Check your email' : 'Your account is ready'}
+        email={createdAccount.email}
+        identifier={createdAccount.email}
+        detail={createdAccount.emailQueued
+          ? undefined
+          : 'We could not send the confirmation email just now. Press the button below to try again.'}
+        onBack={onSwitchToLogin}
+      />
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-3">

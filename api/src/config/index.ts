@@ -1,4 +1,5 @@
 import app from './app';
+import mailer from './mailer';
 import fileServer from './file-server';
 import redis from './redis';
 import queue from './queue';
@@ -11,6 +12,7 @@ import throttler from './throttler';
  */
 export default () => ({
   app,
+  mailer: mailer(),
   fileServer,
   redis,
   throttler,

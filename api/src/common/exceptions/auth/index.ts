@@ -5,3 +5,4 @@ export * from './email-not-verified';
 export * from './password-incorrect.exception';
 export * from './credential-write-conflict.exception';
 export * from './credential-conflict.exception';
+export * from './auth-token-invalid.exception';

@@ -1,4 +1,5 @@
 import { PermissionError } from '@lib/error';
+import { endExpiredSession } from '@lib/session-expired';
 import { isUrl } from '@lib/string';
 import axios from 'axios';
 import cookie from 'js-cookie';
@@ -73,8 +74,10 @@ export abstract class APIRequest {
         if (response?.status === 401) {
           const token = cookie.get(TOKEN);
           if (token && typeof window !== 'undefined') {
-            // logout page will handle all
-            window.location.href = '/auth/logout';
+            // The session is dead. `endExpiredSession` revokes it and lands on
+            // `/`; it used to navigate to `/auth/logout`, a page that did the
+            // revoke and then showed a confirmation screen. That page is gone.
+            void endExpiredSession();
           }
 
           // throw to stop further processing

@@ -8,10 +8,12 @@ import { USER_STATUS } from 'src/common/constants';
 import {
   AccountInactiveException,
   CredentialAlreadyExistsException,
+  EmailNotVerifiedException,
   CredentialNotFoundException,
   CredentialWriteConflictException,
   PasswordIncorrectException
 } from 'src/common/exceptions/auth';
+import { requiresEmailVerification } from 'src/common/lib/email-verification.lib';
 import { UserDto } from 'src/dtos/identity/user';
 import { EntityNotFoundException } from 'src/kernel';
 import { AuthPayload, LoginPayload } from 'src/payloads';
@@ -36,26 +38,29 @@ import {
  * whole of it.
  *
  * What this actually does:
- * - Salted SHA256 password hashing (`encryptPassword`), one random salt per
- *   credential, stored in the `auth` collection
- * - Password verification for login, including the account-status check
+ * - Credential storage in the `auth` collection, through `PasswordHasherService`
+ * - Password verification for login, plus the account-status and
+ *   email-confirmation checks that gate a session
  * - Token issue, validation and revocation, delegated to `TokenService` (Redis)
  * - Resolving a token back to an `AuthUserDto`, through `AuthUserCacheService`
  *
- * What this does NOT do, and what no other service does either. This list is
- * here because an earlier version of this docblock advertised most of it, which
- * is misleading in exactly the place somebody would look before wiring a
- * "Forgot password?" link to something:
- * - **No password reset.** No `forgot()`, no reset tokens, no
- *   `POST /auth/forgot` route. The only password-change path that exists is
- *   `PUT /admin/auth/user/password`, and it is admin-only.
- * - **No email verification.** `verifiedEmail` is a flag an administrator sets;
- *   nothing sends or checks a verification mail.
+ * What lives elsewhere, so nobody goes looking for it here:
+ * - **Email verification and password reset** are `EmailVerificationService` and
+ *   `PasswordRecoveryService`, built on `AuthTokenService`. This service only
+ *   *enforces* the result — `login` refuses an account whose `verifiedEmail` is
+ *   not `true` — and exposes `replaceAuthPassword`, which the reset uses.
+ * - **Self-service password change** still does not exist as its own route. The
+ *   two ways a password can change are the reset flow and the admin-only
+ *   `PUT /admin/auth/user/password`.
+ *
+ * What genuinely does not exist anywhere:
  * - **No 2FA, and no account lockout.** Brute force is bounded by the
  *   throttler on the login route (5 attempts per minute), not by lockout.
- * - **Not PBKDF2**, despite what the old comments said — it is a single SHA256
- *   round over `password + salt`. The web client also SHA256s the password
- *   before sending it, so what is hashed here is already a digest.
+ *
+ * Passwords are scrypt, owned by `PasswordHasherService`. The legacy salted
+ * SHA256 scheme is verify-only and upgraded on a successful login. The web
+ * client SHA256s the password before sending it, so what is hashed here is
+ * already a digest.
  *
  * @example User login
  * ```typescript
@@ -281,6 +286,22 @@ export class AuthService {
     }
   }
 
+  /**
+   * Delete a user's password credential.
+   *
+   * Exists for exactly one caller: the compensation path in
+   * `createNewUserAccount`, which discards a half-built account when the
+   * credential write fails. It is scoped to `{ userId, type }`, the logical
+   * credential key, so it cannot reach another account's row.
+   *
+   * Not a general-purpose operation. Removing a live account's credential leaves
+   * it unable to log in with no way to recover, which is why nothing else calls
+   * this and nothing should start to.
+   */
+  public async removeAuthPassword(userId: string | ObjectId): Promise<void> {
+    await this.AuthModel.deleteOne({ userId, type: 'password' });
+  }
+
   public async getAuthPassword(userId?: string | ObjectId): Promise<any> {
     return this.AuthModel.findOne({
       userId: userId,
@@ -382,10 +403,30 @@ export class AuthService {
   }
 
   /**
-   * login account
-   * @param payload
-   * @param req
-   * @returns
+   * Sign in.
+   *
+   * ## The order of the checks is the security property
+   *
+   * ```text
+   * find user -> find credential -> verify password -> status -> verifiedEmail -> issue session
+   * ```
+   *
+   * The status check used to sit *before* the password check, which meant an
+   * unauthenticated caller could learn that an account existed and was suspended
+   * simply by posting a wrong password. Every check that reveals something about
+   * a specific account now sits behind proof that the caller holds its password;
+   * everything a caller can reach without that proof collapses to the same
+   * "these credentials do not work".
+   *
+   * The email-verification check is last for the same reason, and because it is
+   * the narrowest: it must not be reachable by anyone who has not already
+   * satisfied both of the others.
+   *
+   * ## No session is issued for an unverified account
+   *
+   * Not a token, not a cookie, nothing. The alternative — issue one and have a
+   * guard reject every later request — produces a half-authenticated client and
+   * a bypass allow-list that rots. Refusing here keeps the rule in one place.
    */
   async login(payload: LoginPayload, req: Request): Promise<{ token: string, profile: any }> {
     const user: UserDto = await this.baseUserService.findByUsernameOrEmail(payload.username);
@@ -398,16 +439,25 @@ export class AuthService {
       throw new EntityNotFoundException(__t('errors.invalid_login_credentials'));
     }
 
-    if (user.status === USER_STATUS.INACTIVE) {
-      throw new AccountInactiveException();
-    }
-
     const verification = await this.verifyPassword(payload.password, authPassword);
     if (!verification.valid) {
       // Covers a wrong password, a malformed credential and an unsupported
       // version alike: all three are "these credentials do not work", and
       // distinguishing them for the caller would describe our storage to them.
       throw new PasswordIncorrectException();
+    }
+
+    // From here the caller has proved they hold this account's password, so a
+    // specific reason for refusal is safe to give them.
+    if (user.status === USER_STATUS.INACTIVE) {
+      throw new AccountInactiveException();
+    }
+
+    // Independent of status, and deliberately not a substitute for it: a
+    // confirmed address on a suspended account is still refused above, and a
+    // live account with an unconfirmed address is refused here.
+    if (requiresEmailVerification(user)) {
+      throw new EmailNotVerifiedException();
     }
 
     // Correct password on a pre-migration credential. Upgrade it now, because

@@ -4,7 +4,7 @@ description: Index of user-visible and operational features implemented in the c
 audience: [user, creator, admin, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-13
+updated: 2026-08-28
 tags: [features, index]
 ---
 
@@ -24,7 +24,6 @@ These documents describe shipped workflows. Domain documents remain the source o
 | Interaction notifications | [notifications.md](./notifications.md) | Grouped like/comment/reply/follow notifications, realtime delivery, category filter, header panel |
 | Direct messaging | [messaging.md](./messaging.md) | Private one-to-one messages, request-based consent, block and restrict, right-side workspace and page reflow, `/messages` |
 | Post sharing | [post-sharing.md](./post-sharing.md) | The share popover, sending a post into a message, and how `totalShare` is counted |
-| Post sharing | [sharing.md](./sharing.md) | Share panel, recorded shares, `totalShare` |
 | File uploads and processing | [file-uploads-and-processing.md](./file-uploads-and-processing.md) | Direct/TUS uploads, ownership, Sharp/FFmpeg |
 | Admin operations | [admin-operations.md](./admin-operations.md) | Users, admins, settings, logs |
 | Online status | [online-status.md](./online-status.md) | Socket authentication and presence events |

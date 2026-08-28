@@ -1,7 +1,8 @@
 'use client';
 
 import { IUser } from '@interfaces/user';
-import { clearToken, getToken } from '@services/auth.service';
+import { endExpiredSession } from '@lib/session-expired';
+import { getToken } from '@services/auth.service';
 import { userService } from '@services/user.service';
 import { useSession } from 'next-auth/react';
 import {
@@ -44,8 +45,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           Authorization: token
         });
         // restrict inactive/deleted users from accessing the profile
+        // The account is no longer usable. This is an involuntary sign-out, so
+        // it goes through `endExpiredSession`: revoke, then land on `/`. There
+        // is no logout page to send them to any more.
         if (!['active', 'under-review'].includes(data.status as any)) {
-          window.location.href = '/auth/logout';
+          void endExpiredSession();
           return;
         }
         setCurrent(data);
@@ -53,9 +57,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         // Handle 401/403 errors by redirecting to logout
         const statusCode = e?.statusCode || e?.response?.status || e?.details?.code;
         if (statusCode && [401, 403].includes(statusCode)) {
-          // force clear token to avoid loops
-          clearToken();
-          window.location.href = '/auth/logout';
+          // `endExpiredSession` clears the token itself and de-duplicates, so
+          // several rejecting requests produce one sign-out and one navigation.
+          void endExpiredSession();
           return;
         }
       } finally {
@@ -88,10 +92,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   useSocketListeners(
     {
       'user/status-changed': (data: { status: string }) => {
-        // restrict inactive/deleted users from accessing the profile
+        // The server has just told us this account may no longer be used.
         if (!['active', 'under-review'].includes(data.status as any)) {
-          window.location.href = '/auth/logout';
-          return;
+          void endExpiredSession();
         }
       }
     },

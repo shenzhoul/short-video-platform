@@ -1,7 +1,8 @@
 'use client';
 
+import { endExpiredSession } from '@lib/session-expired';
 import { getToken } from '@services/auth.service';
-import { signOut, useSession } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import React, {
   createContext, useCallback, useContext, useEffect, useEffectEvent, useRef, useState
 } from 'react';
@@ -131,10 +132,12 @@ export function SocketProvider({ children }: SocketProviderProps) {
       setIsConnected(false);
       setConnectionStatus('disconnected');
 
-      // If disconnected due to auth issues, sign out user
+      // If disconnected due to auth issues, sign out user.
+      // `endExpiredSession` rather than a bare `signOut()`: it revokes the token
+      // on the API, clears the cookie and lands on `/`, and de-duplicates so a
+      // disconnect plus an `auth/error` do not sign out twice.
       if (reason === 'io server disconnect') {
-
-        signOut();
+        void endExpiredSession();
       }
     });
 
@@ -159,8 +162,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     // Handle authentication errors
     socketRef.current.on('auth/error', () => {
-
-      signOut();
+      void endExpiredSession();
     });
   }, [authenticateSocket]);
 

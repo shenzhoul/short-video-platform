@@ -199,10 +199,10 @@ export default function HomeFeedCard({
             onClick={() => onOpenDetail?.(post, 0)}
             className="block w-full cursor-pointer text-left"
           >
-            <h3 className={`${isProfileVariant ? 'line-clamp-1' : 'line-clamp-2'} text-sm font-medium leading-5 text-(--text-strong) transition hover:text-(--text-strong)`}>{playback.description}</h3>
+            <h3 className={`${isProfileVariant ? 'line-clamp-1' : 'line-clamp-2'} text-[16px] font-medium leading-5 text-(--text-strong) transition hover:text-(--text-strong)`}>{playback.description}</h3>
           </button>
           {!isProfileVariant ? (
-            <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-(--text-soft)">
+            <div className="mt-2 flex min-w-0 items-center gap-2 text-sm text-(--text-soft)">
               <span className="truncate">@{metaName}</span>
               {timeText ? <span className="shrink-0">· {timeText}</span> : null}
             </div>

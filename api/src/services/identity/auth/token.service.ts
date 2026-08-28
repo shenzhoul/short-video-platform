@@ -2,6 +2,7 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 import { ObjectId } from 'mongodb';
 
 export interface TokenData {
@@ -35,7 +36,11 @@ export interface TokenData {
  */
 @Injectable()
 export class TokenService {
-  private readonly TOKEN_PREFIX = 'auth:token:';
+  // Namespaced through `REDIS_KEYS` so the pattern below and the key written
+  // above are built from one place. See redis-keys.ts: a blanket ioredis
+  // `keyPrefix` would prefix the writes but not this pattern, and every
+  // session lookup would silently miss.
+  private readonly TOKEN_PREFIX = `${REDIS_KEYS.session()}:`;
   private readonly DEFAULT_TTL = 60 * 60 * 24 * 7; // 7 days
   private readonly EXTENDED_TTL = 60 * 60 * 24 * 365; // 365 days
 
