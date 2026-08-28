@@ -129,7 +129,7 @@ For repeated success copy, use `toastHelpers.*` (`saved`, `created`, `updated`, 
 - Move the client counter only when the record-share response reports `created: true`. Never re-derive idempotency on the client from a remembered flag; the backend result is authoritative.
 - Record a share only when one actually completed. Opening the share panel, or pressing a control that does nothing, must not increment the counter or notify.
 - Shares update statistics only and never create an interaction notification.
-- Never claim a delivery the backend cannot make. Direct sending stays visibly disabled until messaging exists rather than silently succeeding.
+- Direct post sharing is delivered as a real message through `PostShareService`; it must pass the messaging permission gate before the distinct-sharer counter is recorded. See the post-sharing and direct-messaging skills.
 - A post carries several reaction actions, so listeners and queries must filter on `action`, not just `objectType`.
 - Counters shown while a post is open come from the post-interaction patch, not a second local counter. A post opened by `modal_id` may not be in the loaded feed, so patches must reach `detailPost` as well as the list.
 

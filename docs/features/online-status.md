@@ -4,7 +4,7 @@ description: Socket authentication, connection tracking, stale-presence cleanup,
 audience: [user, developer-agent]
 domain: community
 status: active
-updated: 2026-07-31
+updated: 2026-08-28
 tags: [socket, presence, online]
 ---
 
@@ -20,4 +20,6 @@ The API:
 - runs a BullMQ scheduler to clean stale socket presence;
 - emits online-status updates to the global room.
 
-This is presence tracking only. Direct messaging, chat rooms, live-stream rooms, push notifications, and notification preferences are not implemented.
+This document covers presence tracking only. Direct messaging and in-platform interaction notifications are implemented as separate socket-backed domains; chat rooms, live-stream rooms, push notifications, and notification preferences are not implemented.
+
+See [Direct Messaging](./messaging.md) and [Interaction Notifications](./notifications.md).

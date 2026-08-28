@@ -1,6 +1,6 @@
 # Short Video Platform
 
-A full-stack social platform focused on short-form video, creator content, real-time interactions, and media processing.
+A full-stack social platform inspired by Douyin, focused on short-form video and photo content, creator workflows, real-time interactions, private messaging, and media processing.
 
 This project is being developed as a personal engineering project with a strong focus on frontend architecture, real-time user experiences, performance, and scalable service integration.
 
@@ -12,7 +12,7 @@ The platform is organized as a multi-application system consisting of:
 
 - **User Web Application** — the main social and content-consumption experience.
 - **Admin Web Application** — administration and platform management.
-- **API Service** — authentication, content, social interactions, notifications, and business logic.
+- **API Service** — authentication, content, social interactions, messaging, notifications, and business logic.
 - **File Server** — media upload and asynchronous image/video processing.
 
 The project is designed to separate user-facing applications, business logic, and resource-intensive media processing into independent services.
@@ -63,22 +63,43 @@ call, while uploads go straight to the file server. That routing is documented i
 
 ## Key Features
 
+### Identity and access
+
+- Shared login, signup, and password-recovery dialog that preserves the visitor's current page
+- Public registration with server-owned role and account-status defaults
+- Email verification, resend verification, forgot-password, and token-based password reset flows
+- Scrypt password hashing with transparent migration from legacy credentials
+- Session-aware route protection for feeds, creator tools, and messages
+
 ### Short-form content
 
-- Video and image post publishing
-- Content feed and post detail experiences
+- Video, image, and text post publishing
+- Home, recommended, following, and creator-profile feeds with infinite scrolling
+- Trending topics, search history, suggestions, hashtags, creators, and content discovery
 - Creator publishing and post-management flows
-- Comments and replies
+- Comments, replies, image comments, and user mentions
 - Likes and social reactions
-- User mentions
-- Follow relationships
+- One-way follow relationships, follower/following lists, and personalized following feed
+- Post sharing through copied links or direct messages, with distinct-sharer statistics
+
+### Direct messaging
+
+- Private one-to-one conversations with text, image, video, and shared-post messages
+- Follow-aware message requests: mutual followers can chat immediately; other users receive a one-message consent flow
+- Durable conversation acceptance plus explicit block and restrict controls
+- Server-authoritative unread counts synchronized across the sidebar, `/messages`, browser tabs, and sessions
+- Real-time delivery through Socket.IO and Redis/BullMQ-backed events with replay de-duplication
+- A reusable right-side message workspace available from the header, creator profiles, and post detail
+- Responsive page reflow through CSS variables and container queries, with an overlay mode on narrower screens
+- Per-reader shared-post resolution so deleted, hidden, or inaccessible content is not leaked through message history
+- System notices for mutual-follow events without affecting consent or unread state
 
 ### Real-time interactions
 
-- Real-time notification delivery
-- Notification unread state management
-- Comment and interaction updates
-- Socket-based event synchronization
+- Grouped notifications for likes, comments, replies, follows, and mentions
+- Server-backed notification categories, deep links to the relevant post/comment, deletion, and inbox unread state
+- Real-time message, notification, comment, reaction, and online-status updates
+- Socket-based event synchronization with a single frontend subscriber per domain
 
 The notification system is designed to keep persisted server state and real-time client state synchronized while avoiding duplicated events and unnecessary UI updates.
 
@@ -409,11 +430,17 @@ Search experience with history, suggestions, trending topics, hashtags, and cont
 
 ![Search & Discovery](./docs/screenshots/06-search.png)
 
+### Direct Messaging
+
+Private one-to-one messaging with follow-aware consent, real-time unread state, conversation search, and a right-side workspace that keeps the current feed or post visible.
+
+![Direct Messaging](./docs/screenshots/07-message.png)
+
 ## Current Status
 
 The project is under active development.
 
-Core social, creator, notification, and media-processing functionality is already implemented, while additional features, UI refinements, testing, and deployment preparation are ongoing.
+Core social, creator, direct-messaging, notification, authentication, search, sharing, and media-processing functionality is already implemented, while additional features, UI refinements, testing, and deployment preparation are ongoing.
 
 A public live demo will be added after the current development milestone is complete.
 
@@ -421,7 +448,7 @@ A public live demo will be added after the current development milestone is comp
 
 - Complete remaining UI refinements
 - Expand automated test coverage
-- Improve real-time interaction flows
+- Refine direct-messaging UX and add advanced conversation capabilities
 - Complete production deployment configuration
 - Add public demo environment
 - Add demo media

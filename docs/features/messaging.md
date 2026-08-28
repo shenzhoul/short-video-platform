@@ -4,7 +4,7 @@ description: Private one-to-one messages with request-based consent, block and r
 audience: [user, creator, developer-agent]
 domain: community
 status: active
-updated: 2026-08-21
+updated: 2026-08-28
 tags: [message, conversation, realtime, socket, follow, permission, unread, media, block, restrict, share]
 ---
 
@@ -457,8 +457,8 @@ node scripts/repair-message-system-event-keys.js --apply   # repair
 A fresh database needs none of this: `yarn dev` creates the partial index
 directly from the schema.
 
-Following again after an unfollow creates *new* follow records, so it is a new
-transition and gets its own notice, which is the intended behaviour.
+Following again after an unfollow creates new follow records, but the stable
+conversation-scoped key and history check prevent a second notice.
 
 Reading follow state never writes one: the notice is driven by the `created`
 event `FollowService` publishes only for a genuinely new relation.
@@ -572,7 +572,6 @@ It is purely additive and idempotent — `createIndex` is a no-op for an identic
 
 - No group conversations.
 - No message deletion or editing, and no typing indicator, read receipts, or reactions.
-- No block system, so nothing beyond the follow rule limits who may open a conversation.
 - Attachments are one file per message, and a failed media send has to be re-picked rather than retried, because the browser `File` is gone once the composer clears.
 - Orphaned uploads from an abandoned send are not garbage collected yet — tracked in `.agents/bug-tracker/rec-api-message-file-gc.md`.
 - Unread totals are read straight from MongoDB with no cache layer — tracked, with the trigger for revisiting, in `.agents/bug-tracker/rec-api-message-unread-cache.md`.
@@ -592,14 +591,12 @@ The message system in `xfans-v2` was the implementation reference for data flow.
 | Redis write-behind unread + `sync-conversation-stats.job.ts` | Deferred | Adds a cache/DB divergence window to a counter that must be exact. Indexed writes first |
 | Pin, archive, mute conversation | Future scope | Not requested |
 | Message deletion + `delete-noref-message-file.job.ts` | Future scope | File GC is real and is tracked as a recommendation |
-| Blocking (`CreatorBlockService`) | Replaced by current infra | No block system in this project |
 | `audio` and `sticker` message types | Not required | No producer in this product |
 | `chat-provider.tsx` (1071 lines) | Duplicate | Violated this project's file-size and composition rules and carried stream chat. Rewritten as a focused provider plus a hook |
-| System messages (`isSystem`) | Not required | Nothing produces them |
 
 ### Possible future enhancements
 
-Present in `xfans-v2` and plausible here, none implemented: pin/archive/mute, message deletion, typing indicator, per-message read receipts, active-viewing presence, Redis unread coalescing, multi-attachment messages, sharing a post into a conversation.
+Present in `xfans-v2` and plausible here, none implemented: pin/archive/mute, message deletion, typing indicator, per-message read receipts, active-viewing presence, Redis unread coalescing, and multi-attachment messages.
 
 ## Verification
 

@@ -4,7 +4,7 @@ description: Post comments, replies, ownership-controlled mutations, and like to
 audience: [guest, user, creator, developer-agent]
 domain: community
 status: active
-updated: 2026-08-24
+updated: 2026-08-28
 tags: [comment, reply, like, reaction, share, realtime, image]
 ---
 
@@ -24,7 +24,7 @@ Guests may read pageable comments. Authenticated users may create comments/repli
 
 Mutation routes use authentication, validation, permission checks, and throttling. The reaction actions defined in current constants are `like`, `follow`, and `share`.
 
-`share` records that a user shared a post so the distinct-share counter can update. Sharing itself stays on the client as a native share or link copy; the endpoint only stores the fact and is idempotent, so a user shares a given post at most once. It is a separate route rather than a toggle action because there is no meaningful un-share, and it does not create an interaction notification.
+`share` records that a user shared a post so the distinct-share counter can update. A completed share can be a copied link, a native share, or a post delivered through direct messaging; the record is idempotent, so a user counts at most once per post. It is separate from toggle reactions because there is no meaningful un-share, and it does not create an interaction notification.
 
 Because a post can hold more than one reaction action from the same user, code deriving a single flag such as "is liked" filters by `action` rather than assuming one reaction per object.
 
