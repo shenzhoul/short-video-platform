@@ -26,6 +26,7 @@ export function usePostVideoHoverPlayback({
   onOpenDetail
 }: UsePostVideoHoverPlaybackOptions) {
   const videoRef = useRef<VideoPlayerRef>(null);
+  const mediaRef = useRef<HTMLDivElement>(null);
   const chromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [showCompactChrome, setShowCompactChrome] = useState(true);
@@ -71,6 +72,48 @@ export function usePostVideoHoverPlayback({
   useEffect(() => {
     setIsHovered(false);
   }, [post._id]);
+
+  /**
+   * Stop previewing once the card leaves the viewport.
+   *
+   * `mouseleave` is not enough on its own. It fires when the *pointer* moves off
+   * the card, but a feed is usually scrolled with the pointer sitting still over
+   * the grid — the content moves underneath it instead, and no boundary event is
+   * dispatched for the card that slid away. That card kept `isHovered`, so its
+   * `<video>` stayed mounted, downloading and decoding, several screens above
+   * the viewport. Measured on a 160-post feed, one stationary-pointer scroll
+   * left a video parked at `top: -6497px` that never went away, and a benchmark
+   * pass accumulated six of them.
+   *
+   * Leaving the viewport is the honest signal here, so the observer -- not the
+   * pointer -- is what tears the preview down. `handleMouseMove` restores it
+   * immediately if the pointer really is still over the card when it scrolls
+   * back, so nothing is lost by being aggressive.
+   *
+   * Featured cards are exempt: their video is mounted by design, not by hover.
+   */
+  useEffect(() => {
+    const element = mediaRef.current;
+    if (featured || !hasVideo || !element) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) return;
+        setIsHovered(false);
+        setHoverTime(0);
+        setIsMuted(true);
+        onCompactHoverChange?.(null);
+      },
+      // A little margin so a card grazing the edge is not torn down and rebuilt
+      // repeatedly while the user nudges the scroll position.
+      { rootMargin: '100px' }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+    // `onCompactHoverChange` is a stable setter from the feed; re-subscribing on
+    // every render would defeat the observer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featured, hasVideo, post._id]);
 
   const togglePlay = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -158,6 +201,7 @@ export function usePostVideoHoverPlayback({
 
   return {
     videoRef,
+    mediaRef,
     mediaUrl,
     videoUrl,
     description,

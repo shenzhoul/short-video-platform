@@ -51,6 +51,7 @@ Load only the skills relevant to the task:
   - `.agents/skills/notification-system/SKILL.md`
   - `.agents/skills/direct-messaging/SKILL.md`
   - `.agents/skills/post-sharing/SKILL.md`
+  - `.agents/skills/demo-dataset/SKILL.md`
 - Next.js:
   - `.agents/skills/web-ssr/SKILL.md`
   - `.agents/skills/web-seo/SKILL.md`

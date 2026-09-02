@@ -21,6 +21,8 @@ Start with `../.agents/instructions`.
 - `src/jobs/`: scheduled and background work
 - `src/listeners/`: event adapters
 - `src/gateways/socket/`: socket adapters
+- `scripts/`: one-off audit and repair scripts
+- `demo/`: the demo dataset tooling (`yarn demo:fetch-media`, `demo:seed`, `demo:verify`, `demo:clean`)
 
 ## Skills
 
@@ -32,6 +34,7 @@ Load the matching repo skill before changing specialized workflows:
 - `../.agents/skills/media-response-standardization/SKILL.md`
 - `../.agents/skills/file-service-integration/SKILL.md`
 - `../.agents/skills/websocket-integration/SKILL.md`
+- `../.agents/skills/demo-dataset/SKILL.md`
 
 Supplement with vendored general-purpose skills when the task calls for them:
 

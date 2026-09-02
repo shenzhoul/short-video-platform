@@ -6,8 +6,7 @@ import Carousel, {
   CarouselTimelineControl
 } from '@components/ui/carousel';
 import { VideoPlayerRef } from '@components/ui/video-player';
-import { useCreatorVideos } from '@hooks/use-creator-videos';
-import { usePostDetailNavigation } from '@hooks/use-post-detail-navigation';
+import { PostDetailSource, usePostDetailSequence } from '@hooks/use-post-detail-sequence';
 import { PostInteractionChangeHandler, usePostInteractionState } from '@hooks/use-post-interactions';
 import { PostNavigationDirection } from '@hooks/use-post-navigation-wheel';
 import { usePostRoom } from '@hooks/use-post-room';
@@ -21,11 +20,7 @@ import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from
 import { FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
 import { CopyIcon, PauseIcon, PlayIcon } from 'src/icons';
 
-import {
-  getPostImages,
-  isGraphicPost,
-  supportsPostDetail
-} from './home-feed-media';
+import { getPostImages, isGraphicPost } from './home-feed-media';
 import PostDetailDescription from './post-detail-description';
 import PostNavigationControls from './post-navigation-controls';
 import PostVideoDetailPanel, { PostVideoDetailTab } from './post-video-detail-panel';
@@ -34,6 +29,15 @@ import PostVideoStage, { PostVideoActionRail, VIDEO_DETAIL_PANEL_WIDTH } from '.
 interface PostDetailModalProps {
   post: IPost;
   posts: IPost[];
+  /**
+   * Where the modal was opened from, which decides what next/previous move
+   * through. Named by the caller rather than inferred: a post carries no record
+   * of which list the viewer was looking at, and guessing from its shape is how
+   * a photo ended up navigating the home feed while a creator's grid was on
+   * screen beside it. Omitted means "whatever `posts` holds", the old
+   * behaviour, which is right for the feeds.
+   */
+  source?: PostDetailSource;
   popupPlaylist?: PopupPipVideo[];
   initialTime?: number;
   onPlaybackTimeChange?: (currentTime: number) => void;
@@ -47,6 +51,12 @@ interface PostDetailModalProps {
   closeOnVideoModeBack?: boolean;
   closeOnAvatarClick?: boolean;
   onInteractionChange?: PostInteractionChangeHandler;
+}
+
+/** The side panel is owned by the modal, not by either layout. */
+interface PanelTabControl {
+  detailPanelTab: PostVideoDetailTab | null;
+  onDetailPanelTabChange: (tab: PostVideoDetailTab | null) => void;
 }
 
 interface DetailActionRailProps {
@@ -110,16 +120,18 @@ function DetailActionRail({
 function GraphicPostDetail({
   post,
   posts,
+  source,
   onClose,
   onNavigate,
-  initialDetailPanelTab = null,
+  detailPanelTab,
+  onDetailPanelTabChange,
   targetCommentId = null,
   targetCommentFallbackId = null,
   onInteractionChange
-}: Pick<PostDetailModalProps, 'post' | 'posts' | 'onClose' | 'onNavigate' | 'initialDetailPanelTab' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange'>) {
+}: Pick<PostDetailModalProps, 'post' | 'posts' | 'source' | 'onClose' | 'onNavigate' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange'> & PanelTabControl) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [detailPanelTab, setDetailPanelTab] = useState<PostVideoDetailTab | null>(initialDetailPanelTab);
+  const setDetailPanelTab = onDetailPanelTabChange;
   const interaction = usePostInteractionState(post, onInteractionChange);
   // Live detail events only while this post is actually open on screen.
   usePostRoom(post._id);
@@ -127,7 +139,6 @@ function GraphicPostDetail({
   usePostStatsSync(post._id, interaction.applyStatsSnapshot);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const images = useMemo(() => getPostImages(post), [post]);
-  const navigationPosts = useMemo(() => posts.filter(supportsPostDetail), [posts]);
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
   const slideshowPlaying = images.length > 1 && isPlaying;
   const description = post.text || post.tagline;
@@ -135,34 +146,39 @@ function GraphicPostDetail({
   const timeText = post.createdAt
     ? new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
-  const creatorPosts = useCreatorVideos({
-    userId: post.user?._id,
-    currentPost: post,
-    enabled: detailPanelTab === 'videos'
-  });
-
-  useEffect(() => {
-    setDetailPanelTab(initialDetailPanelTab);
-  }, [initialDetailPanelTab, post._id]);
-
   const handlePostNavigate = useCallback((target: IPost) => {
     setActiveImageIndex(0);
     setIsPlaying(true);
     onNavigate(target);
   }, [onNavigate]);
+
+  /*
+   * A photo post has no "video mode" to switch into -- the creator grid simply
+   * appears when the `videos` tab is opened. That tab being open is therefore
+   * exactly the condition under which the sequence is this creator's posts, and
+   * it is the condition the video layout expresses as `videoModeActive`.
+   *
+   * Before this, the photo layout fetched the creator's posts to draw the grid
+   * and then navigated `posts` -- the feed behind the modal -- so pressing next
+   * on a photo jumped to another creator while their grid was still on screen.
+   */
   const {
+    creatorPosts,
     previousPost,
     nextPost,
     navigate,
     handleWheel
-  } = usePostDetailNavigation({
-    posts: navigationPosts,
+  } = usePostDetailSequence({
     post,
+    feedPosts: posts,
+    panelTab: detailPanelTab,
+    creatorScopeActive: detailPanelTab === 'videos',
+    source,
     onNavigate: handlePostNavigate
   });
   const handleOpenPanel = useCallback((tab: PostVideoDetailTab) => {
-    setDetailPanelTab(current => current === tab ? null : tab);
-  }, []);
+    setDetailPanelTab(detailPanelTab === tab ? null : tab);
+  }, [detailPanelTab, setDetailPanelTab]);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -374,62 +390,48 @@ function GraphicPostDetail({
 function VideoPostDetail({
   post,
   posts,
+  source,
   popupPlaylist = [],
   initialTime = 0,
   onPlaybackTimeChange = () => undefined,
   onClose,
   onNavigate,
-  initialDetailPanelTab = null,
+  detailPanelTab,
+  onDetailPanelTabChange,
   targetCommentId = null,
   targetCommentFallbackId = null,
   closeOnVideoModeBack = false,
   closeOnAvatarClick = false,
   onInteractionChange
-}: PostDetailModalProps) {
+}: PostDetailModalProps & PanelTabControl) {
   const videoRef = useRef<VideoPlayerRef>(null);
-  const feedIndexRef = useRef(0);
   const videoModeOriginPostRef = useRef(post);
-  const [detailPanelTab, setDetailPanelTab] = useState<PostVideoDetailTab | null>(initialDetailPanelTab);
-  const [videoModeActive, setVideoModeActive] = useState(initialDetailPanelTab === 'videos');
+  const setDetailPanelTab = onDetailPanelTabChange;
+  // The creator grid being open *is* video mode. Derived rather than stored, so
+  // it cannot fall out of step with the panel when the layout is swapped for a
+  // post of the other kind.
+  const [videoModeDismissed, setVideoModeDismissed] = useState(false);
+  const videoModeActive = detailPanelTab === 'videos' && !videoModeDismissed;
   const interaction = usePostInteractionState(post, onInteractionChange);
   // Live detail events only while this post is actually open on screen.
   usePostRoom(post._id);
   // Shared counters reconcile to the server; `isLiked` stays this viewer's own.
   usePostStatsSync(post._id, interaction.applyStatsSnapshot);
   const description = post.text || post.tagline;
-  const feedPosts = useMemo(() => posts.filter(supportsPostDetail), [posts]);
-  const creatorVideos = useCreatorVideos({
-    userId: post.user?._id,
-    currentPost: post,
-    enabled: videoModeActive
-  });
-  const feedPostIndex = feedPosts.findIndex(item => item._id === post._id);
-  if (feedPostIndex >= 0) feedIndexRef.current = feedPostIndex;
-  const creatorNavigationEnabled = videoModeActive && (!detailPanelTab || detailPanelTab === 'videos');
-  const navigationPosts = creatorNavigationEnabled
-    ? creatorVideos.posts
-    : detailPanelTab
-      ? []
-      : feedPosts;
   const {
-    currentIndex,
+    creatorPosts: creatorVideos,
     previousPost,
     nextPost,
     navigate,
     handleWheel
-  } = usePostDetailNavigation({
-    posts: navigationPosts,
+  } = usePostDetailSequence({
     post,
-    onNavigate,
-    fallbackIndex: !detailPanelTab ? feedIndexRef.current : -1
+    feedPosts: posts,
+    panelTab: detailPanelTab,
+    creatorScopeActive: videoModeActive && (!detailPanelTab || detailPanelTab === 'videos'),
+    source,
+    onNavigate
   });
-
-  useEffect(() => {
-    if (!videoModeActive || currentIndex < 0) return;
-    if (creatorVideos.posts.length - currentIndex <= 4 && creatorVideos.hasMore && !creatorVideos.loading) {
-      creatorVideos.loadMore();
-    }
-  }, [creatorVideos, currentIndex, videoModeActive]);
 
   const closeDetail = useCallback(() => {
     const currentTime = videoRef.current?.getVideoElement()?.currentTime;
@@ -443,19 +445,23 @@ function VideoPostDetail({
         closeDetail();
         return;
       }
+      // Leaving the grid closes the panel and returns to the post it was
+      // opened from.
+      setVideoModeDismissed(true);
       setDetailPanelTab(null);
-      setVideoModeActive(false);
       const originPost = videoModeOriginPostRef.current;
       if (originPost?._id !== post._id) onNavigate(originPost);
       return;
     }
     closeDetail();
-  }, [closeDetail, closeOnVideoModeBack, onNavigate, post._id, videoModeActive]);
+  }, [closeDetail, closeOnVideoModeBack, onNavigate, post._id, setDetailPanelTab, videoModeActive]);
 
   const handleVideoModeActiveChange = useCallback((active: boolean) => {
     if (active && !videoModeActive) videoModeOriginPostRef.current = post;
-    setVideoModeActive(active);
-  }, [post, videoModeActive]);
+    setVideoModeDismissed(!active);
+    if (active) setDetailPanelTab('videos');
+    else if (detailPanelTab === 'videos') setDetailPanelTab(null);
+  }, [detailPanelTab, post, setDetailPanelTab, videoModeActive]);
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -567,14 +573,38 @@ export default function PostDetailModal(props: PostDetailModalProps) {
   usePostViewTracking(props.post._id, props.onInteractionChange);
   useFullscreenMessagePlacement();
 
+  /*
+   * Which side panel is open lives here, above the two layouts.
+   *
+   * A photo and a video are drawn by different components, so moving between
+   * them unmounts one and mounts the other -- and anything either of them held
+   * in state is gone. That is fine for playback, and wrong for the panel: with
+   * the creator grid open, stepping from a photo to a video closed the grid,
+   * and closing the grid dropped the creator scope that next/previous depends
+   * on. One step stayed with the creator; the next fell back to the feed.
+   *
+   * Held above the swap, the grid stays open and the sequence stays the
+   * creator's, whichever kind of post is showing.
+   */
+  const [detailPanelTab, setDetailPanelTab] = useState<PostVideoDetailTab | null>(
+    props.initialDetailPanelTab ?? null
+  );
+  // Re-apply only when the *caller* asks for a different tab -- a notification
+  // deep link, say -- never merely because the open post changed.
+  useEffect(() => {
+    setDetailPanelTab(props.initialDetailPanelTab ?? null);
+  }, [props.initialDetailPanelTab]);
+
   if (isGraphicPost(props.post)) {
     return (
       <GraphicPostDetail
         post={props.post}
         posts={props.posts}
+        source={props.source}
         onClose={props.onClose}
         onNavigate={props.onNavigate}
-        initialDetailPanelTab={props.initialDetailPanelTab}
+        detailPanelTab={detailPanelTab}
+        onDetailPanelTabChange={setDetailPanelTab}
         targetCommentId={props.targetCommentId}
         targetCommentFallbackId={props.targetCommentFallbackId}
         onInteractionChange={props.onInteractionChange}
@@ -582,5 +612,11 @@ export default function PostDetailModal(props: PostDetailModalProps) {
     );
   }
 
-  return <VideoPostDetail {...props} />;
+  return (
+    <VideoPostDetail
+      {...props}
+      detailPanelTab={detailPanelTab}
+      onDetailPanelTabChange={setDetailPanelTab}
+    />
+  );
 }

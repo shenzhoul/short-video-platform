@@ -43,3 +43,6 @@ package-lock.json
 !yarn.lock
 ref_file_module
 obfuscator
+# Demo dataset media cache (downloaded stock media + generated avatars).
+# Large binaries, reproducible with `yarn demo:fetch-media`. Never committed.
+demo/media/

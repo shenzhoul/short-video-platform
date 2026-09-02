@@ -84,10 +84,33 @@ export class PostSearchRequest extends SearchRequest {
   @ValidateIf((o) => !!o.lastCreatedAt)
   lastCreatedAt?: string; // Last item's createdAt - supports ISO string, timestamp string, or number
 
-  /** Compound creator-list cursor state. Kept optional for backwards-compatible cursors. */
+  /**
+   * Compound creator-list cursor state. Kept optional for backwards-compatible
+   * cursors.
+   *
+   * Read from `obj` -- the raw query object -- and **not** from `value`.
+   *
+   * The global pipe in `main.ts` runs with
+   * `transformOptions: { enableImplicitConversion: true }`, so class-transformer
+   * coerces the query string to this property's reflected type *before* a custom
+   * `@Transform` sees it. For a boolean that coercion is `Boolean(string)`, and
+   * `Boolean('false')` is `true`. The transform below then received `true` and
+   * dutifully returned `true`, so `lastIsPinned` was **always** true whenever the
+   * parameter was present at all.
+   *
+   * That sent every creator page down the "still inside the pinned block" branch
+   * of `applyCreatorPinnedCursor`, whose second arm matches every unpinned post
+   * with no `createdAt` bound -- so each page returned the same rows and
+   * `hasMore` never went false. Paging a creator's posts looped forever,
+   * replaying the same window: measured on a 10-post creator, 8 pages returned
+   * 32 rows containing 6 distinct posts.
+   *
+   * `obj` is the untouched source object, so reading the raw value there is
+   * immune to whatever implicit conversion decides.
+   */
   @IsOptional()
   @IsBoolean()
-  @Transform(({ value }) => value === true || value === 'true')
+  @Transform(({ obj }) => obj?.lastIsPinned === true || obj?.lastIsPinned === 'true')
   lastIsPinned?: boolean;
 
   @IsOptional()

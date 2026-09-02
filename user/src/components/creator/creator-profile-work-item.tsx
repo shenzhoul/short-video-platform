@@ -12,6 +12,7 @@ import { usePostVideoHoverPlayback } from '@hooks/use-post-video-hover-playback'
 import { IPost } from '@interfaces/post';
 import { videoDuration } from '@lib/duration';
 import { PopupPipState, PopupPipVideo } from '@lib/popup-pip';
+import { memo } from 'react';
 import { FiCheck } from 'react-icons/fi';
 import { CopyIcon, HeartOutlineIcon, MuteIcon, PauseIcon, PlayIcon, PlayOutlinedIcon, VolumeIcon } from 'src/icons';
 
@@ -27,7 +28,20 @@ interface CreatorProfileWorkItemProps {
   onToggleSelection: (postId: string) => void;
 }
 
-export default function CreatorProfileWorkItem({
+/**
+ * One tile in a creator's works grid.
+ *
+ * Memoised for the same reason `HomeFeedCard` is: hovering a tile calls
+ * `onCompactHoverChange`, which sets state on the profile page, so without this
+ * every mouse crossing re-renders every tile in the list.
+ *
+ * Not windowed, unlike the Home Feed. These tiles are `<li>` elements in an
+ * inline-block flow whose row breaks come from `nth-[6n]:mr-0`, so wrapping each
+ * one changes the layout; and a profile shows a single creator's posts rather
+ * than an unbounded feed, so the mounted count stays small. If a profile ever
+ * loads hundreds of posts, that trade needs revisiting.
+ */
+function CreatorProfileWorkItem({
   post,
   metricVariant,
   popupPipState,
@@ -178,3 +192,5 @@ export default function CreatorProfileWorkItem({
     </li>
   );
 }
+
+export default memo(CreatorProfileWorkItem);

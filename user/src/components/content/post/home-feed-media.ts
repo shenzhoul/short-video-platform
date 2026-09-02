@@ -38,6 +38,26 @@ export function getPostMedia(post: IPost) {
     || '/no-image.png';
 }
 
+/**
+ * A tiny, already-blurred placeholder for this post's media, if the processing
+ * pipeline produced one.
+ *
+ * Used as the letterbox backdrop behind media whose shape does not fill its
+ * card. The alternative — a second copy of the full-resolution cover, scaled up
+ * and blurred by 40px — is the most expensive thing a feed card can paint:
+ * measured over a scroll of 160 cards, 52 of which needed a backdrop, removing
+ * it cut long tasks by 30% and halved the worst frame. Scaling a ~20px
+ * placeholder up costs essentially nothing by comparison, and it is already
+ * generated and served (`generateBlurImage: true` on the upload).
+ *
+ * Returns null when no placeholder exists, and the caller falls back to the
+ * cover as before — this is an optimisation, never a reason to show nothing.
+ */
+export function getPostBlurPlaceholder(post: IPost) {
+  if (!Array.isArray(post.files)) return null;
+  return post.files.find(file => file?.blurImage)?.blurImage || null;
+}
+
 export function getPostVideo(post: IPost) {
   return getFirstVideo(post)?.url || post.teaser?.url || '';
 }

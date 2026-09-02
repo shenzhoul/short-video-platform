@@ -8,7 +8,7 @@ import { PostSearchRequest } from "src/payloads";
 import { Post, PostDocument } from "src/schemas";
 import * as moment from 'moment';
 import { createSafeSearchRegex } from "src/common/utils/search-sanitizer.util";
-import { applyCursorPagination } from "src/common/utils/pagination.util";
+import { applyCursorPagination, parseDateFromCursor } from "src/common/utils/pagination.util";
 import { PAGINATION_DEFAULTS } from "src/common/constants";
 import { CategoryService } from "src/services/content/category";
 import { ObjectId } from 'mongodb';
@@ -19,13 +19,24 @@ const creatorPinnedSort = (sort: Record<string, SortOrder>): Record<string, Sort
   ...sort
 });
 
-/** Continue a creator list without replaying pinned items across cursor pages. */
-function applyCreatorPinnedCursor(query: Record<string, any>, req: PostSearchRequest) {
+/**
+ * Continue a creator list without replaying pinned items across cursor pages.
+ *
+ * Exported for its own tests: the loop this prevents is invisible from the
+ * outside until a creator has more posts than one page, and by then it looks
+ * like a rendering fault rather than a filter that forgot a bound.
+ */
+export function applyCreatorPinnedCursor(query: Record<string, any>, req: PostSearchRequest) {
   if (typeof req.lastIsPinned !== 'boolean') {
     return applyCursorPagination(query, req.cursor as string, req.lastCreatedAt, req.sortBy || 'createdAt');
   }
 
-  const createdAt = new Date(req.lastCreatedAt);
+  // The payload accepts an ISO string, a timestamp string or a number, and
+  // `applyCursorPagination` has always honoured all three. A bare `new Date()`
+  // here did not: `new Date('1788064858000')` is an Invalid Date, which the
+  // driver refuses to serialise, so a cursor in the timestamp form answered 500
+  // on this path while working on every other one.
+  const createdAt = parseDateFromCursor(req.lastCreatedAt);
   const id = new ObjectId(req.cursor);
   const afterCreatedAt = [
     { createdAt: { $lt: createdAt } },
@@ -38,7 +49,7 @@ function applyCreatorPinnedCursor(query: Record<string, any>, req: PostSearchReq
     };
   }
 
-  const pinnedAt = req.lastPinnedAt ? new Date(req.lastPinnedAt) : createdAt;
+  const pinnedAt = req.lastPinnedAt ? parseDateFromCursor(req.lastPinnedAt) : createdAt;
   return {
     $and: [
       { ...query },

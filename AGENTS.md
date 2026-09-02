@@ -44,6 +44,7 @@ Load the matching repo skill before changing specialized areas:
 - Private one-to-one messaging, request-based consent, block/restrict, and the right-side message workspace: `.agents/skills/direct-messaging/SKILL.md`
 - Sharing a post — share popover, shared-post messages, and `totalShare` counting: `.agents/skills/post-sharing/SKILL.md`
 - The shared login/signup dialog and public registration: `.agents/skills/auth-modal/SKILL.md`
+- Demo content dataset — `demo:fetch-media`, `demo:seed`, `demo:verify`, `demo:clean`, stock-media provenance, and the seed ledger: `.agents/skills/demo-dataset/SKILL.md`
 - API auth guards, role-based access, and current user extraction: `.agents/skills/api-auth-guards/SKILL.md`
 - API pagination — SearchRequest, cursor/offset, PageableData: `.agents/skills/api-pagination/SKILL.md`
 - API payload and request class patterns: `.agents/skills/api-payload/SKILL.md`

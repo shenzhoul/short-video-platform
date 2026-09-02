@@ -8,7 +8,8 @@ import { useEffect, useRef } from 'react';
 import { FaChevronRight, FaTimes } from 'react-icons/fa';
 import { HeartOutlineIcon } from 'src/icons';
 
-import { formatCompactCount, getPostMedia } from './home-feed-media';
+import { formatCompactCount, getPostImages, getPostMedia, isVideoPost } from './home-feed-media';
+import PostPhotoBadge from './post-photo-badge';
 import PostPinnedBadge from './post-pinned-badge';
 import PostTextContent from './post-text-content';
 
@@ -123,16 +124,24 @@ function CreatorVideoGrid({
         {posts.map((video) => {
           const isCurrent = video._id === post._id;
           const poster = getPostMedia(video);
+          // The grid holds every post a creator has, not only videos, so each
+          // tile says which kind it is. Photos get a mark; videos keep the
+          // playing indicator they already had.
+          const photoPost = !isVideoPost(video);
+          const imageCount = photoPost ? getPostImages(video).length : 0;
+          const kind = photoPost ? 'photo' : 'video';
+          const title = video.text || video.tagline || `Creator ${kind}`;
           return (
             <button
               key={video._id}
               type="button"
               onClick={() => onSelectVideo(video)}
               className="group relative aspect-3/4 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/35 text-left"
-              aria-label={isCurrent ? 'Currently playing' : `Play ${video.text || video.tagline || 'video'}`}
+              aria-label={isCurrent ? 'Currently playing' : `Open ${kind}: ${title}`}
             >
-              <img src={poster} alt={video.text || video.tagline || 'Creator video'} className={`h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] ${isCurrent ? 'scale-110 blur-xl brightness-50' : ''}`} />
+              <img src={poster} alt={title} className={`h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] ${isCurrent ? 'scale-110 blur-xl brightness-50' : ''}`} />
               {video.isPinned ? <PostPinnedBadge className="absolute left-2 top-2 z-20" /> : null}
+              {photoPost ? <PostPhotoBadge imageCount={imageCount} className="absolute right-2 top-2 z-20" /> : null}
               {isCurrent ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/20 text-center">
                   <span className="currently-playing-bars flex h-6 items-end gap-0.5" aria-hidden>

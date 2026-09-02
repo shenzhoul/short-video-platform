@@ -68,9 +68,26 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
     return href === '/' ? pathname === '/' : pathname.startsWith(href);
   };
 
+  /**
+   * Nav entries whose artwork ships only a `normal` state.
+   *
+   * Every other entry has all four files in `public/icons/`
+   * (`<name>_<light|dark>_<normal|active>@actual.png`). `minigame` has two, so
+   * asking for its active variant fetched a file that does not exist: selecting
+   * "Games" produced a 404 for `minigame_light_active@actual.png` and a nav
+   * icon that vanished mid-interaction. Falling back to the shipped `normal`
+   * artwork keeps the icon on screen and costs nothing; the entry still gets
+   * its active background from `activeClassName`, so the selection is still
+   * visible.
+   *
+   * Remove a name from here the moment its active artwork is added.
+   */
+  const ICONS_WITHOUT_AN_ACTIVE_VARIANT = new Set(['minigame']);
+
   const getMenuIcon = (name: string, active?: boolean) => {
     const iconTheme = theme === 'dark' ? 'dark' : 'light';
-    const iconState = active ? 'active' : 'normal';
+    const hasActiveArt = !ICONS_WITHOUT_AN_ACTIVE_VARIANT.has(name);
+    const iconState = active && hasActiveArt ? 'active' : 'normal';
     return <img src={`/icons/${name}_${iconTheme}_${iconState}@actual.png`} className='w-6 h-6' alt="" />;
   };
 

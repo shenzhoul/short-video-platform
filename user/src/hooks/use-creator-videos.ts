@@ -1,5 +1,6 @@
 'use client';
 
+import { insertPostInOrder, mergeCreatorPosts } from '@components/content/post/creator-post-order';
 import { CursorInfo } from '@interfaces/pagination';
 import { IPost } from '@interfaces/post';
 import { getCreatorPosts } from '@services/post.service';
@@ -48,10 +49,12 @@ export function useCreatorVideos({ userId, currentPost, enabled }: UseCreatorVid
       const incoming = page.data || [];
 
       setPosts((existing) => {
-        const base = reset ? incoming : [...existing, ...incoming];
-        const unique = new Map(base.map((post) => [post._id, post]));
-        if (currentPost && !unique.has(currentPost._id)) unique.set(currentPost._id, currentPost);
-        return Array.from(unique.values());
+        // Ordered by the shared comparator, not by arrival. The open post is
+        // *placed*, not appended: it may live on a page that has not been
+        // fetched yet, and putting it at the end made the grid highlight one
+        // tile while the arrows moved between its neighbours somewhere else.
+        const merged = mergeCreatorPosts(reset ? [] : existing, incoming);
+        return insertPostInOrder(merged, currentPost);
       });
       setNextCursor(page.nextCursor || null);
       setHasMore(Boolean(page.hasMore));
@@ -70,9 +73,9 @@ export function useCreatorVideos({ userId, currentPost, enabled }: UseCreatorVid
     }
 
     if (loadedUserIdRef.current === userId) {
-      setPosts((existing) => existing.some((post) => post._id === currentPost._id)
-        ? existing
-        : [...existing, currentPost]);
+      // Navigating within the same creator: keep the loaded pages, and place the
+      // newly opened post if it is not among them yet.
+      setPosts((existing) => insertPostInOrder(existing, currentPost));
       return;
     }
 

@@ -192,6 +192,52 @@ These rules apply to `api/` and to equivalent NestJS code in `file-server/`.
   it is opened rather than after it is in memory. See
   `.agents/skills/file-service-integration/SKILL.md`.
 
+## Boolean Query Parameters
+
+`main.ts` installs the global pipe with
+`transformOptions: { enableImplicitConversion: true }`. Class-transformer
+therefore coerces every query string to the property's **reflected type before**
+a custom `@Transform` runs — and for a boolean that coercion is
+`Boolean(string)`, so `'false'` becomes `true`.
+
+A `@Transform` that reads `value` cannot recover from this: it is handed the
+already-converted `true` and has nothing left to distinguish the two. Read the
+raw value from `obj` instead:
+
+```ts
+// WRONG — `value` has already been through Boolean('false') === true
+@Transform(({ value }) => value === true || value === 'true')
+
+// RIGHT — `obj` is the untouched source object
+@Transform(({ obj }) => obj?.lastIsPinned === true || obj?.lastIsPinned === 'true')
+```
+
+This shipped. `lastIsPinned` on the creator-list cursor was **always true**
+whenever the parameter was present, which sent every page down the "still inside
+the pinned block" branch of `applyCreatorPinnedCursor` — whose second arm matches
+every unpinned post with no `createdAt` bound. Each page returned the same rows
+and `hasMore` never went false: paging a 10-post creator produced 32 rows
+containing 6 distinct posts, and the client looped. Nothing errored.
+
+Two habits that would have caught it:
+
+- **Assert the parse, with implicit conversion switched on.** A payload test
+  that calls `plainToInstance(..., { enableImplicitConversion: true })` sees what
+  the controller sees; one without that option passes while production breaks.
+- **Page a list to exhaustion in a test, and count distinct ids.** A cursor that
+  never terminates looks identical to a cursor that works, one page at a time.
+
+`src/payloads/content/post/creator-cursor.spec.ts` covers both.
+
+## Cursor Dates Have Three Forms
+
+`lastCreatedAt` is documented and validated as "ISO string, timestamp string, or
+number". `parseDateFromCursor` in `src/common/utils/pagination.util.ts` handles
+all three; a bare `new Date(value)` does not — `new Date('1788064858000')` is an
+Invalid Date, which the driver refuses to serialise, so the endpoint answers
+500. Every cursor code path must go through `parseDateFromCursor`, not
+`new Date`.
+
 ## Queues And Sockets
 
 - Put jobs under `api/src/jobs/<domain>/`.

@@ -16,6 +16,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --runInBand",
     "migrate": "node migrate",
+    "demo:fetch-media": "node demo/fetch-media.js",
+    "demo:seed": "node demo/seed.js",
+    "demo:clean": "node demo/clean.js",
+    "demo:verify": "node demo/verify.js",
     "migrate:create": "./node_modules/.bin/migrate create"
   },
   "dependencies": {

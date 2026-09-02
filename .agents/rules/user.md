@@ -52,6 +52,87 @@ These rules apply to `user/`.
   with `[&::-webkit-scrollbar]:hidden`.
 - For any new design or UI/UX change, follow `.agents/skills/taste-skill/SKILL.md` (and `.agents/skills/redesign-skill/SKILL.md` when polishing an existing page). Do not ship generic/templated UI.
 
+## Post Detail: One Sequence, Owned Above The Layouts
+
+The detail modal draws a photo and a video with **different components**
+(`GraphicPostDetail` / `VideoPostDetail`). Anything either of them decides for
+itself will eventually differ from the other, and anything either of them holds
+in state is destroyed the moment the viewer moves to a post of the other kind.
+Both have caused real defects:
+
+- **Divergent decisions.** The video layout switched next/previous to the
+  creator's own posts whenever the creator grid was open; the photo layout
+  fetched the creator's posts to *draw* that grid and then navigated the feed
+  behind the modal. Opening a photo from the home feed and pressing next jumped
+  to another creator while their grid was still on screen. Fixed by giving the
+  sequence one owner, `useCreatorVideos` + `usePostDetailSequence`, that both
+  layouts call.
+- **State lost on the swap.** Which panel tab is open was held inside each
+  layout, so stepping from a photo to a video unmounted the component and closed
+  the creator grid — and closing the grid dropped the creator scope the sequence
+  depends on, so the *next* step fell back to the feed. Fixed by lifting the tab
+  into `PostDetailModal`, above the swap.
+
+Rules that follow:
+
+- **Anything that must survive moving between posts belongs in
+  `PostDetailModal`**, not in either layout. That includes the open panel tab
+  and anything derived from it.
+- **The grid, the highlighted tile and the arrows read one list.** Do not sort
+  in more than one place; `creator-post-order.ts` mirrors the API's
+  `creatorPinnedSort` (`isPinned`, `pinnedAt`, `createdAt`, `_id`, all
+  descending) and is the only definition.
+- **Name the source, do not infer it.** `PostDetailSource` says which list the
+  viewer came from. A post carries no record of that, and guessing from its
+  shape is what produced the photo/video split in the first place.
+- **A post that is open but not yet fetched is *placed* in the list, not
+  appended** (`insertPostInOrder`). Appending puts it at the end of the grid
+  wherever it really belongs, so the highlight and the arrows point at different
+  neighbours.
+- Regression cover: `use-post-detail-sequence.spec.tsx` (fails 7 of 9 against
+  the old behaviour) and `creator-post-order.spec.ts`.
+
+## Feed Rendering And Scroll Performance
+
+The Home Feed keeps every card it has loaded — 160 posts is 4,176 DOM nodes —
+and that is deliberate. Two attempts to bound it were measured and both were
+large regressions, for the same reason: **discarding rendered state costs more
+to rebuild than to keep**.
+
+| Approach | Result on the same gesture |
+|---|---|
+| unmount off-screen cards (virtualisation) | 3-5x slower; media requests 160 → 800+ on one down-and-up pass, because re-entry re-creates the `<img>` and the browser decodes it again |
+| `content-visibility: auto` on the card media | S6 (three down-up cycles) 5,196ms → 53,840ms of long tasks; geometry was verified identical first, so this is the re-render-on-entry cost, not layout |
+| a 40-card window, best case, geometry preserved and images kept decoded | 8x slower on scroll-down (272ms → 2,203ms), p95 33ms → 450ms — the *ceiling* any windowing or page-compaction scheme could reach |
+
+**The DOM was never the cost.** With image painting suppressed, the same
+40-step scroll over all 160 cards spends **0ms** in long tasks, p95 17ms, worst
+33ms. Before proposing to shrink the feed's DOM, measure that first: if painting
+is the cost, a smaller DOM does not help and re-entry makes it worse.
+
+What did matter, in order of size:
+
+1. **Oversized images.** A cover pointing at a processed original rather than
+   the generated thumbnail (26 megapixels for a 265px box). Fixing the source
+   data took the worst frame from 800-1500ms to 83-183ms.
+2. **Media left mounted off-screen.** A scroll usually moves the *content*, not
+   the pointer, so the card that slides away never gets `mouseleave` and keeps
+   its `<video>` mounted and decoding — measured at `top: -6497px`, surviving
+   every later scroll and the pointer leaving the grid entirely. An
+   `IntersectionObserver` in `usePostVideoHoverPlayback` now tears the preview
+   down on leaving the viewport; removing those strays took every scroll
+   scenario to **0ms** of long tasks. `feed-card-performance.spec.tsx` covers it.
+3. **`memo` on the card.** Roughly half the cost of a hover-scroll.
+
+Measured and **rejected**: moving the hover state into a `useSyncExternalStore`
+module store so the feed does not re-render. It is worse — 86 commits and
+1,473ms against 62 and 529ms on an isolated hover gesture — because the store
+notifies outside React's batching, so the parent and the card commit separately
+instead of together. `useState` plus `memo` is the faster arrangement.
+
+Measure in **production builds only**. Dev-mode numbers varied by ±2.7x on the
+same build and are worthless here.
+
 ## Skills To Use
 
 Load the relevant repo skills when the task matches them:

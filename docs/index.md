@@ -4,7 +4,7 @@ description: Maintained map of the current Douyin Clone documentation.
 audience: [developer-agent]
 domain: cross
 status: active
-updated: 2026-08-12
+updated: 2026-09-01
 tags: [index, documentation]
 ---
 
@@ -31,6 +31,7 @@ tags: [index, documentation]
 | [features/file-uploads-and-processing.md](./features/file-uploads-and-processing.md) | Direct/TUS uploads and processing |
 | [features/admin-operations.md](./features/admin-operations.md) | Current admin capabilities |
 | [features/online-status.md](./features/online-status.md) | Socket presence tracking |
+| [features/demo-dataset.md](./features/demo-dataset.md) | Demo content dataset: stock media fetch, idempotent seed, exact cleanup |
 | [domains/README.md](./domains/README.md) | Domain index |
 | [domains/identity.md](./domains/identity.md) | Authentication, users, profiles, roles |
 | [domains/content.md](./domains/content.md) | Posts, feeds, creator content management |
