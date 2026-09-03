@@ -5,6 +5,7 @@ import { IPost } from '@interfaces/post';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { useCreatorVideos } from './use-creator-videos';
+import type { PostDetailMode } from './use-post-detail-mode';
 import { usePostDetailNavigation } from './use-post-detail-navigation';
 
 /**
@@ -16,6 +17,7 @@ import { usePostDetailNavigation } from './use-post-detail-navigation';
  */
 export type PostDetailSource =
   | 'home-feed'
+  | 'for-you'
   | 'following-feed'
   | 'profile-videos'
   | 'creator-videos-tab'
@@ -23,27 +25,21 @@ export type PostDetailSource =
   | 'message-shared-post'
   | 'direct-link';
 
-/** Sources whose sequence is one creator's posts rather than a feed. */
-const CREATOR_SCOPED_SOURCES: PostDetailSource[] = [
-  'profile-videos',
-  'creator-videos-tab'
-];
-
 interface UsePostDetailSequenceOptions {
   /** The post currently open. */
   post: IPost;
   /** The feed the modal was opened from, when there is one. */
   feedPosts: IPost[];
-  /** The panel tab currently showing, or null when the panel is closed. */
-  panelTab: string | null;
+  /** Which list owns the sequence right now — see `usePostDetailMode`. */
+  mode: PostDetailMode;
+  /** The creator whose posts are the sequence in creator mode, captured on entry. */
+  creatorId: string | null;
   /**
-   * The creator grid is on screen -- so the sequence is that creator's posts.
-   * For a video this is the stage's "video mode"; for a photo it is simply the
-   * `videos` tab being open, because the photo layout has no separate mode.
+   * The recommendation session has more to hand out even though the loaded
+   * array happens to end here. Keeps "next" from reporting the end of the feed
+   * while a refill is in flight.
    */
-  creatorScopeActive: boolean;
-  /** Where the modal was opened from, when the caller knows. */
-  source?: PostDetailSource;
+  hasMoreAhead?: boolean;
   onNavigate: (post: IPost) => void;
 }
 
@@ -69,35 +65,30 @@ interface UsePostDetailSequenceOptions {
  * ## Deep links and reloads
  *
  * After a refresh there is no feed behind the modal to navigate. That is fine
- * for a creator-scoped source: `useCreatorVideos` refetches the creator's posts
- * from the post's own `user._id`, so the sequence is rebuilt from the server
- * rather than from state that did not survive. A feed-scoped source with no
- * feed simply has no neighbours, which is honest -- better than borrowing
- * someone else's list.
+ * for creator mode: `useCreatorVideos` refetches the creator's posts from the
+ * captured creator id, so the sequence is rebuilt from the server rather than
+ * from state that did not survive. Recommendation mode with no session simply
+ * has no neighbours, which is honest -- better than borrowing someone else's
+ * list.
  */
 export function usePostDetailSequence({
   post,
   feedPosts,
-  panelTab,
-  creatorScopeActive,
-  source,
+  mode,
+  creatorId,
+  hasMoreAhead = false,
   onNavigate
 }: UsePostDetailSequenceOptions) {
   const feedIndexRef = useRef(0);
+  const creatorScope = mode === 'creator';
 
   const navigableFeedPosts = useMemo(
     () => feedPosts.filter(supportsPostDetail),
     [feedPosts]
   );
 
-  // A creator-scoped source stays creator-scoped even with the panel shut: the
-  // modal was opened from that creator's grid, so its neighbours are that
-  // creator's posts, not a feed the viewer never opened.
-  const creatorScope = creatorScopeActive
-    || (source ? CREATOR_SCOPED_SOURCES.includes(source) : false);
-
   const creatorPosts = useCreatorVideos({
-    userId: post.user?._id,
+    userId: creatorScope ? creatorId || undefined : undefined,
     currentPost: post,
     enabled: creatorScope
   });
@@ -105,12 +96,36 @@ export function usePostDetailSequence({
   const feedIndex = navigableFeedPosts.findIndex((item) => item._id === post._id);
   if (feedIndex >= 0) feedIndexRef.current = feedIndex;
 
-  // With the panel open on something other than the creator grid -- comments,
-  // details -- there is nothing to scroll between, so the arrows go quiet
-  // rather than moving a list the viewer cannot see.
+  /*
+   * Creator mode's invariant, enforced rather than assumed: every item in the
+   * sequence belongs to the captured creator.
+   *
+   * The grid used to be filled by `/posts/home-posts`, which stopped honouring
+   * `userId` when it became the ranked Home feed — so a request for Iris's
+   * posts came back holding eight creators' work, under Iris's name, and
+   * next/previous walked straight out of her catalogue. The server side of that
+   * is fixed (`/posts/creator-posts`), and this is the belt: a response that
+   * still names somebody else is dropped here rather than rendered.
+   */
+  const creatorScopedPosts = useMemo(() => {
+    if (!creatorScope || !creatorId) return creatorPosts.posts;
+    const own = creatorPosts.posts.filter((item) => (item.user?._id || null) === creatorId);
+    if (process.env.NODE_ENV !== 'production' && own.length !== creatorPosts.posts.length) {
+      const strangers = creatorPosts.posts.filter((item) => (item.user?._id || null) !== creatorId);
+      console.error(
+        `[post-detail] creator mode is scoped to ${creatorId} but the list held `
+        + `${strangers.length} post(s) from other creators: `
+        + `${strangers.map((item) => `${item._id}@${item.user?._id}`).join(', ')}`
+      );
+    }
+    return own;
+  }, [creatorId, creatorPosts.posts, creatorScope]);
+
+  // A panel tab that is not the creator grid has nothing to scroll between, so
+  // the arrows go quiet rather than moving a list the viewer cannot see.
   const navigationPosts = creatorScope
-    ? creatorPosts.posts
-    : panelTab
+    ? creatorScopedPosts
+    : mode === 'locked'
       ? []
       : navigableFeedPosts;
 
@@ -121,7 +136,10 @@ export function usePostDetailSequence({
     // Only a feed sequence needs a remembered index: a post can drop out of a
     // refreshed feed page while it is open. The creator list always contains
     // the open post, because the hook places it there.
-    fallbackIndex: !creatorScope && !panelTab ? feedIndexRef.current : -1
+    fallbackIndex: mode === 'recommendation' ? feedIndexRef.current : -1,
+    // Only the recommendation session refills; a creator list pages instead,
+    // and a locked panel navigates nothing.
+    hasMoreAhead: mode === 'recommendation' && hasMoreAhead
   });
 
   // Fetch ahead so the arrows do not stop at a page boundary the viewer cannot
@@ -135,11 +153,12 @@ export function usePostDetailSequence({
   }, [creatorPosts, creatorScope, navigation.currentIndex]);
 
   return {
-    /** The creator's posts, ordered, for the grid and the sequence alike. */
-    creatorPosts,
+    /** The creator's posts, ordered and scoped, for the grid and the sequence alike. */
+    creatorPosts: { ...creatorPosts, posts: creatorScopedPosts },
     /** Exactly what the arrows, the wheel and the keyboard move through. */
     navigationPosts,
     creatorScope,
+    mode,
     ...navigation
   };
 }

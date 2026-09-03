@@ -12,6 +12,11 @@ import {
   Category, CategorySchema,
   TagSummary, TagSummarySchema,
   PostMediaSchema, PostMedia,
+  // Recommendation schemas
+  PostRecommendationStat, PostRecommendationStatSchema,
+  UserRecommendationAffinity, UserRecommendationAffinitySchema,
+  RecommendationEvent, RecommendationEventSchema,
+  RecommendationCategoryPrior, RecommendationCategoryPriorSchema,
   // Community schemas
   Comment, CommentSchema,
   Conversation, ConversationSchema,
@@ -74,6 +79,12 @@ export const mongooseFeatures = MongooseModule.forFeature([
 
   // Content schemas - Category
   { name: Category.name, schema: CategorySchema },
+
+  // Content schemas - Recommendation
+  { name: PostRecommendationStat.name, schema: PostRecommendationStatSchema },
+  { name: UserRecommendationAffinity.name, schema: UserRecommendationAffinitySchema },
+  { name: RecommendationEvent.name, schema: RecommendationEventSchema },
+  { name: RecommendationCategoryPrior.name, schema: RecommendationCategoryPriorSchema },
 
   // Community schemas
   { name: Comment.name, schema: CommentSchema },

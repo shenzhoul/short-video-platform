@@ -19,6 +19,38 @@ These rules apply to `api/` and to equivalent NestJS code in `file-server/`.
   - plain feature names for public or normal user routes
 - Do not introduce domain folders for features that are not implemented.
 
+## Never Repurpose A Route That Already Answers A Different Question
+
+`GET /posts/home-posts` used to run `userSearchPosts`, which honours `userId`,
+`sortBy` and the pinned-aware cursor. Two callers relied on that to mean "this
+creator's posts": the creator profile grid and the Post Detail **Videos** tab.
+
+The recommendation work repointed the same route at the ranked Home feed. The
+new handler takes `PostRecommendationRequest`, and the global pipe runs with
+`whitelist: true` — so `userId` was **stripped before the service ever saw it**.
+Every creator listing silently began returning the whole ranked feed. Measured
+in a production build: `?userId=<one creator>` answered `200` with posts from
+eight creators, rendered under that creator's name, and next/previous walked out
+of their catalogue entirely. Nothing errored, nothing logged, and no test
+noticed, because every test of the new route passed no `userId` at all.
+
+- **Changing what a route returns is a breaking change even when the path and
+  the status code stay the same.** Grep every caller of the client method before
+  repointing a handler, not only the ones the current task touches.
+- **A narrowed payload class silently drops parameters.** With `whitelist: true`
+  an unknown query field is removed, so a caller's filter becomes a no-op rather
+  than a 400. If a route must stop supporting a parameter, give the new
+  behaviour a new route and leave the old question answerable.
+- **A listing route that requires a scope must refuse an unscoped request.**
+  `/posts/creator-posts` throws `BadRequestException` without `userId`; answering
+  it with an unfiltered feed is exactly the failure above, and it reads as
+  success to every caller.
+- Declare a literal route **before** `@Get('/:id')` — Nest matches in
+  declaration order, and `creator-posts` would otherwise parse as a post id.
+- Cover it: `api/src/controllers/content/post/creator-posts-route.spec.ts`
+  asserts which service each route calls and that the client points at the right
+  path.
+
 ## Payloads And DTOs
 
 - Define payload classes for body, query, and structured path input.

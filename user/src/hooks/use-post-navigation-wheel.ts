@@ -24,7 +24,19 @@ export function usePostNavigationWheel({
   }, []);
 
   return useCallback(event => {
-    event.preventDefault();
+    /*
+     * Only claim the wheel when it is actually going to move a post.
+     *
+     * With neither direction available — a reading panel is open, or the
+     * sequence is at its end — this handler has nothing to do, and the scroll
+     * belongs to whatever is under the pointer. Calling `preventDefault`
+     * anyway is worse than useless: React attaches `wheel` passively, so the
+     * call cannot suppress anything and instead logs "Unable to preventDefault
+     * inside passive event listener invocation" on *every* wheel tick. Six
+     * wheel gestures over an open Details panel produced a console full of it.
+     */
+    if (!canPrevious && !canNext) return;
+    if (event.cancelable) event.preventDefault();
     if (wheelLockRef.current) return;
 
     wheelDeltaRef.current += event.deltaY;

@@ -34,6 +34,7 @@ Load the matching repo skill before changing specialized workflows:
 - `../.agents/skills/media-response-standardization/SKILL.md`
 - `../.agents/skills/file-service-integration/SKILL.md`
 - `../.agents/skills/websocket-integration/SKILL.md`
+- `../.agents/skills/recommendation-engine/SKILL.md`
 - `../.agents/skills/demo-dataset/SKILL.md`
 
 Supplement with vendored general-purpose skills when the task calls for them:

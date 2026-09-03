@@ -223,4 +223,42 @@ export class UserRelationshipService {
 
     return map;
   }
+
+  /**
+   * Every user id blocked in either direction with `userId` — the set the
+   * recommendation engine (and any future feed) must exclude.
+   *
+   * `restrict` is deliberately excluded. Audited against production usage
+   * (rules/api.md's file-attachment section documents the same discipline for
+   * upload policy: never assume a flag's meaning beyond where it is proven to
+   * apply) — every current caller of `restrictedByMe`/`restrictedMe` is inside
+   * the messaging domain (`MessagePermissionService`, `ConversationService`,
+   * `SharedPostService`). Treating a message-only restrict as a feed-hiding
+   * signal would silently change its product meaning, so only `block` — which
+   * is already mutual and absolute — is used here.
+   *
+   * Uses the same `{targetId, type}` and `{userId, targetId, type}` indexes as
+   * `getStateMap`, so this is two indexed lookups, not a collection scan.
+   */
+  public async getBlockedEitherDirectionIds(userId: string | ObjectId): Promise<string[]> {
+    const viewer = toObjectId(userId);
+
+    const rows = await this.relationshipModel
+      .find({
+        type: RELATIONSHIP_TYPES.BLOCK,
+        $or: [{ userId: viewer }, { targetId: viewer }]
+      })
+      .select({ userId: 1, targetId: 1 })
+      .lean();
+
+    const ids = new Set<string>();
+    rows.forEach(row => {
+      const otherId = row.userId.toString() === viewer.toString()
+        ? row.targetId.toString()
+        : row.userId.toString();
+      ids.add(otherId);
+    });
+
+    return Array.from(ids);
+  }
 }

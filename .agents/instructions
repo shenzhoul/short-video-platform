@@ -47,6 +47,7 @@ Load only the skills relevant to the task:
   - `.agents/skills/file-service-integration/SKILL.md`
   - `.agents/skills/media-response-standardization/SKILL.md`
   - `.agents/skills/feed-infinite-scroll/SKILL.md`
+  - `.agents/skills/recommendation-engine/SKILL.md`
   - `.agents/skills/following-feed/SKILL.md`
   - `.agents/skills/notification-system/SKILL.md`
   - `.agents/skills/direct-messaging/SKILL.md`

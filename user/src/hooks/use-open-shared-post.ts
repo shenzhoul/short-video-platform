@@ -4,6 +4,9 @@ import { MESSAGES_ROUTE } from '@providers/message-workspace.provider';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback } from 'react';
 
+/** `modal_src` value marking an open that came from a shared-post message. */
+export const SHARED_POST_MODAL_SOURCE = 'message';
+
 /** Routes that already render the post detail modal from `modal_id`. */
 const MODAL_HOST_ROUTES = ['/', '/for-you', '/following', '/search'];
 
@@ -47,12 +50,19 @@ export function useOpenSharedPost() {
     if (!postId) return;
 
     if (!hostsPostDetail(pathname)) {
-      router.push(`/?modal_id=${encodeURIComponent(postId)}`);
+      router.push(`/?modal_id=${encodeURIComponent(postId)}&modal_src=${SHARED_POST_MODAL_SOURCE}`);
       return;
     }
 
     const params = new URLSearchParams(searchParams?.toString() || '');
     params.set('modal_id', postId);
+    // Names where this open came from, so the detail modal can report it as a
+    // genuine message context (`PostDetailSource` `'message-shared-post'`)
+    // rather than the generic `'direct-link'` every other `modal_id` arrival
+    // gets. Only affects attribution: a shared-post open is feed-scoped and
+    // uses the same anchor-based recommendation detail session either way
+    // (rules/instructions §3).
+    params.set('modal_src', SHARED_POST_MODAL_SOURCE);
     // `push`, not `replace`: opening a post is a step the back button should
     // undo, which is also how the feed and notifications behave.
     router.push(`${pathname}?${params.toString()}`);

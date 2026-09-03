@@ -3,21 +3,21 @@ import { FlattenMaps } from 'mongoose';
 import { Injectable } from "@nestjs/common";
 import { AuthUserDto } from "src/dtos/identity/auth-user.dto";
 import { UserDto } from "src/dtos/identity/user";
-import { PostRecommendationRequest, PostSearchRequest, ReactionSearchRequestPayload } from "src/payloads";
+import { PostRecommendationRequest, PostSearchRequest, ReactionSearchRequestPayload, RecommendationEventBatchPayload } from "src/payloads";
 import { PostSearchService } from './post/post-search.service';
-import { PostRecommendationService } from './post/post-recommendation.service';
 import { IPopulatePostOptions, PostService } from './post/post.service';
 import { uniq } from "lodash";
 import { FileServerService } from "src/services/shared/file-server";
 import { FileServerInfoDto } from "src/dtos/shared/file-server/file-server.dto";
 import { PostDocument } from "src/schemas";
 import { PostDto } from "src/dtos/content";
-import { PAGINATION_DEFAULTS, USER_STATUS } from 'src/common/constants';
+import { PAGINATION_DEFAULTS, USER_STATUS, RECOMMENDATION_FEED_TYPES } from 'src/common/constants';
 import { UserAccountManagementService } from 'src/services/identity';
 import { SocketUserService } from 'src/services/socket';
 import { __t } from 'src/utils/translation';
 import { ReactionService } from 'src/services/community/reaction/reaction.service';
 import { FollowService } from 'src/services/community/follow';
+import { RecommendationFeedService, RecommendationEventService } from 'src/services/content/recommendation';
 
 type LeanPostDocument = FlattenMaps<PostDocument> & Required<{ _id: ObjectId }>;
 
@@ -78,12 +78,13 @@ export class ContentService {
   constructor(
     private readonly postService: PostService,
     private readonly postSearchService: PostSearchService,
-    private readonly postRecommendationService: PostRecommendationService,
     private readonly fileServerService: FileServerService,
     private readonly userService: UserAccountManagementService,
     private readonly socketUserService: SocketUserService,
     private readonly reactionService: ReactionService,
-    private readonly followService: FollowService
+    private readonly followService: FollowService,
+    private readonly recommendationFeedService: RecommendationFeedService,
+    private readonly recommendationEventService: RecommendationEventService
   ) { }
   /**
    * Find a single post with user reactions populated
@@ -250,14 +251,73 @@ export class ContentService {
     return result;
   }
 
+  /**
+   * For You: personalized ranked feed via `RecommendationFeedService`.
+   * Guests must supply `req.anonymousId` — see `PostRecommendationRequest`.
+   */
   async recommendPosts(req: PostRecommendationRequest, user?: UserDto | AuthUserDto, options?: Partial<IPopulatePostOptions>) {
-    const result = await this.postRecommendationService.recommend(req, user?._id);
-    if (!result.data.length) return result;
+    return this.runRecommendationFeed(RECOMMENDATION_FEED_TYPES.FOR_YOU, req, user, options);
+  }
+
+  /**
+   * Home/Topic: mixed-recommendation grid. `req.topicKey` scopes every
+   * candidate source to one category when the Home category tab is active
+   * (rules/instructions §2.1) — Home never falls back to a plain `createdAt`
+   * sort for this route any more.
+   */
+  async getHomeRecommendedPosts(req: PostRecommendationRequest, user?: UserDto | AuthUserDto, options?: Partial<IPopulatePostOptions>) {
+    return this.runRecommendationFeed(RECOMMENDATION_FEED_TYPES.HOME, req, user, options);
+  }
+
+  private async runRecommendationFeed(
+    feedType: typeof RECOMMENDATION_FEED_TYPES[keyof typeof RECOMMENDATION_FEED_TYPES],
+    req: PostRecommendationRequest,
+    user?: UserDto | AuthUserDto,
+    options?: Partial<IPopulatePostOptions>
+  ) {
+    const includeDebug = Boolean(req.debug) && process.env.NODE_ENV !== 'production';
+
+    const result = await this.recommendationFeedService.getFeed({
+      feedType,
+      subject: { viewerId: user?._id?.toString(), anonymousId: req.anonymousId },
+      topicKey: req.topicKey || null,
+      sessionId: req.sessionId,
+      cursor: req.cursor || null,
+      limit: Number(req.limit) || PAGINATION_DEFAULTS.DEFAULT_LIMIT,
+      debug: includeDebug
+    });
+
+    const data = result.data.length ? await this.populatePostData(result.data, { user, ...options }) : [];
 
     return {
-      ...result,
-      data: await this.populatePostData(result.data, { user, ...options })
+      data,
+      hasMore: result.hasMore,
+      sessionId: result.sessionId,
+      nextCursor: result.nextCursor,
+      paginationInfo: { cursorPaginationAvailable: true, strategy: `${feedType}-recommendation-v1` },
+      ...(includeDebug ? { debug: result.debug } : {})
     };
+  }
+
+  /** Ingests recommendation telemetry (impression/watch/skip/dwell/like/comment/share/follow_after_view). */
+  async recordRecommendationEvents(payload: RecommendationEventBatchPayload, user?: UserDto | AuthUserDto) {
+    return this.recommendationEventService.ingest(payload.events, {
+      userId: user?._id?.toString(),
+      anonymousId: user?._id ? undefined : payload.anonymousId
+    });
+  }
+
+  /** Opens a Post Detail recommendation session anchored on one post — Home/notification/message/direct-link sources. */
+  async openPostDetailRecommendationSession(postId: string, user?: UserDto | AuthUserDto, anonymousId?: string) {
+    return this.recommendationFeedService.openDetailSession(postId, { viewerId: user?._id?.toString(), anonymousId });
+  }
+
+  async stepPostDetailRecommendationNext(sessionId: string, user?: UserDto | AuthUserDto, anonymousId?: string) {
+    return this.recommendationFeedService.detailNext(sessionId, { viewerId: user?._id?.toString(), anonymousId });
+  }
+
+  async stepPostDetailRecommendationPrevious(sessionId: string, user?: UserDto | AuthUserDto, anonymousId?: string) {
+    return this.recommendationFeedService.detailPrevious(sessionId, { viewerId: user?._id?.toString(), anonymousId });
   }
 
   async getFollowingPosts(req: PostSearchRequest, user: UserDto | AuthUserDto) {

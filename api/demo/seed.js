@@ -32,6 +32,7 @@ const { seedAccounts } = require('./lib/seed-accounts');
 const { seedPosts } = require('./lib/seed-posts');
 const { seedInteractions } = require('./lib/seed-interactions');
 const { seedSocial } = require('./lib/seed-social');
+const { seedRecommendations } = require('./lib/seed-recommendations');
 const { createNotificationAdapter } = require('./lib/notification-adapter');
 const { createMessageAdapter } = require('./lib/message-adapter');
 const { resolveAccountPlan, assertCategoryCoverage } = require('./lib/account-plan');
@@ -188,6 +189,20 @@ async function main() {
       + `${social.conversations.sharedPosts} shared posts; showcase: `
       + `${social.showcase.pending} pending, ${social.showcase.restricted} restricted, `
       + `${social.showcase.blocked} blocked`);
+
+    logger.step('Recommendation histories');
+    logger.detail('per-account personas, derived through the same policy the engine scores with');
+    const recommendations = await seedRecommendations({
+      plan, postIndex: postResult.postIndex, db, ledger
+    });
+    logger.ok(`${recommendations.events} events — ${recommendations.impressions} impressions, `
+      + `${recommendations.finalWatches} watches (${recommendations.completions} completions, `
+      + `${recommendations.replays} replays, ${recommendations.quickSkips} quick skips), `
+      + `${recommendations.photoDwells} photo dwells, ${recommendations.likes} likes, `
+      + `${recommendations.comments} comments, ${recommendations.shares} shares, `
+      + `${recommendations.followAfterViews} follow-after-views`);
+    logger.ok(`${recommendations.subjects} viewers with a history; `
+      + `${recommendations.coldStartPosts} cold-start posts left unengaged`);
 
     logger.step('Reconciling counters');
     const userIds = await ledger.idsOf(KINDS.USER);

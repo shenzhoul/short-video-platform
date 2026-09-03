@@ -76,6 +76,7 @@ async function main() {
     const conversationIds = await ledger.idsOf(KINDS.CONVERSATION);
     const relationshipIds = await ledger.idsOf(KINDS.RELATIONSHIP);
     const categoryIds = await ledger.idsOf(KINDS.CATEGORY);
+    const recommendationEventIds = await ledger.idsOf(KINDS.RECOMMENDATION_EVENT);
     const fileIds = (await ledger.all(KINDS.FILE)).map((row) => String(row.refId));
 
     // The tags the demo posts carried, read before the posts are deleted —
@@ -120,6 +121,7 @@ async function main() {
       logger.detail(`${messageIds.length} messages, ${participantIds.length} participant rows, ${conversationIds.length} conversations`);
       logger.detail(`${relationshipIds.length} block/restrict rows`);
       logger.detail(`${reactionIds.length} reactions, ${commentIds.length} comments`);
+      logger.detail(`${recommendationEventIds.length} recommendation events, plus the stats and affinities they built`);
       logger.detail(`${postMediaIds.length} post_media rows, ${postIds.length} posts`);
       logger.detail(`${userIds.length} users, ${authIds.length} auth records`);
       logger.detail(`${categoryIds.length - categoryConflicts.length} of ${categoryIds.length} seed-created categories`);
@@ -151,6 +153,30 @@ async function main() {
     const reactions = await deleteByIds(db.reactions, reactionIds);
     const comments = await deleteByIds(db.comments, commentIds);
     logger.ok(`${reactions} reactions, ${comments} comments`);
+
+    /*
+     * Recommendation histories. The raw events are ledger-tracked and deleted
+     * by id like everything else; the stats and affinities they built are not
+     * separately claimed, because they are *derived* rows rather than rows the
+     * seed owns — a `post_recommendation_stats` document is one counter per
+     * post that real traffic also writes to.
+     *
+     * They are removed by scope instead: stats for demo posts, and affinities
+     * whose subject is a demo account. Both are safe because a demo post and a
+     * demo account are about to cease existing, so a counter about them is
+     * meaningless — and neither query can touch a real user's row.
+     */
+    logger.step('Deleting recommendation histories');
+    const recommendationEvents = await deleteByIds(db.recommendationEvents, recommendationEventIds);
+    const recommendationStats = postIds.length
+      ? (await db.postRecommendationStats.deleteMany({ postId: { $in: postIds } })).deletedCount
+      : 0;
+    const affinities = userIds.length
+      ? (await db.userRecommendationAffinities.deleteMany({
+        subjectId: { $in: userIds.map((id) => id.toString()) }
+      })).deletedCount
+      : 0;
+    logger.ok(`${recommendationEvents} events, ${recommendationStats} post stat rows, ${affinities} affinity profiles`);
 
     logger.step('Deleting posts');
     const media = await deleteByIds(db.postMedia, postMediaIds);
@@ -227,6 +253,7 @@ async function main() {
       KINDS.CONVERSATION_PARTICIPANT,
       KINDS.CONVERSATION,
       KINDS.RELATIONSHIP,
+      KINDS.RECOMMENDATION_EVENT,
       KINDS.REACTION,
       KINDS.COMMENT,
       KINDS.POST_MEDIA,

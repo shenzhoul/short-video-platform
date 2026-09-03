@@ -13,13 +13,26 @@
  *    page ever got to decide.
  */
 
-const redirect = jest.fn((url: string) => ({ kind: 'redirect', url }));
-const rewrite = jest.fn((url: URL) => ({ kind: 'rewrite', url, headers: { set: jest.fn() } }));
+/** A response whose `cookies.set` is observable, like the real one. */
+const makeResponse = (base: Record<string, unknown>) => {
+  const setCookies: any[] = [];
+  return {
+    ...base,
+    setCookies,
+    headers: { set: jest.fn() },
+    cookies: { set: (options: any) => {
+ setCookies.push(options);
+} }
+  };
+};
+
+const redirect = jest.fn((url: string) => makeResponse({ kind: 'redirect', url }));
+const rewrite = jest.fn((url: URL, init?: any) => makeResponse({ kind: 'rewrite', url, init }));
 
 jest.mock('next/server', () => ({
   NextResponse: {
     redirect: (url: string) => redirect(url),
-    rewrite: (url: URL) => rewrite(url)
+    rewrite: (url: URL, init?: any) => rewrite(url, init)
   },
   userAgent: () => ({ device: { type: undefined } })
 }));
@@ -31,10 +44,23 @@ jest.mock('next-auth/jwt', () => ({
 
 import { proxy } from './proxy';
 
-function request(path: string) {
+/**
+ * A request with a mutable cookie jar, as `NextRequest` has. `cookies.set` on
+ * the *request* is what makes an issued value visible to this request's own
+ * server render rather than only to the next one.
+ */
+function request(path: string, cookies: Record<string, string> = {}) {
+  const jar = new Map(Object.entries(cookies));
   return {
     nextUrl: new URL(`http://localhost:8081${path}`),
-    headers: new Headers()
+    headers: new Headers(),
+    cookies: {
+      get: (name: string) => (jar.has(name) ? { name, value: jar.get(name) } : undefined),
+      set: (name: string, value: string) => {
+ jar.set(name, value);
+},
+      jar
+    }
   } as any;
 }
 
@@ -211,5 +237,89 @@ describe('ordinary pages', () => {
 
     expect(result.kind).toBe('rewrite');
     expect(result.url.searchParams.get('viewport')).toBe('desktop');
+  });
+});
+
+/**
+ * The guest recommendation subject, issued before anything renders.
+ *
+ * A feed session belongs to the subject that created it. Issuing this id from
+ * the client meant the *first* server render had no subject, built a throwaway
+ * session, and the client then abandoned it — two sessions for one page load,
+ * and a Home feed of 78-86 cards against a 70-item policy. Every test here
+ * fails against that arrangement, because none of it existed.
+ */
+describe('the guest recommendation-subject cookie', () => {
+  const KEY = 'douyin-clone-reco-anonymous-id';
+
+  it('is issued on a first-ever request', async () => {
+    const result: any = await proxy(request('/'));
+
+    expect(result.setCookies).toHaveLength(1);
+    expect(result.setCookies[0]).toEqual(expect.objectContaining({
+      name: KEY, path: '/', sameSite: 'lax', httpOnly: false
+    }));
+    expect(result.setCookies[0].maxAge).toBeGreaterThan(0);
+  });
+
+  it('is visible to this request\'s own server render, not only the next one', async () => {
+    const req = request('/');
+    const result: any = await proxy(req);
+
+    // Set on the *request* jar…
+    const issued = req.cookies.get(KEY)?.value;
+    expect(issued).toBeTruthy();
+    // …and the rewrite forwards the request headers so the render sees it.
+    expect(result.init).toEqual(expect.objectContaining({ request: expect.anything() }));
+    // …and the same value is what the browser is told to keep.
+    expect(result.setCookies[0].value).toBe(issued);
+  });
+
+  it('issues an opaque token, not anything derived from the request', async () => {
+    const first: any = await proxy(request('/'));
+    const second: any = await proxy(request('/'));
+
+    const a = first.setCookies[0].value;
+    const b = second.setCookies[0].value;
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
+  });
+
+  it('leaves an existing valid id alone, so a returning guest keeps one subject', async () => {
+    const existing = '11111111-2222-4333-8444-555555555555';
+    const result: any = await proxy(request('/', { [KEY]: existing }));
+
+    expect(result.setCookies).toHaveLength(0);
+    expect(rewrite).toHaveBeenCalled();
+  });
+
+  it('replaces a value outside the accepted shape rather than trusting it', async () => {
+    // This becomes a Redis key segment and a session owner.
+    const rejected = ['short', 'has spaces here', `${'x'.repeat(200)}`, 'colon:separated'];
+    for (const value of rejected) {
+
+      const result: any = await proxy(request('/', { [KEY]: value }));
+      expect(result.setCookies).toHaveLength(1);
+      expect(result.setCookies[0].value).not.toBe(value);
+    }
+  });
+
+  it('attaches the cookie to redirects too, so the id is not lost at the edge', async () => {
+    const result: any = await proxy(request('/auth/login'));
+
+    expect(result.kind).toBe('redirect');
+    expect(result.setCookies).toHaveLength(1);
+    expect(result.setCookies[0].name).toBe(KEY);
+  });
+
+  it('never issues a subject shared between visitors', async () => {
+    const seen = new Set<string>();
+    for (let index = 0; index < 25; index += 1) {
+
+      const result: any = await proxy(request('/'));
+      seen.add(result.setCookies[0].value);
+    }
+    expect(seen.size).toBe(25);
+    expect([...seen]).not.toContain('guest');
   });
 });

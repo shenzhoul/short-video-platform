@@ -187,16 +187,30 @@ function buildPlan({ config, themes, index }) {
       }
 
       /*
-       * `pinnedAt` orders pinned posts among themselves, newest pin first. Given
-       * a fixed offset per position so the ordering is deterministic and the
-       * pins read as having happened after the posts they promote.
+       * `pinnedAt` orders pinned posts among themselves, newest pin first. A
+       * fixed offset per position keeps that deterministic, but the offset
+       * alone is not enough to make a pin land *after* the post it promotes:
+       * `publicationTimes` clamps a same-day post to `now - 60s` whenever the
+       * evening hour it drew has not happened yet today, so building the
+       * dataset before ~08:00 produced pins that predated their own posts.
+       *
+       * Walking from the oldest pin to the newest and carrying a running
+       * floor fixes it while preserving every property the plan relies on:
+       * each pin is strictly after both its own post and the older pin below
+       * it, so the timestamps stay distinct and "newest pin first" still
+       * holds.
        */
-      const pinnedAtBySeedKey = new Map(
-        pinnedSeedKeys.map((seedKey, index) => [
-          seedKey,
-          new Date(now.getTime() - (index + 1) * 60 * 60 * 1000)
-        ])
-      );
+      const postBySeedKey = new Map(ordered.map((post) => [post.seedKey, post]));
+      const pinnedAtBySeedKey = new Map();
+      let previousPinMs = 0;
+      for (let index = pinnedSeedKeys.length - 1; index >= 0; index -= 1) {
+        const seedKey = pinnedSeedKeys[index];
+        const publishedMs = new Date(postBySeedKey.get(seedKey).publishedAt).getTime();
+        const preferred = now.getTime() - (index + 1) * 60 * 60 * 1000;
+        const at = Math.max(preferred, publishedMs + 60 * 1000, previousPinMs + 60 * 1000);
+        pinnedAtBySeedKey.set(seedKey, new Date(at));
+        previousPinMs = at;
+      }
       for (const post of ordered) {
         post.isPinned = pinnedAtBySeedKey.has(post.seedKey);
         post.pinnedAt = pinnedAtBySeedKey.get(post.seedKey) || null;

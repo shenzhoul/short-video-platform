@@ -1,7 +1,6 @@
 // Post services
 export * from './post/post.service';
 export * from './post/post-search.service';
-export * from './post/post-recommendation.service';
 export * from './post/post-crud.service';
 export * from './post/post-deletion-cleanup.service';
 export * from './post/post-statistics.service';
@@ -15,3 +14,6 @@ export * from './category';
 
 // Search
 export * from './search';
+
+// Recommendation engine
+export * from './recommendation';

@@ -12,6 +12,7 @@ import {
 import CreatorProfileWorkItem from '@components/creator/creator-profile-work-item';
 import CreatorProfileWorksToolbar from '@components/creator/creator-profile-works-toolbar';
 import EditProfileModal from '@components/creator/edit-profile';
+import { POST_PAGE_LIMIT } from '@constants/pagination';
 import { useCreatorBatchManagement } from '@hooks/use-creator-batch-management';
 import { useCreatorPostSearch } from '@hooks/use-creator-post-search';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
@@ -67,15 +68,39 @@ export default function CreatorProfilePage({
   const {
     posts: works,
     total: worksTotal,
+    hasMore: worksHasMore,
+    loading: worksLoading,
+    loadMore: loadMoreWorks,
     deletePosts,
     isDeleting,
     updatePostInteraction
   } = useCreatorPostSearch({
+    // The profile being viewed, never inferred from the session. This is what
+    // scopes every page after the server-rendered first one to the same creator.
+    creatorId: creator._id,
+    // The same page size the server render used. Left at the hook's default the
+    // grid paged 20 then 12 at a time — harmless for correctness, because the
+    // cursor carries the position, but it makes "which page is this" a
+    // different answer on the server and the client for no reason.
+    limit: POST_PAGE_LIMIT,
     initialPosts: initialPostData?.data || [],
     initialTotal: initialPostData?.total,
     initialHasMore: initialPostData?.hasMore,
     initialNextCursor: initialPostData?.nextCursor
   });
+  // Pages the works grid as the viewer reaches its end. `rootMargin` starts the
+  // request a screen early so the list grows before the viewer hits the bottom.
+  const worksSentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const sentinel = worksSentinelRef.current;
+    if (!sentinel || !worksHasMore) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMoreWorks();
+    }, { rootMargin: '400px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMoreWorks, worksHasMore]);
+
   const liked = useLikedPosts({
     enabled: canEditProfile && activeTab === 'liked'
   });
@@ -234,8 +259,22 @@ export default function CreatorProfilePage({
                               />
                             ))}
                           </ul>
+                          {/*
+                            The grid pages. It used to print "No more for now"
+                            unconditionally under a list that could never grow —
+                            harmless on a catalogue where every creator has ten
+                            posts against a twenty-post page, and silently
+                            unreachable content for anyone with more.
+                          */}
+                          {!isLikedTab && worksHasMore ? (
+                            <div ref={worksSentinelRef} className='h-8' aria-hidden />
+                          ) : null}
                           <div className='mt-15.5 flex justify-center text-[12px] font-semibold leading-5 text-(--text-disabled)'>
-                            No more for now
+                            {!isLikedTab && worksLoading
+                              ? 'Loading more...'
+                              : !isLikedTab && worksHasMore
+                                ? ''
+                                : 'No more for now'}
                           </div>
                         </>
                       ) : (

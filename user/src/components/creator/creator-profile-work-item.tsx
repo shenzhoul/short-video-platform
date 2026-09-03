@@ -64,6 +64,8 @@ function CreatorProfileWorkItem({
 
   return (
     <li
+      data-post-id={post._id}
+      data-creator-id={post.user?._id}
       className="mb-4 mr-4 inline-block w-[calc(16.66%-13.34px)] list-none select-none overflow-hidden rounded-t-[12px] leading-0 nth-[6n]:mr-0"
     >
       <a

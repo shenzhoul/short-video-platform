@@ -73,11 +73,51 @@ Both have caused real defects:
   depends on, so the *next* step fell back to the feed. Fixed by lifting the tab
   into `PostDetailModal`, above the swap.
 
+Both recurred. Later rounds found the same class of defect twice more: the
+photo layout and the video layout each re-derived "is the creator grid open"
+from their own booleans, and the For You stage kept walking the recommendation
+feed while a creator's grid was on screen beside it.
+
+## Post Detail: three modes, one owner
+
+There is now an explicit mode, decided once in `PostDetailModal` by
+`usePostDetailMode` and handed to both layouts:
+
+| Panel state | Mode | Sequence owner | May change creator | Scroll moves the post |
+|---|---|---|---|---|
+| nothing open | `recommendation` | the recommendation session | yes | yes |
+| **Videos** tab open | `creator` | that creator's posts | no | yes |
+| any other tab | `locked` | nothing | n/a | no |
+
+- **Never re-derive the mode inside a layout, and never add a second boolean
+  beside it.** The arrangement it replaced — `videoModeActive`,
+  `videoModeDismissed`, and each layout's own reading of `panelTab` — could have
+  all three true at once, and the two layouts disagreed about what they meant.
+- **The creator is captured on entering creator mode and held until it is
+  left.** Reading it from the open post is circular: in creator mode the open
+  post *is* one of that creator's posts, so one stale response naming somebody
+  else re-points the whole sequence and the grid never comes back.
+- **Enforce the invariant, do not assume it.** `usePostDetailSequence` drops any
+  item whose `user._id` is not the captured creator and logs it in development.
+  This is not paranoia: `/posts/home-posts` served the creator grid and silently
+  stopped honouring `userId` when it became the ranked Home feed, so a request
+  for one creator came back holding eight — under that creator's name, with
+  next/previous walking straight out of their catalogue.
+- **A late response belongs to the creator it was requested for.**
+  `useCreatorVideos` stamps every request and discards a page for a creator the
+  viewer has already left, and only marks a creator "loaded" once a request has
+  genuinely been issued. Marking it before that, while dropping requests that
+  arrive during another fetch, is what let the previous creator's page land in
+  the new creator's grid and never be corrected.
+- **The For You inline stage obeys the same three modes.** Its Videos tab is
+  reachable from the panel's own tab strip, and before this the arrows kept
+  moving the For You feed underneath it.
+
 Rules that follow:
 
 - **Anything that must survive moving between posts belongs in
-  `PostDetailModal`**, not in either layout. That includes the open panel tab
-  and anything derived from it.
+  `PostDetailModal`**, not in either layout. That includes the open panel tab,
+  the navigation mode, the captured creator, and anything derived from them.
 - **The grid, the highlighted tile and the arrows read one list.** Do not sort
   in more than one place; `creator-post-order.ts` mirrors the API's
   `creatorPinnedSort` (`isPinned`, `pinnedAt`, `createdAt`, `_id`, all
@@ -90,7 +130,102 @@ Rules that follow:
   wherever it really belongs, so the highlight and the arrows point at different
   neighbours.
 - Regression cover: `use-post-detail-sequence.spec.tsx` (fails 7 of 9 against
-  the old behaviour) and `creator-post-order.spec.ts`.
+  the old behaviour), `creator-post-order.spec.ts`, `use-post-detail-mode.spec.tsx`,
+  `use-post-detail-navigation.spec.tsx`, `use-creator-videos.spec.tsx` (3 of 5
+  fail against the racing version), and `use-recommendation-detail-feed.spec.tsx`
+  (4 of 10 fail against the version whose refill a re-render could cancel).
+  Browser: `user/browser-verify/13-regression-acceptance.js`.
+
+## A Full-Bleed Stage Draws What The Post Holds
+
+`PostVideoStage` is the stage for *both* media kinds. It mounts the player only
+when `getPostVideo(post)` is non-empty, and draws `PostGraphicStageMedia`
+otherwise.
+
+For You rendered every recommended post through the video branch, so a photo
+post mounted a `<video src="">`. React refuses to set an empty `src`, warns, and
+leaves a black rectangle with transport controls where the images should be —
+and the ranked feed opened on a photo post, so it was the first thing a visitor
+saw. One seeded post in ten is a photo.
+
+- **`src={url || ''}` is not a fix.** The unplayable element is the defect; the
+  console warning is only how it announced itself. If there is no URL, do not
+  render the element.
+- **A post the stage cannot draw is skipped, with a logged reason** — never
+  rendered as a blank slide, because next/previous step through the same array
+  and the viewer would be stuck on it.
+- **Watch tracking follows the media, not the surface.** A photo produces no
+  `timeupdate`; it needs `useRecommendationPhotoDwell`, and leaving the video
+  hook enabled for it yields a permanently empty signal.
+- Regression cover: `post-video-stage-media.spec.tsx` (4 of 5 fail against the
+  single-branch stage) and `for-you-navigation-modes.spec.ts`.
+
+## A Listing Names Its Own Scope
+
+A list of "somebody's posts" takes the creator id as an input. It never infers
+one from the session, and it never reuses a route that answers a different
+question.
+
+- `useCreatorPostSearch({ creatorId })` pages `/posts/creator-posts` for a
+  profile; **without** a `creatorId` it pages `/creator/posts` (`myPosts`), which
+  is the owner's own management screen and by definition needs no id. There is no
+  third behaviour. Before this the hook only ever called `myPosts`, so the profile
+  grid was one line of wiring away from listing whoever happened to be signed in
+  — and the grid could not page at all, printing "No more for now" under a list
+  that never grew.
+- Every response carries the creator it was requested for and is dropped if the
+  viewer has moved on. Two profiles visited quickly must not merge.
+- A cursor only means something against the list it came from. `lastIsPinned` and
+  `lastPinnedAt` travel with it, and paging must never re-emit the pinned block.
+- Covered by `use-creator-post-search.spec.tsx` (6 of 7 fail against the
+  `myPosts`-only version) and `browser-verify/14-creator-profile-pagination.js`.
+
+## A Guest Subject Is Issued At The Edge, Before Anything Renders
+
+`proxy.ts` mints the recommendation-subject cookie when a request arrives
+without a valid one, sets it on the **request** as well as the response, and
+forwards `request.headers` through the rewrite. That ordering is the whole
+point: a feed session belongs to the subject that created it, so a server render
+with no subject builds a session the browser cannot continue — it asks for page
+two, the server does not recognise the owner, and silently starts a *new*
+session. Measured on a first-ever visit before this: two sessions for one page
+load, and a Home feed of 78-86 cards against a 70-item policy.
+
+- **The cookie is the source of truth, not `localStorage`.** If the client
+  preferred its own stored value it would disagree with the render that just
+  happened. `localStorage` is a fallback for when the cookie is unavailable.
+- **Validate the value before using it.** It becomes a Redis key segment and a
+  session owner, so it is bounded and shape-checked
+  (`isValidRecommendationAnonymousId`) on the way in, at the edge *and* in the
+  API payload. Anything outside the shape is replaced, not trusted.
+- **Never a shared `guest` subject**, and never logged: it is a session key, and
+  the numbers are what diagnostics need.
+- Cover: `proxy.spec.ts` (6 of its 24 tests fail without the issuance) and
+  `browser-verify/18-first-visit-session.js`.
+
+## A `'use client'` Module Cannot Export A Constant To The Server
+
+Next replaces a `'use client'` module with a client *reference* when a server
+component imports it. A plain `export const` from such a module is not a usable
+value on the server — it is `undefined`, with no error, no warning and no type
+complaint.
+
+This shipped: the guest recommendation-subject cookie name was exported from the
+client module and read by a server component, so `cookies().get(undefined)` found
+nothing and **every server-rendered feed page built a session the browser could
+not continue**. Shared constants that both sides read live in their own module
+with no directive (`src/constants/recommendation-anonymous-id.ts`). Verify such a
+change by asserting the server's *observable* effect — here, the `subjectId`
+stored on the Redis session after a request carrying the cookie — not by reading
+the code.
+
+## Do Not `preventDefault` A Wheel You Are Not Consuming
+
+React attaches `wheel` passively, so `preventDefault()` in an `onWheel` handler
+suppresses nothing and logs "Unable to preventDefault inside passive event
+listener invocation" on every tick. `usePostNavigationWheel` therefore returns
+early when neither direction can navigate — with a reading panel open the scroll
+belongs to the panel — and guards the call with `event.cancelable`.
 
 ## Feed Rendering And Scroll Performance
 

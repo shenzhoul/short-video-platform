@@ -76,17 +76,52 @@ export class PostMediaService {
     userId: string | ObjectId,
     mediaItems: Array<{ fileId: ObjectId; mediaType: EMediaType; ordering: number }>
   ): Promise<PostMedia[]> {
+    const durationByFileId = await this.batchFetchVideoDurations(mediaItems);
+
     const postMediaDocs = mediaItems.map((item) => ({
       postId: toObjectId(postId),
       userId: toObjectId(userId),
       fileId: item.fileId,
       mediaType: item.mediaType,
       ordering: item.ordering,
+      durationMs: durationByFileId.get(item.fileId.toString()) ?? null,
       createdAt: new Date(),
       updatedAt: new Date()
     }));
 
     return this.PostMediaModel.insertMany(postMediaDocs);
+  }
+
+  /**
+   * Canonical, ffprobe-derived duration for every video item in one batch —
+   * a single `getMultipleFileInfo` round trip per post creation, never one
+   * call per file and never a re-probe of the file itself (file-server has
+   * already validated and stored this at upload time).
+   *
+   * The recommendation engine is this data's only consumer today, but it is
+   * stored on `PostMedia` (not fetched live from file-server on the
+   * recommendation-event hot path) precisely so that later use never needs a
+   * cross-service call.
+   */
+  private async batchFetchVideoDurations(
+    mediaItems: Array<{ fileId: ObjectId; mediaType: EMediaType }>
+  ): Promise<Map<string, number | null>> {
+    const videoFileIds = mediaItems
+      .filter((item) => item.mediaType === EMediaType.VIDEO)
+      .map((item) => item.fileId);
+
+    const result = new Map<string, number | null>();
+    if (!videoFileIds.length) return result;
+
+    const fileInfos = await this.fileServerService.getMultipleFileInfo(videoFileIds, true) as Record<string, any>;
+    videoFileIds.forEach((fileId) => {
+      const info = fileInfos[fileId.toString()];
+      const durationSeconds = info?.duration;
+      result.set(fileId.toString(), Number.isFinite(durationSeconds) && durationSeconds > 0
+        ? Math.round(durationSeconds * 1000)
+        : null);
+    });
+    return result;
   }
 
   /**

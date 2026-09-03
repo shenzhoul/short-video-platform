@@ -61,7 +61,6 @@ import {
   IdentityFileService,
   PostService,
   PostSearchService,
-  PostRecommendationService,
   SocketUserService,
   CommentService,
   CreatorAnalyticsService,
@@ -79,8 +78,19 @@ import {
   PostStatisticsService,
   CategoryService,
   CommunicationService,
-  ContentPermissionService
+  ContentPermissionService,
+  RecommendationAffinityService,
+  RecommendationCandidateService,
+  RecommendationScoringService,
+  RecommendationDiversityService,
+  RecommendationSelectionService,
+  RecommendationSessionService,
+  PostDetailRecommendationSessionService,
+  RecommendationEventService,
+  RecommendationCategoryPriorService,
+  RecommendationFeedService
 } from './services';
+import { RecommendationCategoryPriorJob } from 'src/jobs/content/recommendation-category-prior.job';
 import { CommentImageIntegrityService } from 'src/services/community/comment/comment-image-integrity.service';
 import { CommentRoomService } from 'src/services/socket/comment-room.service';
 import { CommentStatsCoalescerService } from 'src/services/socket/comment-stats-coalescer.service';
@@ -220,7 +230,6 @@ export const appProviders = [
   PostMediaService,
   PostService,
   PostSearchService,
-  PostRecommendationService,
   TagStatisticsService,
   TagTrendingService,
   PostDeletionListener,
@@ -229,6 +238,20 @@ export const appProviders = [
   CreatorDeletePostListener,
   PostStatisticsService,
   CategoryService,
+
+  // Recommendation engine — Home/For You candidates, scoring, diversity,
+  // Redis sessions, event ingestion, and the async category-prior job.
+  RecommendationAffinityService,
+  RecommendationCandidateService,
+  RecommendationScoringService,
+  RecommendationDiversityService,
+  RecommendationSelectionService,
+  RecommendationSessionService,
+  PostDetailRecommendationSessionService,
+  RecommendationEventService,
+  RecommendationCategoryPriorService,
+  RecommendationCategoryPriorJob,
+  RecommendationFeedService,
 
   // Socket services and gateways
   SocketUserService,

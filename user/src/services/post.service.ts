@@ -46,6 +46,35 @@ export class PostService extends APIRequest {
     headers
   );
 
+  /**
+   * Send a batch of recommendation telemetry events (impression, watch,
+   * quick-skip, photo-dwell, detail-open, like/comment/share/follow_after_view
+   * correlated with a recommendation session).
+   *
+   * Never awaited by anything the user is waiting on — this is fire-and-forget
+   * feedback for the recommender, not a user-facing action.
+   */
+  recordRecommendationEvents = (events: Array<Record<string, any>>, anonymousId?: string) => this.post('/posts/recommendation-events', {
+    events,
+    ...(anonymousId ? { anonymousId } : {})
+  });
+
+  /** Opens a Post Detail recommendation session anchored on one post (Home/notification/message/direct-link sources). */
+  openPostDetailRecommendationSession = (postId: string, anonymousId?: string) => this.post(
+    this.buildUrl(`/posts/${postId}/detail-session`, anonymousId ? { anonymousId } : undefined),
+    {}
+  ) as Promise<{ data: { sessionId: string; postId: string } }>;
+
+  /** Advances a Post Detail recommendation session to the next post. */
+  stepPostDetailRecommendationNext = (sessionId: string, anonymousId?: string) => this.get(
+    this.buildUrl(`/posts/detail-session/${sessionId}/next`, anonymousId ? { anonymousId } : undefined)
+  ) as Promise<{ data: { postId: string } | null }>;
+
+  /** Steps a Post Detail recommendation session back to the previous post. */
+  stepPostDetailRecommendationPrevious = (sessionId: string, anonymousId?: string) => this.get(
+    this.buildUrl(`/posts/detail-session/${sessionId}/previous`, anonymousId ? { anonymousId } : undefined)
+  ) as Promise<{ data: { postId: string } | null }>;
+
   getFollowingPosts = (query?: PostQuery, headers?: HeadersMap) => this.get(
     this.buildUrl('/posts/following', query),
     headers
@@ -63,8 +92,17 @@ export class PostService extends APIRequest {
     headers
   );
 
-  getCreatorPosts = (userId: string, query?: PostQuery, headers?: HeadersMap) => this.getHomePosts(
-    { ...query, userId },
+  /**
+   * One creator's posts, pinned first, in the creator's own order.
+   *
+   * Deliberately *not* `/posts/home-posts` any more. That route now serves the
+   * ranked Home recommendation feed, which has no creator filter and whose
+   * payload class strips `userId`, so asking it for a creator's posts returned
+   * the whole feed — the creator profile grid and the Post Detail Videos tab
+   * both filled with other people's posts under this creator's name.
+   */
+  getCreatorPosts = (userId: string, query?: PostQuery, headers?: HeadersMap) => this.get(
+    this.buildUrl('/posts/creator-posts', { ...query, userId }),
     headers
   );
 
@@ -224,6 +262,10 @@ const postServiceInstance = new PostService();
 
 export const getPersonalizedHomePosts = postServiceInstance.getPersonalizedHomePosts.bind(postServiceInstance);
 export const getRecommendedPosts = postServiceInstance.getRecommendedPosts.bind(postServiceInstance);
+export const recordRecommendationEvents = postServiceInstance.recordRecommendationEvents.bind(postServiceInstance);
+export const openPostDetailRecommendationSession = postServiceInstance.openPostDetailRecommendationSession.bind(postServiceInstance);
+export const stepPostDetailRecommendationNext = postServiceInstance.stepPostDetailRecommendationNext.bind(postServiceInstance);
+export const stepPostDetailRecommendationPrevious = postServiceInstance.stepPostDetailRecommendationPrevious.bind(postServiceInstance);
 export const getFollowingPosts = postServiceInstance.getFollowingPosts.bind(postServiceInstance);
 export const getFriendPosts = postServiceInstance.getFriendPosts.bind(postServiceInstance);
 export const getCreatorPosts = postServiceInstance.getCreatorPosts.bind(postServiceInstance);

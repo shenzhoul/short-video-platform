@@ -6,13 +6,28 @@ import type { CursorInfo } from '@interfaces/pagination';
 import { IPost } from '@interfaces/post';
 import {
   deletePost as deletePostService,
+  getCreatorPosts,
   myPosts,
   pinPost as pinPostService,
   unpinPost as unpinPostService
 } from '@services/post.service';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface UseCreatorPostSearchProps {
+  /**
+   * The creator whose profile is being viewed.
+   *
+   * Present means "this is a profile listing": every page goes to
+   * `/posts/creator-posts` scoped to this id, which is the same contract the
+   * server-rendered first page uses. Absent means the owner's own management
+   * screen, which lists through `/creator/posts` and takes no creator id
+   * because it is *by definition* the caller's own posts.
+   *
+   * There is deliberately no third behaviour and no inference from the session:
+   * a listing that guesses its own scope is how a profile grid ends up holding
+   * whoever happens to be signed in.
+   */
+  creatorId?: string;
   initialPosts?: IPost[];
   initialTotal?: number;
   initialHasMore?: boolean;
@@ -21,6 +36,7 @@ interface UseCreatorPostSearchProps {
 }
 
 export const useCreatorPostSearch = ({
+  creatorId,
   initialPosts = [],
   initialTotal = initialPosts.length,
   initialHasMore,
@@ -37,8 +53,20 @@ export const useCreatorPostSearch = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [pinningPostId, setPinningPostId] = useState<string | null>(null);
   const updatePostInteraction = usePostInteractionUpdater(setPosts);
+  /**
+   * The creator this list currently represents. A response for anyone else is
+   * dropped: navigating from one profile to another remounts nothing on a
+   * client-side transition, so a slow page for the creator being left would
+   * otherwise be appended to the creator being entered.
+   */
+  const activeCreatorIdRef = useRef<string | undefined>(creatorId);
+  activeCreatorIdRef.current = creatorId;
+  const loadingRef = useRef(false);
 
   const searchPosts = useCallback(async (newFilter: any, isNewSearch: boolean) => {
+    if (loadingRef.current) return;
+    const requestedCreatorId = creatorId;
+    loadingRef.current = true;
     try {
       setLoading(true);
 
@@ -55,7 +83,15 @@ export const useCreatorPostSearch = ({
         if (nextCursor.pinnedAt) queryParams.lastPinnedAt = nextCursor.pinnedAt.toString();
       }
 
-      const response = await myPosts(queryParams);
+      // A profile listing pages the creator route; the owner's own management
+      // screen pages their own. Never the reverse, and never a shared feed
+      // route filtered afterwards on the client.
+      const response = requestedCreatorId
+        ? await getCreatorPosts(requestedCreatorId, queryParams)
+        : await myPosts(queryParams);
+
+      // The viewer moved to another profile while this was in flight.
+      if (activeCreatorIdRef.current !== requestedCreatorId) return;
 
       const newPosts = response.data?.data || [];
       const responseNextCursor = response.data?.nextCursor || null;
@@ -66,18 +102,41 @@ export const useCreatorPostSearch = ({
         setPosts(newPosts);
         setNextCursor(responseNextCursor);
       } else {
-        setPosts(prev => [...prev, ...newPosts]);
+        // Defence in depth behind the scoped route: append only posts not
+        // already held, so a repeated cursor page cannot duplicate a tile.
+        setPosts((prev) => {
+          const known = new Set(prev.map((post) => post._id));
+          return [...prev, ...newPosts.filter((post: IPost) => !known.has(post._id))];
+        });
         setNextCursor(responseNextCursor);
       }
 
       setHasMore(responseHasMore);
       setTotal(responseTotal);
     } catch {
-      toast.error('Failed to load posts');
+      if (activeCreatorIdRef.current === requestedCreatorId) toast.error('Failed to load posts');
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
+      if (activeCreatorIdRef.current === requestedCreatorId) setLoading(false);
     }
-  }, [limit, nextCursor]);
+  }, [creatorId, limit, nextCursor]);
+
+  // A different profile is a different list. Reset rather than append, so a
+  // client-side navigation between two creators cannot leave the previous
+  // creator's tiles on screen under the new creator's header.
+  const seededCreatorIdRef = useRef(creatorId);
+  useEffect(() => {
+    if (seededCreatorIdRef.current === creatorId) return;
+    seededCreatorIdRef.current = creatorId;
+    setPosts(initialPosts);
+    setTotal(initialTotal);
+    setNextCursor(initialNextCursor);
+    setHasMore(typeof initialHasMore === 'boolean' ? initialHasMore : initialPosts.length < initialTotal);
+    // `initialPosts` is the server-rendered page for the creator now being
+    // viewed; re-running on its identity alone would reset the list every time
+    // the parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creatorId]);
 
   const handleFilter = (newFilter: any) => {
     setFilter(newFilter);
@@ -85,10 +144,10 @@ export const useCreatorPostSearch = ({
     searchPosts(newFilter, true);
   };
 
-  const loadMore = () => {
-    if (loading || !hasMore || !nextCursor) return;
+  const loadMore = useCallback(() => {
+    if (loadingRef.current || !hasMore || !nextCursor) return;
     searchPosts(filter, false);
-  };
+  }, [filter, hasMore, nextCursor, searchPosts]);
 
   const performDeletePosts = useCallback(async (ids: string[]) => {
     const uniqueIds = [...new Set(ids)].filter(Boolean);

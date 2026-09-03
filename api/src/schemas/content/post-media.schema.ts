@@ -99,6 +99,24 @@ export class PostMedia {
     default: Date.now
   })
   updatedAt: Date;
+
+  /**
+   * Canonical media duration in milliseconds, for video — `null` for photo
+   * and for a video written before this field existed (see the backfill
+   * script `api/scripts/backfill-post-media-duration.js`).
+   *
+   * Sourced from file-server's `File.duration` (ffprobe-derived, validated —
+   * see `.agents/rules/api.md`'s video-validation section), never from
+   * anything a client reports. This is the only server-authoritative source
+   * `RecommendationEventService` trusts for watch-ratio clamping and
+   * completion classification; a client-reported duration is never used for
+   * either once this field is present.
+   */
+  @Prop({
+    type: Number,
+    default: null
+  })
+  durationMs: number | null;
 }
 
 export type PostMediaDocument = HydratedDocument<PostMedia>;

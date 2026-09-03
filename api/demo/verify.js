@@ -25,12 +25,15 @@ const dbLib = require('./lib/db');
 const { createLedger, KINDS } = require('./lib/ledger');
 const { createFilePipeline } = require('./lib/file-pipeline');
 const crypto = require('crypto');
+const { ObjectId } = require('mongodb');
 
 const path = require('path');
 const { execFile } = require('child_process');
 
 const manifestLib = require('./lib/manifest');
 const { resolveAccountPlan, assertCategoryCoverage } = require('./lib/account-plan');
+const { createRecommendationAdapter } = require('./lib/recommendation-adapter');
+const { personaFor } = require('./lib/recommendation-personas');
 
 /** How many URLs to probe at once. Polite, and enough to finish quickly. */
 const PROBE_CONCURRENCY = 8;
@@ -939,6 +942,284 @@ async function checkManifestOrientation(ledger) {
   return { checked, videos: videos.length };
 }
 
+/**
+ * Recommendation histories: that they exist, that the aggregates match the raw
+ * events they were built from, and that the personas they encode really are
+ * different from one another.
+ *
+ * The aggregates are **re-derived** here from the raw `recommendation_events`
+ * rows through the same adapter the seeder wrote them with, rather than
+ * compared against numbers this file decides on. That is the point: if the
+ * seeder's arithmetic and the engine's policy ever disagree, this fails —
+ * whereas a hand-written expectation would just encode the same mistake twice.
+ */
+async function checkRecommendations(db, userIds, postIds) {
+  const adapter = createRecommendationAdapter({ db, ledger: null });
+  /*
+   * A lightweight stand-in for the seeder's plan. Verification deliberately
+   * does not rebuild the full plan: that needs the media manifest, and a check
+   * that cannot run without the fetch phase's output is a check that stops
+   * running. Everything needed here — who the accounts are and which category
+   * each one's persona is built around — comes from the themes config plus the
+   * seeded users themselves.
+   */
+  const seededUsers = await db.users.find(
+    { _id: { $in: userIds } }, { projection: { username: 1 } }
+  ).toArray();
+  const userIdByUsername = new Map(seededUsers.map((user) => [user.username, user._id]));
+  const accounts = config.themes.flatMap((theme) => (theme.accounts || [])
+    .filter((persona) => userIdByUsername.has(persona.username))
+    .map((persona) => ({ username: persona.username, topicKey: theme.topicKey })));
+  const plan = { accounts, userIds: userIdByUsername };
+  const report = {
+    events: 0, subjects: 0, statRows: 0, coldStart: 0, distinctPrimaries: 0
+  };
+
+  const events = await db.recommendationEvents.find({ userId: { $in: userIds } }).toArray();
+  report.events = events.length;
+  if (!events.length) {
+    fail('no recommendation events seeded — every account would fall back to the guest mix');
+    return report;
+  }
+
+  const posts = await db.posts.find({ _id: { $in: postIds } }).toArray();
+  const postById = new Map(posts.map((post) => [post._id.toString(), post]));
+  const mediaRows = await db.postMedia.find({ postId: { $in: postIds }, ordering: 0 }).toArray();
+  const durationByPost = new Map(mediaRows.map((row) => [row.postId.toString(), row.durationMs ?? null]));
+
+  const expectedStats = new Map();
+  const expectedAffinity = new Map();
+  const commentClaims = [];
+  const followCredited = new Set();
+  const impressionPairs = new Set();
+
+  // Impressions first: `follow_after_view` is only legitimate after one, and
+  // the events are not necessarily read back in the order they were written.
+  for (const event of events) {
+    if (event.eventType === 'impression') impressionPairs.add(`${event.userId}:${event.postId}`);
+  }
+
+  for (const event of events) {
+    const post = postById.get(event.postId.toString());
+    if (!post) {
+      fail(`recommendation event ${event._id} points at a post outside the demo dataset`);
+      continue;
+    }
+    const media = {
+      creatorId: post.userId,
+      topicKey: post.topicKey || null,
+      tags: post.tags || [],
+      isPhoto: (post.mediaTypes || []).includes('photo') || post.type === 'photo',
+      isVideo: (post.mediaTypes || []).includes('video') || post.type === 'video',
+      canonicalDurationMs: durationByPost.get(event.postId.toString()) || null
+    };
+    const { inc, affinityWeight } = adapter.effectsOf({
+      eventType: event.eventType,
+      watchMs: event.watchMs === null ? undefined : event.watchMs,
+      dwellMs: event.dwellMs === null ? undefined : event.dwellMs
+    }, media);
+
+    const postKey = event.postId.toString();
+    const stat = expectedStats.get(postKey) || {};
+    for (const [field, value] of Object.entries(inc)) stat[field] = (stat[field] || 0) + value;
+    expectedStats.set(postKey, stat);
+
+    if (affinityWeight && media.topicKey) {
+      const subject = event.userId.toString();
+      const byTopic = expectedAffinity.get(subject) || new Map();
+      byTopic.set(media.topicKey, (byTopic.get(media.topicKey) || 0) + affinityWeight);
+      expectedAffinity.set(subject, byTopic);
+    }
+
+    if (event.eventType === 'comment') commentClaims.push(event);
+
+    if (event.eventType === 'follow_after_view') {
+      const key = `${event.userId}:${post.userId}`;
+      if (followCredited.has(key)) {
+        fail(`follow_after_view credited twice for subject ${event.userId} and creator ${post.userId}`);
+      }
+      followCredited.add(key);
+      if (!impressionPairs.has(`${event.userId}:${event.postId}`)) {
+        fail(`follow_after_view for post ${event.postId} has no real impression by ${event.userId}`);
+      }
+      const follows = await db.reactions.countDocuments({
+        action: 'follow', objectType: 'creator', objectId: post.userId, createdBy: event.userId
+      });
+      if (!follows) {
+        fail(`follow_after_view for creator ${post.userId} but ${event.userId} does not actually follow them`);
+      }
+    }
+  }
+
+  // A completion must rest on a canonical duration, never on the client's word.
+  const completionMinRatio = adapter.policy.WATCH_QUALITY_POLICY.video.completionMinRatio;
+  for (const event of events) {
+    if (event.eventType !== 'completion') continue;
+    if (!durationByPost.get(event.postId.toString())) {
+      fail(`completion recorded for post ${event.postId}, which has no canonical duration`);
+    } else if (event.watchRatio === null || event.watchRatio < completionMinRatio) {
+      fail(`completion for post ${event.postId} has watchRatio ${event.watchRatio}, below the threshold`);
+    }
+  }
+
+  // Each replay is its own occurrence; a retry of one would share its key.
+  const replayKeys = events.filter((event) => event.eventType === 'replay').map((event) => event.dedupeKey);
+  if (replayKeys.some((key) => !key)) fail('a replay event has no dedupe key, so a retry would double-count it');
+  if (new Set(replayKeys).size !== replayKeys.length) {
+    fail('two replay events share a dedupe key — occurrences are not distinct');
+  }
+
+  // A comment signal must name a real comment, written by that account, on that post.
+  for (const event of commentClaims) {
+    const claimedId = String(event.dedupeKey || '').split(':').pop();
+    if (!ObjectId.isValid(claimedId)) {
+      fail(`comment event ${event._id} carries no usable comment id`);
+      continue;
+    }
+    const comment = await db.comments.findOne({ _id: new ObjectId(claimedId) });
+    if (!comment) {
+      fail(`comment event ${event._id} names comment ${claimedId}, which does not exist`);
+      continue;
+    }
+    if (comment.createdBy.toString() !== event.userId.toString()) {
+      fail(`comment event ${event._id} claims credit for a comment written by somebody else`);
+    }
+    const belongsDirectly = comment.objectType === 'post'
+      && comment.objectId.toString() === event.postId.toString();
+    if (!belongsDirectly) {
+      fail(`comment event ${event._id} names a comment that does not belong to post ${event.postId}`);
+    }
+  }
+
+  // The stats must equal what the events imply.
+  const statRows = await db.postRecommendationStats.find({ postId: { $in: postIds } }).toArray();
+  report.statRows = statRows.length;
+  for (const row of statRows) {
+    const expected = expectedStats.get(row.postId.toString()) || {};
+    for (const [field, value] of Object.entries(expected)) {
+      const actual = row[field] || 0;
+      if (Math.abs(actual - value) > 1e-6) {
+        fail(`post ${row.postId}: ${field} is ${actual} but its events imply ${value}`);
+      }
+    }
+  }
+
+  // The affinities must equal what the events imply, per category.
+  const affinities = await db.userRecommendationAffinities.find({
+    subjectId: { $in: userIds.map((id) => id.toString()) }
+  }).toArray();
+  report.subjects = affinities.length;
+  for (const affinity of affinities) {
+    if (affinity.isAuthenticatedUser !== true) {
+      fail(`affinity ${affinity.subjectId} is not marked as an authenticated subject`);
+    }
+    const expected = expectedAffinity.get(affinity.subjectId) || new Map();
+    for (const [topicKey, value] of expected) {
+      const actual = affinity.categoryScores?.[topicKey]?.score ?? 0;
+      if (Math.abs(actual - value) > 1e-6) {
+        fail(`affinity ${affinity.subjectId}: category '${topicKey}' is ${actual} but its events imply ${value}`);
+      }
+    }
+  }
+
+  // A guest has no affinity profile — the seed writes nothing anonymous.
+  const anonymous = await db.userRecommendationAffinities.countDocuments({ isAuthenticatedUser: false });
+  if (anonymous > 0) fail(`${anonymous} anonymous affinity profile(s) exist; the seed writes none`);
+
+  /*
+   * Personas genuinely differ.
+   *
+   * The assertion is *not* "each account's strongest category is its own",
+   * which sounds right and is wrong here: nobody is ever shown their own
+   * posts, and ten of the thirteen seeded categories have a single account,
+   * so those accounts can never accumulate any affinity in their own
+   * category at all. What must hold is that the strongest signal lands
+   * somewhere inside that persona's declared taste — its primary category or
+   * one of its two neighbours — and never on an off-persona category, which
+   * is what would happen if the histories were undifferentiated noise.
+   */
+  const tops = new Map();
+  for (const account of plan.accounts) {
+    const subjectId = plan.userIds.get(account.username)?.toString();
+    const affinity = affinities.find((row) => row.subjectId === subjectId);
+    if (!affinity) {
+      fail(`account ${account.username} has no recommendation affinity profile`);
+      continue;
+    }
+    const ranked = Object.entries(affinity.categoryScores || {})
+      .map(([key, value]) => [key, value?.score ?? 0])
+      .sort((a, b) => b[1] - a[1]);
+    const top = ranked[0]?.[0];
+    const persona = personaFor({ username: account.username, topicKey: account.topicKey, posts: [] });
+    const withinTaste = [persona.primary, ...persona.secondary];
+    if (!withinTaste.includes(top)) {
+      fail(`account ${account.username}: strongest category is '${top}', outside its persona `
+        + `(${withinTaste.join(', ')}) — the history is not differentiated`);
+    }
+    // And the off-persona categories must sit below the persona's own.
+    const topOff = ranked.find(([key]) => !withinTaste.includes(key));
+    const topWithin = ranked.find(([key]) => withinTaste.includes(key));
+    if (topOff && topWithin && topOff[1] >= topWithin[1]) {
+      fail(`account ${account.username}: off-persona category '${topOff[0]}' (${topOff[1].toFixed(2)}) `
+        + `outranks its own '${topWithin[0]}' (${topWithin[1].toFixed(2)})`);
+    }
+    tops.set(account.username, top);
+  }
+  report.distinctPrimaries = new Set(tops.values()).size;
+  if (report.distinctPrimaries < 5) {
+    fail(`only ${report.distinctPrimaries} distinct strongest categories across `
+      + `${plan.accounts.length} accounts — the personas are not meaningfully different`);
+  }
+
+  // Cold start: a handful of impressions, no watch, no engagement at all.
+  const coldRows = statRows.filter((row) => (row.weightedEngagement || 0) === 0
+    && (row.impressions || 0) > 0
+    && (row.watchSampleCount || 0) === 0
+    && (row.dwellSampleCount || 0) === 0);
+  report.coldStart = coldRows.length;
+  if (coldRows.length === 0) {
+    fail('no cold-start posts found — every post already carries watch or engagement history');
+  }
+  for (const row of coldRows) {
+    const post = postById.get(row.postId.toString());
+    if (!post) continue;
+    if ((post.totalLike || 0) || (post.totalComment || 0) || (post.totalShare || 0)) {
+      fail(`cold-start post ${post._id} has real engagement `
+        + `(${post.totalLike}/${post.totalComment}/${post.totalShare})`);
+    }
+    if (post.status !== 'active') fail(`cold-start post ${post._id} is not active, so it can never be explored`);
+    if (!post.userId) fail(`cold-start post ${post._id} has no creator`);
+  }
+
+  // Everything the recommender can serve must be servable.
+  const inactive = await db.posts.countDocuments({ _id: { $in: postIds }, status: { $ne: 'active' } });
+  if (inactive > 0) fail(`${inactive} demo post(s) are not active and would never be recommended`);
+
+  /*
+   * Every post needs a `recoShuffleKey`, and a missing one is invisible
+   * rather than loud.
+   *
+   * Two of the five candidate sources — fresh discovery and diverse
+   * discovery — find candidates with an indexed range scan over this field,
+   * and a missing field never satisfies `$gte`. When the seeder omitted it,
+   * both buckets returned nothing at all and every feed was quietly built
+   * from the 14-day trending window alone: a guest session held 36 of 160
+   * posts, all labelled `trending`, and nothing errored. This is the check
+   * that would have caught it.
+   */
+  const missingShuffleKey = await db.posts.countDocuments({
+    _id: { $in: postIds },
+    $or: [{ recoShuffleKey: { $exists: false } }, { recoShuffleKey: null }]
+  });
+  if (missingShuffleKey > 0) {
+    fail(`${missingShuffleKey} demo post(s) have no recoShuffleKey — the fresh and diverse `
+      + 'candidate sources cannot see them, so the feed silently degrades to trending only');
+  }
+  report.missingShuffleKey = missingShuffleKey;
+
+  return report;
+}
+
 async function main() {
   logger.step('Demo dataset verification');
 
@@ -1026,6 +1307,12 @@ async function main() {
     logger.step('Manifest orientation (re-probed with ffprobe)');
     const manifestReport = await checkManifestOrientation(ledger);
     logger.detail(`${manifestReport.checked} of ${manifestReport.videos} cached videos re-probed`);
+
+    logger.step('Recommendation histories');
+    const reco = await checkRecommendations(db, userIds, postIds);
+    logger.detail(`${reco.events} events, ${reco.subjects} viewer profiles, ${reco.statRows} post stat rows, `
+      + `${reco.coldStart} cold-start posts, ${reco.distinctPrimaries} distinct persona categories, `
+      + `${reco.missingShuffleKey} posts missing a recoShuffleKey`);
 
     logger.step('Conversations and messages');
     const messagingReport = await checkMessaging(db, userIds, postIds);

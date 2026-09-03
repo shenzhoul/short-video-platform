@@ -6,12 +6,16 @@ import Carousel, {
   CarouselTimelineControl
 } from '@components/ui/carousel';
 import { VideoPlayerRef } from '@components/ui/video-player';
+import { PostDetailMode, usePostDetailMode } from '@hooks/use-post-detail-mode';
 import { PostDetailSource, usePostDetailSequence } from '@hooks/use-post-detail-sequence';
 import { PostInteractionChangeHandler, usePostInteractionState } from '@hooks/use-post-interactions';
 import { PostNavigationDirection } from '@hooks/use-post-navigation-wheel';
 import { usePostRoom } from '@hooks/use-post-room';
 import { usePostStatsSync } from '@hooks/use-post-stats-sync';
 import { usePostViewTracking } from '@hooks/use-post-view-tracking';
+import { useRecommendationDetailTracking } from '@hooks/use-recommendation-detail-tracking';
+import { useRecommendationPhotoDwell } from '@hooks/use-recommendation-photo-dwell';
+import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-tracking';
 import { IPost } from '@interfaces/post';
 import { PopupPipVideo } from '@lib/popup-pip';
 import { GRAPHIC_SLIDE_DURATION_MS } from '@lib/post-graphic';
@@ -51,6 +55,21 @@ interface PostDetailModalProps {
   closeOnVideoModeBack?: boolean;
   closeOnAvatarClick?: boolean;
   onInteractionChange?: PostInteractionChangeHandler;
+  /**
+   * The recommendation session this open belongs to — the Post Detail
+   * recommendation session for `home-feed`/`direct-link`
+   * (`useRecommendationDetailFeed`'s `sessionId`), or the For You feed
+   * session for `source="for-you"`. Omitted for callers that are not a
+   * recommendation surface (creator profile, search) — every recommendation
+   * event below is a no-op without it.
+   */
+  recommendationSessionId?: string | null;
+  /**
+   * The recommendation sequence still has posts to hand out beyond what
+   * `posts` currently holds. Without it "next" can only report what is already
+   * loaded, so a refill in flight looks exactly like the end of the feed.
+   */
+  hasMoreAhead?: boolean;
 }
 
 /** The side panel is owned by the modal, not by either layout. */
@@ -59,11 +78,23 @@ interface PanelTabControl {
   onDetailPanelTabChange: (tab: PostVideoDetailTab | null) => void;
 }
 
+/**
+ * The navigation mode and its captured creator, decided once above the layout
+ * swap. Neither layout may re-derive these: doing so is how the two came to
+ * disagree about what "next" meant.
+ */
+interface SequenceControl {
+  mode: PostDetailMode;
+  creatorId: string | null;
+  hasMoreAhead: boolean;
+}
+
 interface DetailActionRailProps {
   post: IPost;
   mediaVariant: 'video' | 'graphic';
   previousPost?: IPost;
-  nextPost?: IPost;
+  /** Whether "next" is available — a loaded neighbour or one still arriving. */
+  canNext: boolean;
   onNavigate: (direction: PostNavigationDirection) => void;
   detailPanelOpen?: boolean;
   isLiked?: boolean;
@@ -72,6 +103,7 @@ interface DetailActionRailProps {
   totalShare?: number;
   onLikeChange?: (isLiked: boolean, totalLikes: number) => void;
   onShared?: () => void;
+  onFollow?: (creatorId: string) => void;
   onOpenPanel?: (tab: PostVideoDetailTab) => void;
   onAvatarClick?: () => void;
 }
@@ -80,7 +112,7 @@ function DetailActionRail({
   post,
   mediaVariant,
   previousPost,
-  nextPost,
+  canNext,
   onNavigate,
   detailPanelOpen,
   isLiked,
@@ -89,6 +121,7 @@ function DetailActionRail({
   totalShare,
   onLikeChange,
   onShared,
+  onFollow,
   onOpenPanel,
   onAvatarClick
 }: DetailActionRailProps) {
@@ -104,12 +137,13 @@ function DetailActionRail({
       totalShareOverride={totalShare}
       onLikeChange={onLikeChange}
       onShared={onShared}
+      onFollow={onFollow}
       onOpenPanel={onOpenPanel}
       onAvatarClick={onAvatarClick}
       topSlot={(
         <PostNavigationControls
           canPrevious={Boolean(previousPost)}
-          canNext={Boolean(nextPost)}
+          canNext={canNext}
           onNavigate={onNavigate}
         />
       )}
@@ -125,14 +159,34 @@ function GraphicPostDetail({
   onNavigate,
   detailPanelTab,
   onDetailPanelTabChange,
+  mode,
+  creatorId,
+  hasMoreAhead,
   targetCommentId = null,
   targetCommentFallbackId = null,
-  onInteractionChange
-}: Pick<PostDetailModalProps, 'post' | 'posts' | 'source' | 'onClose' | 'onNavigate' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange'> & PanelTabControl) {
+  onInteractionChange,
+  recommendationSessionId
+}: Pick<PostDetailModalProps, 'post' | 'posts' | 'source' | 'onClose' | 'onNavigate' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange' | 'recommendationSessionId'> & PanelTabControl & SequenceControl) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const setDetailPanelTab = onDetailPanelTabChange;
   const interaction = usePostInteractionState(post, onInteractionChange);
+  const {
+    trackLikeChange, trackShared, trackFollow, trackCommentCreate
+  } = useRecommendationDetailTracking({
+    post, source, sessionId: recommendationSessionId
+  });
+  // For photo posts, dwell IS the watch-quality signal — the modal is up for
+  // as long as this image is being looked at (Home/direct-link/for-you all
+  // route through this one open, so a single mount-duration timer here is
+  // correct for every source, unlike the Home grid's IntersectionObserver
+  // variant, which has to account for cards that stay mounted off-screen).
+  useRecommendationPhotoDwell({
+    enabled: Boolean(recommendationSessionId),
+    postId: post._id,
+    sessionId: recommendationSessionId,
+    source: source === 'for-you' ? 'for-you' : 'post-detail'
+  });
   // Live detail events only while this post is actually open on screen.
   usePostRoom(post._id);
   // Shared counters reconcile to the server; `isLiked` stays this viewer's own.
@@ -153,27 +207,22 @@ function GraphicPostDetail({
   }, [onNavigate]);
 
   /*
-   * A photo post has no "video mode" to switch into -- the creator grid simply
-   * appears when the `videos` tab is opened. That tab being open is therefore
-   * exactly the condition under which the sequence is this creator's posts, and
-   * it is the condition the video layout expresses as `videoModeActive`.
-   *
-   * Before this, the photo layout fetched the creator's posts to draw the grid
-   * and then navigated `posts` -- the feed behind the modal -- so pressing next
-   * on a photo jumped to another creator while their grid was still on screen.
+   * The mode is decided once, above both layouts, and handed down. Neither
+   * layout re-derives it: doing that is what let the photo layout draw a
+   * creator's grid while navigating the feed behind the modal.
    */
   const {
     creatorPosts,
     previousPost,
-    nextPost,
+    canNext,
     navigate,
     handleWheel
   } = usePostDetailSequence({
     post,
     feedPosts: posts,
-    panelTab: detailPanelTab,
-    creatorScopeActive: detailPanelTab === 'videos',
-    source,
+    mode,
+    creatorId,
+    hasMoreAhead,
     onNavigate: handlePostNavigate
   });
   const handleOpenPanel = useCallback((tab: PostVideoDetailTab) => {
@@ -341,15 +390,16 @@ function GraphicPostDetail({
         post={post}
         mediaVariant="graphic"
         previousPost={previousPost}
-        nextPost={nextPost}
+        canNext={canNext}
         onNavigate={navigate}
         detailPanelOpen={Boolean(detailPanelTab)}
         isLiked={interaction.isLiked}
         totalLike={interaction.totalLike}
         totalComment={interaction.totalComment}
         totalShare={interaction.totalShare}
-        onShared={interaction.handleShared}
-        onLikeChange={interaction.handleLikeChange}
+        onShared={trackShared(interaction.handleShared)}
+        onLikeChange={trackLikeChange(interaction.handleLikeChange)}
+        onFollow={trackFollow}
         onOpenPanel={handleOpenPanel}
       />
 
@@ -369,6 +419,7 @@ function GraphicPostDetail({
           onClose={() => setDetailPanelTab(null)}
           totalComment={interaction.totalComment}
           onTotalCommentChange={interaction.handleTotalCommentChange}
+          onCommentCreate={trackCommentCreate}
         />
       ) : null}
 
@@ -398,21 +449,35 @@ function VideoPostDetail({
   onNavigate,
   detailPanelTab,
   onDetailPanelTabChange,
+  mode,
+  creatorId,
+  hasMoreAhead,
   targetCommentId = null,
   targetCommentFallbackId = null,
   closeOnVideoModeBack = false,
   closeOnAvatarClick = false,
-  onInteractionChange
-}: PostDetailModalProps & PanelTabControl) {
+  onInteractionChange,
+  recommendationSessionId
+}: PostDetailModalProps & PanelTabControl & SequenceControl) {
   const videoRef = useRef<VideoPlayerRef>(null);
   const videoModeOriginPostRef = useRef(post);
   const setDetailPanelTab = onDetailPanelTabChange;
-  // The creator grid being open *is* video mode. Derived rather than stored, so
-  // it cannot fall out of step with the panel when the layout is swapped for a
-  // post of the other kind.
-  const [videoModeDismissed, setVideoModeDismissed] = useState(false);
-  const videoModeActive = detailPanelTab === 'videos' && !videoModeDismissed;
+  // "Video mode" is simply creator mode as the video layout names it. Read from
+  // the one owner rather than tracked here: a second boolean beside `mode` is
+  // exactly the arrangement that let the two disagree.
+  const videoModeActive = mode === 'creator';
   const interaction = usePostInteractionState(post, onInteractionChange);
+  const {
+    trackLikeChange, trackShared, trackFollow, trackCommentCreate
+  } = useRecommendationDetailTracking({
+    post, source, sessionId: recommendationSessionId
+  });
+  const watchTracking = useRecommendationWatchTracking({
+    enabled: Boolean(recommendationSessionId),
+    postId: post._id,
+    sessionId: recommendationSessionId,
+    source: source === 'for-you' ? 'for-you' : 'post-detail'
+  });
   // Live detail events only while this post is actually open on screen.
   usePostRoom(post._id);
   // Shared counters reconcile to the server; `isLiked` stays this viewer's own.
@@ -421,15 +486,15 @@ function VideoPostDetail({
   const {
     creatorPosts: creatorVideos,
     previousPost,
-    nextPost,
+    canNext,
     navigate,
     handleWheel
   } = usePostDetailSequence({
     post,
     feedPosts: posts,
-    panelTab: detailPanelTab,
-    creatorScopeActive: videoModeActive && (!detailPanelTab || detailPanelTab === 'videos'),
-    source,
+    mode,
+    creatorId,
+    hasMoreAhead,
     onNavigate
   });
 
@@ -446,8 +511,8 @@ function VideoPostDetail({
         return;
       }
       // Leaving the grid closes the panel and returns to the post it was
-      // opened from.
-      setVideoModeDismissed(true);
+      // opened from. Closing the panel *is* leaving creator mode — the mode is
+      // derived from it — so there is nothing else to reset.
       setDetailPanelTab(null);
       const originPost = videoModeOriginPostRef.current;
       if (originPost?._id !== post._id) onNavigate(originPost);
@@ -458,7 +523,6 @@ function VideoPostDetail({
 
   const handleVideoModeActiveChange = useCallback((active: boolean) => {
     if (active && !videoModeActive) videoModeOriginPostRef.current = post;
-    setVideoModeDismissed(!active);
     if (active) setDetailPanelTab('videos');
     else if (detailPanelTab === 'videos') setDetailPanelTab(null);
   }, [detailPanelTab, post, setDetailPanelTab, videoModeActive]);
@@ -520,7 +584,12 @@ function VideoPostDetail({
         playerRef={videoRef}
         initialTime={initialTime}
         onPictureInPictureOpen={closeDetail}
-        onTimeUpdate={onPlaybackTimeChange}
+        onTimeUpdate={(currentTime, duration) => {
+          onPlaybackTimeChange(currentTime);
+          watchTracking.handleTimeUpdate(currentTime, duration);
+        }}
+        onPause={watchTracking.handlePause}
+        onEnded={watchTracking.handleEnded}
         className="absolute inset-0"
         detailPanelTab={detailPanelTab}
         targetCommentId={targetCommentId}
@@ -535,20 +604,22 @@ function VideoPostDetail({
         onLoadMoreCreatorVideos={creatorVideos.loadMore}
         onSelectCreatorVideo={onNavigate}
         onTotalCommentChange={interaction.handleTotalCommentChange}
+        onCommentCreate={trackCommentCreate}
         disableRounding
       >
         <DetailActionRail
           post={post}
           mediaVariant="video"
           previousPost={previousPost}
-          nextPost={nextPost}
+          canNext={canNext}
           onNavigate={navigate}
           isLiked={interaction.isLiked}
           totalLike={interaction.totalLike}
           totalComment={interaction.totalComment}
           totalShare={interaction.totalShare}
-          onShared={interaction.handleShared}
-          onLikeChange={interaction.handleLikeChange}
+          onShared={trackShared(interaction.handleShared)}
+          onLikeChange={trackLikeChange(interaction.handleLikeChange)}
+          onFollow={trackFollow}
           onAvatarClick={closeOnAvatarClick ? closeDetail : undefined}
         />
       </PostVideoStage>
@@ -595,6 +666,24 @@ export default function PostDetailModal(props: PostDetailModalProps) {
     setDetailPanelTab(props.initialDetailPanelTab ?? null);
   }, [props.initialDetailPanelTab]);
 
+  /*
+   * The navigation mode, and the creator it captured, live here for the same
+   * reason the panel tab does: they must survive the photo/video layout swap.
+   * Held inside a layout, the captured creator was destroyed exactly when the
+   * viewer stepped across a media-type boundary — the one moment it matters.
+   */
+  const { mode, creatorId } = usePostDetailMode({
+    post: props.post,
+    panelTab: detailPanelTab,
+    source: props.source
+  });
+
+  const sequenceControl = {
+    mode,
+    creatorId,
+    hasMoreAhead: Boolean(props.hasMoreAhead)
+  };
+
   if (isGraphicPost(props.post)) {
     return (
       <GraphicPostDetail
@@ -605,9 +694,11 @@ export default function PostDetailModal(props: PostDetailModalProps) {
         onNavigate={props.onNavigate}
         detailPanelTab={detailPanelTab}
         onDetailPanelTabChange={setDetailPanelTab}
+        {...sequenceControl}
         targetCommentId={props.targetCommentId}
         targetCommentFallbackId={props.targetCommentFallbackId}
         onInteractionChange={props.onInteractionChange}
+        recommendationSessionId={props.recommendationSessionId}
       />
     );
   }
@@ -617,6 +708,7 @@ export default function PostDetailModal(props: PostDetailModalProps) {
       {...props}
       detailPanelTab={detailPanelTab}
       onDetailPanelTabChange={setDetailPanelTab}
+      {...sequenceControl}
     />
   );
 }

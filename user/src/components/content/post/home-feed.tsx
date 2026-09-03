@@ -3,6 +3,7 @@
 import { useHomeFeedInfiniteScroll } from '@hooks/use-home-feed-infinite-scroll';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
 import { isTopicKeyRetired, usePostTopicsCatalogue } from '@hooks/use-post-topics';
+import { useRecommendationDetailFeed } from '@hooks/use-recommendation-detail-feed';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { FaHeart, FaRss, FaUserPlus } from 'react-icons/fa';
@@ -16,7 +17,8 @@ interface HomeFeedProps {
   initialData?: {
     data: import('@interfaces/post').IPost[];
     hasMore: boolean;
-    nextCursor?: { id: string; createdAt: number } | null;
+    sessionId?: string;
+    nextCursor?: string | null;
     total: number;
   } | null;
 }
@@ -53,7 +55,9 @@ function FeedError({ message, onRetry }: { message: string; onRetry: () => void 
 export default function HomeFeed({ initialData }: HomeFeedProps) {
   const [topicKey, setTopicKey] = useState('');
   const catalogue = usePostTopicsCatalogue();
-  const { posts, hasMore, loading, loadMore, error, updatePostInteraction } = useHomeFeedInfiniteScroll({
+  const {
+    posts, hasMore, loading, loadMore, refresh, sessionId, error, updatePostInteraction
+  } = useHomeFeedInfiniteScroll({
     initialData,
     enabled: true,
     topicKey
@@ -77,6 +81,15 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
 
   const [hoveredCompactPostId, setHoveredCompactPostId] = useState<string | null>(null);
   const playback = useHomeFeedPlayback(posts, updatePostInteraction);
+  // Post Detail's next/previous for a Home/direct-link open follows the
+  // recommendation detail session, not grid order (rules/instructions §5.1,
+  // §5.3) — `for-you`/`following-feed`/creator-scoped sources never reach
+  // here, so this is unconditionally the right sequence for whatever modal
+  // Home ever opens.
+  const detailFeed = useRecommendationDetailFeed({
+    enabled: Boolean(playback.detailPost),
+    currentPost: playback.detailPost
+  });
 
   // With a category selected the bar must stay mounted, otherwise an empty category leaves the user
   // with no way back to "All of them".
@@ -133,6 +146,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                     featuredResumeTime={playback.featuredResumeTime}
                     onFeaturedTimeUpdate={playback.updateFeaturedPlaybackTime}
                     onOpenDetail={playback.openDetailPost}
+                    recommendationSessionId={sessionId}
                   />
                 </div>
               ) : null}
@@ -145,6 +159,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                   popupPlaylist={playback.popupPlaylist}
                   onCompactHoverChange={setHoveredCompactPostId}
                   onOpenDetail={playback.openDetailPost}
+                  recommendationSessionId={sessionId}
                 />
               ))}
             </div>
@@ -174,7 +189,14 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
             <div className="py-8 text-center opacity-70">
               <FaHeart className="mx-auto mb-2 text-2xl" />
               <p>You&apos;re all caught up!</p>
-              <p className="text-sm">Check back later for new posts from your followed creators.</p>
+              <p className="mb-4 text-sm">This session&apos;s recommendations are exhausted.</p>
+              <button
+                type="button"
+                onClick={refresh}
+                className="cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm text-white transition-colors hover:bg-primary-dark"
+              >
+                Refresh recommendations
+              </button>
             </div>
         ) : null}
         </div>
@@ -183,7 +205,10 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
       {playback.detailPost ? (
         <PostDetailModal
           post={playback.detailPost}
-          posts={posts}
+          posts={detailFeed.feedPosts}
+          source={playback.detailSource}
+          recommendationSessionId={detailFeed.sessionId}
+          hasMoreAhead={detailFeed.hasMoreAhead}
           popupPlaylist={playback.popupPlaylist}
           initialTime={playback.detailInitialTime}
           initialDetailPanelTab={playback.detailInitialTab}

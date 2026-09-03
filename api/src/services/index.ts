@@ -58,9 +58,23 @@ export { ContentPermissionService } from './community/content-permission.service
 // Content services
 export { PostService } from './content/post/post.service';
 export { PostSearchService } from './content/post/post-search.service';
-export { PostRecommendationService } from './content/post/post-recommendation.service';
 export { PostStatisticsService } from './content/post/post-statistics.service';
 export { CategoryService } from './content/category/category.service';
+
+// Recommendation engine services — Home/For You candidate retrieval, scoring,
+// diversity re-ranking, session pagination, and event ingestion.
+export {
+  RecommendationAffinityService,
+  RecommendationCandidateService,
+  RecommendationScoringService,
+  RecommendationDiversityService,
+  RecommendationSelectionService,
+  RecommendationSessionService,
+  PostDetailRecommendationSessionService,
+  RecommendationEventService,
+  RecommendationCategoryPriorService,
+  RecommendationFeedService
+} from './content/recommendation';
 
 // Socket services
 export { SocketUserService } from './socket/socket-user.service';

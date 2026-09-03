@@ -144,6 +144,13 @@ const apiRequestInstance = new APIRequestImpl();
 
 export const buildUrl = apiRequestInstance.buildUrl.bind(apiRequestInstance);
 export const apiGet = apiRequestInstance.get.bind(apiRequestInstance);
+/**
+ * Exposed for the recommendation-event `fetch(..., { keepalive: true })`
+ * flush path, which cannot go through `axios`/`this.request` — `keepalive`
+ * needs the raw `fetch` API — but must resolve the same base URL every other
+ * call in this app uses.
+ */
+export const getBaseApiEndpoint = apiRequestInstance.getBaseApiEndpoint.bind(apiRequestInstance);
 export const apiPost = apiRequestInstance.post.bind(apiRequestInstance);
 export const apiPut = apiRequestInstance.put.bind(apiRequestInstance);
 export const apiDelete = apiRequestInstance.del.bind(apiRequestInstance);

@@ -30,8 +30,9 @@ describe('ContentService liked posts', () => {
       {} as any,
       {} as any,
       {} as any,
-      {} as any,
       reactionService as any,
+      {} as any,
+      {} as any,
       {} as any
     );
     jest.spyOn(service, 'populatePostData').mockImplementation(async (posts) => posts as any);

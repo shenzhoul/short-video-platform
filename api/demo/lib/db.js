@@ -32,6 +32,9 @@ const COLLECTIONS = Object.freeze({
   TAG_SUMMARIES: 'tag_summaries',
   CATEGORIES: 'categories',
   NOTIFICATIONS: 'notifications',
+  RECOMMENDATION_EVENTS: 'recommendation_events',
+  POST_RECOMMENDATION_STATS: 'post_recommendation_stats',
+  USER_RECOMMENDATION_AFFINITIES: 'user_recommendation_affinities',
   /** This feature's own bookkeeping. Not part of the product schema. */
   DEMO_LEDGER: 'demo_seed_ledger'
 });
@@ -57,6 +60,9 @@ async function connect(mongoUri) {
     comments: db.collection(COLLECTIONS.COMMENTS),
     tagSummaries: db.collection(COLLECTIONS.TAG_SUMMARIES),
     categories: db.collection(COLLECTIONS.CATEGORIES),
+    recommendationEvents: db.collection(COLLECTIONS.RECOMMENDATION_EVENTS),
+    postRecommendationStats: db.collection(COLLECTIONS.POST_RECOMMENDATION_STATS),
+    userRecommendationAffinities: db.collection(COLLECTIONS.USER_RECOMMENDATION_AFFINITIES),
     ledger: db.collection(COLLECTIONS.DEMO_LEDGER),
     close: () => client.close()
   };

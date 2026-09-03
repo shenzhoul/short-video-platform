@@ -240,6 +240,31 @@ export class FollowService {
   }
 
   /**
+   * When `userId` most recently followed `creatorId` — `null` if not
+   * currently following.
+   *
+   * Used by `RecommendationEventService` to verify a `follow_after_view`
+   * signal against the real relationship rather than trusting a client's
+   * claim outright: the follow must actually exist, and its timestamp is
+   * what the recommendation-attribution window is measured against (see
+   * rules/instructions §3). A single `findOne` against the same
+   * `{createdBy, objectId, objectType, action}` shape `follow()` already
+   * writes through — no new index needed.
+   */
+  async getFollowedAt(userId: string | ObjectId, creatorId: string | ObjectId): Promise<Date | null> {
+    const row = await this.reactionModel
+      .findOne({
+        createdBy: userId,
+        objectId: creatorId,
+        objectType: REACTION_TARGET_TYPES.CREATOR,
+        action: REACTION_TYPES.FOLLOW
+      })
+      .select({ createdAt: 1 })
+      .lean();
+    return row?.createdAt ?? null;
+  }
+
+  /**
    * The creators `userId` follows who follow them back — "friends".
    *
    * Mutual follow is the definition this product already uses for a peer

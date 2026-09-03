@@ -33,6 +33,7 @@
 const logger = require('./logger');
 const { createRandom } = require('./random');
 const { KINDS } = require('./ledger');
+const { coldStartSeedKeys } = require('./recommendation-personas');
 
 /** `REACTION_TYPES` / `REACTION_TARGET_TYPES` in api/src/common/constants. */
 const REACTION = {
@@ -121,6 +122,7 @@ async function seedPostEngagement({
   // and a comment like are interactions, they just happen to be the ones that
   // produce notification types nothing else would exercise.
   const settings = { ...config.seed.interactions, ...config.seed.social };
+  const coldStart = coldStartSeedKeys(plan);
   const [minLikes, maxLikes] = settings.likesPerPost;
   const [minComments, maxComments] = settings.commentsPerPost;
   const [minShares, maxShares] = settings.sharesPerPost;
@@ -133,6 +135,13 @@ async function seedPostEngagement({
   );
 
   for (const post of postIndex) {
+    // Cold-start posts are deliberately left at zero likes, comments and
+    // shares so the recommender's exploration path has genuine candidates —
+    // see `recommendation-personas.coldStartSeedKeys`. Skipped here rather
+    // than filtered afterwards so no notification is ever written implying a
+    // reaction that does not exist.
+    if (coldStart.has(post.seedKey)) continue;
+
     const random = createRandom(`engagement:${post.seedKey}`);
     // Everyone except the author. A self-like would be visible and wrong.
     const others = plan.accounts.filter((a) => a.username !== post.username);

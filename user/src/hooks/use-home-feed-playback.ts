@@ -16,6 +16,8 @@ import { findOne } from '@services/post.service';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { SHARED_POST_MODAL_SOURCE } from './use-open-shared-post';
+import { PostDetailSource } from './use-post-detail-sequence';
 import { PostInteractionChangeHandler } from './use-post-interactions';
 import { useVideoPlaybackContinuity } from './use-video-playback-continuity';
 
@@ -30,6 +32,7 @@ function updateModalUrl(postId: string | null, mode: 'push' | 'replace') {
     url.searchParams.delete('modal_tab');
     url.searchParams.delete('target_comment_id');
     url.searchParams.delete('target_comment_fallback_id');
+    url.searchParams.delete('modal_src');
   }
   window.history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', `${url.pathname}${url.search}${url.hash}`);
 }
@@ -41,6 +44,18 @@ export function useHomeFeedPlayback(
   const [popupPipState, setPopupPipState] = useState<PopupPipState | null>(null);
   const [detailPost, setDetailPost] = useState<IPost | null>(null);
   const [detailInitialTime, setDetailInitialTime] = useState(0);
+  /**
+   * `'home-feed'` for a card click (the grid is right there behind the
+   * modal); `'message-shared-post'` when a shared-post message said so
+   * through `modal_src` (see `arrivalSource`); `'direct-link'` for every
+   * other `modal_id` arrival from outside this page — a notification, a
+   * bookmarked URL, a PiP reopen. All three route through this same hook
+   * (see the module doc) and all three are feed-scoped (never
+   * creator-scoped): each uses the anchor-based recommendation detail
+   * session (`useRecommendationDetailFeed`), never Home grid order. The
+   * distinction between the latter two is attribution only.
+   */
+  const [detailSource, setDetailSource] = useState<PostDetailSource>('home-feed');
   // Which post id the open modal currently reflects. Cleared when the modal_id
   // param goes away, so the same post can be opened again later in the session.
   const restoredModalIdRef = useRef<string | null>(null);
@@ -56,6 +71,13 @@ export function useHomeFeedPlayback(
   const targetCommentIdParam = searchParams.get('target_comment_id');
   // Only present for an aggregate whose newest event differs from its first.
   const targetCommentFallbackIdParam = searchParams.get('target_comment_fallback_id');
+  /**
+   * Names where a `modal_id` arrival came from, when the opener said so.
+   * Only a shared-post message sets it today (`useOpenSharedPost`); every
+   * other arrival — a notification, a copied link, a bookmark, a PiP reopen —
+   * leaves it absent and keeps the generic `'direct-link'` label.
+   */
+  const modalSourceParam = searchParams.get('modal_src');
   const {
     resumeTime: featuredResumeTime,
     getPlaybackTime,
@@ -67,17 +89,35 @@ export function useHomeFeedPlayback(
     .map(getPopupVideo)
     .filter((video): video is PopupPipVideo => Boolean(video)), [posts]);
 
-  const openDetailPost = useCallback((post: IPost, currentTime = 0, historyMode: 'push' | 'replace' = 'push') => {
+  const openDetailPost = useCallback((
+    post: IPost,
+    currentTime = 0,
+    historyMode: 'push' | 'replace' = 'push',
+    source: PostDetailSource = 'home-feed'
+  ) => {
     const isFeaturedPost = post._id === postsRef.current[0]?._id;
     if (isFeaturedPost) rememberPlaybackTime(post._id, currentTime);
     setDetailInitialTime(currentTime);
     setDetailPost(post);
+    setDetailSource(source);
     // Claim the id here as well as in the restore effect below, so the URL change
     // this triggers is recognised as already handled and does not re-open the
     // post with a reset playback position.
     restoredModalIdRef.current = post._id;
     updateModalUrl(post._id, historyMode);
   }, [rememberPlaybackTime]);
+
+  /**
+   * The `PostDetailSource` a `modal_id` arrival should be labelled with.
+   * A shared-post message says so through `modal_src`, so it reports as a
+   * genuine message context instead of the generic direct-link one; every
+   * other arrival keeps `'direct-link'`. Both are feed-scoped and both get
+   * the anchor-based recommendation detail session — the label only changes
+   * how the open is attributed (rules/instructions §3).
+   */
+  const arrivalSource: PostDetailSource = modalSourceParam === SHARED_POST_MODAL_SOURCE
+    ? 'message-shared-post'
+    : 'direct-link';
 
   // Opens the post named by `modal_id`. Reads the param through the router
   // rather than `window.location` so that arriving at an already-mounted feed
@@ -97,7 +137,12 @@ export function useHomeFeedPlayback(
     const localPost = posts.find((post) => post._id === modalIdParam);
     if (localPost) {
       restoredModalIdRef.current = modalIdParam;
-      openDetailPost(localPost, 0, 'replace');
+      // Arriving with `modal_id` already set (a notification, a shared-post
+      // link, a bookmark) — never treated as a plain grid-card open, even
+      // when the target happens to already be loaded in the grid, so its
+      // Post Detail sequence is the recommendation detail session, not grid
+      // order (rules/instructions §5.3).
+      openDetailPost(localPost, 0, 'replace', arrivalSource);
       return;
     }
 
@@ -106,7 +151,7 @@ export function useHomeFeedPlayback(
     void findOne(modalIdParam)
       .then((response) => {
         if (!cancelled && response?.data) {
-          openDetailPost(response.data as IPost, 0, 'replace');
+          openDetailPost(response.data as IPost, 0, 'replace', arrivalSource);
         }
       })
       .catch(() => {
@@ -122,7 +167,7 @@ export function useHomeFeedPlayback(
     return () => {
       cancelled = true;
     };
-  }, [modalIdParam, openDetailPost, posts]);
+  }, [arrivalSource, modalIdParam, openDetailPost, posts]);
 
   useEffect(() => {
     setDetailPost((current) => {
@@ -169,8 +214,12 @@ export function useHomeFeedPlayback(
 
   const navigateDetailPost = useCallback((post: IPost) => {
     const initialTime = getPlaybackTime(post._id);
-    openDetailPost(post, initialTime, 'replace');
-  }, [getPlaybackTime, openDetailPost]);
+    // Navigating within an open modal never changes *how* it was opened —
+    // preserve the current source rather than defaulting back to
+    // `'home-feed'`, or a `direct-link` open would silently start using grid
+    // order after the very first next/previous.
+    openDetailPost(post, initialTime, 'replace', detailSource);
+  }, [detailSource, getPlaybackTime, openDetailPost]);
 
   const closeDetailPost = useCallback(() => {
     if (detailPost && detailPost._id === postsRef.current[0]?._id) {
@@ -188,6 +237,7 @@ export function useHomeFeedPlayback(
     popupPipState,
     popupPlaylist,
     detailPost,
+    detailSource,
     detailInitialTime,
     detailInitialTab: modalTabParam,
     detailTargetCommentId: targetCommentIdParam,

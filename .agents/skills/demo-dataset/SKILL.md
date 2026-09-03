@@ -360,3 +360,43 @@ There is no substitute for looking at it:
    video posters.
 5. `yarn demo:clean --dry-run`, then `yarn demo:clean`, then confirm the
    pre-existing accounts and posts are untouched.
+
+## Seeding derived data (recommendation histories)
+
+Some of what the dataset needs is not a row a person authored but a row the
+*product* would have derived from behaviour — `post_recommendation_stats` and
+`user_recommendation_affinities` are the current example. Three rules, each
+learned by getting it wrong first:
+
+1. **Never write the aggregate. Replay the behaviour through production
+   logic.** `demo/lib/recommendation-adapter.js` `require`s the *compiled*
+   policy (`dist/common/constants/recommendation.js`) and applies the same
+   classification `RecommendationEventService` does, so the fixture cannot
+   drift from the engine when a weight moves. Writing the totals directly is
+   less code and produces numbers that are whatever the seeder decided —
+   plausible, and wrong the moment the real rule changes. A missing build is a
+   hard error, not a fallback to copied constants.
+
+2. **Read derived inputs from where the product reads them.** Watch times were
+   first generated against the media manifest's ffprobe measurement; the engine
+   scores against `post_media.durationMs`, which is the *transcoded* file's
+   duration. They differ by a few percent, so every seeded ratio silently
+   disagreed with what the engine computed for the same event.
+
+3. **A TTL index does not care that your data is a fixture.**
+   `recommendation_events` expires on `expiresAt`. Seeded events are dated back
+   weeks so the history reads as real — anchoring the TTL to that historical
+   date puts it in the past, and MongoDB deleted 584 of 2,674 rows (22%)
+   minutes after seeding, leaving aggregates with nothing left to justify them.
+   Anchor retention to ingestion time.
+
+`demo:verify` re-derives the aggregates from the raw events through that same
+adapter rather than asserting hand-written numbers. A hand-written expectation
+encodes the seeder's mistake twice and passes.
+
+Also worth knowing: thresholds in the product can make a fixture unable to
+demonstrate the thing it exists to demonstrate. The cold-start exploration
+bonus is staged by lifetime impressions with a threshold of 20; at ~6
+impressions per post *every* post carried the full bonus and the deliberately
+cold posts were indistinguishable. The fix was more seeded exposure, not a
+different bonus.

@@ -3,19 +3,19 @@ import { POST_PAGE_LIMIT } from '@constants/pagination';
 import { hasApiErrorStatus } from '@lib/api-error';
 import { authOptions } from '@lib/auth-options';
 import { getClientIpHeadersFromNextHeaders } from '@lib/ip';
+import { getRecommendationAnonymousIdFromCookies } from '@lib/recommendation-anonymous-id.server';
 import { getPersonalizedHomePosts } from '@services/post.service';
 import { notFound } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 
 export default async function HomeLandingWrapper({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const session = await getServerSession(authOptions);
-  const searchParamsData = await searchParams;
-
-  const {
-    cursor = '',
-    lastCreatedAt = '',
-    sortValue = ''
-  } = searchParamsData;
+  // Retained for the promise contract (Next.js requires `searchParams` to be
+  // awaited even when unused) — the Home recommendation session is always a
+  // fresh first page on SSR, never resumed from a URL cursor: a session id in
+  // the URL would be stale within its TTL and would not reproduce the same
+  // feed anyway, since it is personalized and jittered per session.
+  await searchParams;
 
   try {
     const ipHeaders = await getClientIpHeadersFromNextHeaders();
@@ -27,17 +27,12 @@ export default async function HomeLandingWrapper({ searchParams }: { searchParam
 
     let iniPosts = null;
     try {
-      const cursorParams = cursor && cursor !== 'undefined' ? { cursor: cursor as string } : {};
-      const lastCreatedAtParams = lastCreatedAt && lastCreatedAt !== 'undefined' ? { lastCreatedAt: lastCreatedAt as string } : {};
-      const sortValueParams = sortValue && sortValue !== 'undefined' ? { sortValue: sortValue as string } : {};
+      // The guest's own subject id, so the session this render creates is one
+      // the client can continue paging instead of abandoning on its first
+      // load-more.
+      const anonymousId = token ? undefined : await getRecommendationAnonymousIdFromCookies();
       const postResponse = await getPersonalizedHomePosts({
-        limit: POST_PAGE_LIMIT,
-        offset: 0,
-        sortBy: 'createdAt',
-        sort: 'desc',
-        ...cursorParams,
-        ...lastCreatedAtParams,
-        ...sortValueParams
+        limit: POST_PAGE_LIMIT, ...(anonymousId ? { anonymousId } : {})
       }, requestHeaders);
       if (postResponse?.data) {
         iniPosts = postResponse.data;

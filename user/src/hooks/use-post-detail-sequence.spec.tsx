@@ -83,8 +83,8 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: feed,
-      panelTab: 'videos',
-      creatorScopeActive: true,
+      mode: 'creator',
+      creatorId: CREATOR,
       onNavigate
     });
     await settle();
@@ -111,8 +111,8 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: [openPhoto, make('foreign', { createdAt: '2026-06-09T00:00:00.000Z' }, OTHER)],
-      panelTab: 'videos',
-      creatorScopeActive: true,
+      mode: 'creator',
+      creatorId: CREATOR,
       onNavigate: jest.fn()
     });
     await settle();
@@ -136,8 +136,8 @@ describe('post detail sequence', () => {
     const fromPhoto = renderSequence({
       post: openPhoto,
       feedPosts: [],
-      panelTab: 'videos',
-      creatorScopeActive: true,
+      mode: 'creator',
+      creatorId: CREATOR,
       onNavigate: jest.fn()
     });
     await settle();
@@ -146,8 +146,8 @@ describe('post detail sequence', () => {
     const fromVideo = renderSequence({
       post: video,
       feedPosts: [],
-      panelTab: 'videos',
-      creatorScopeActive: true,
+      mode: 'creator',
+      creatorId: CREATOR,
       onNavigate: jest.fn()
     });
     await settle();
@@ -160,14 +160,14 @@ describe('post detail sequence', () => {
     getCreatorPosts.mockResolvedValue(creatorPage([first, last]));
 
     const atStart = renderSequence({
-      post: first, feedPosts: [], panelTab: 'videos', creatorScopeActive: true, onNavigate: jest.fn()
+      post: first, feedPosts: [], mode: 'creator', creatorId: CREATOR, onNavigate: jest.fn()
     });
     await settle();
     expect(atStart.result.current.previousPost).toBeNull();
     expect(atStart.result.current.nextPost?._id).toBe('v2');
 
     const atEnd = renderSequence({
-      post: last, feedPosts: [], panelTab: 'videos', creatorScopeActive: true, onNavigate: jest.fn()
+      post: last, feedPosts: [], mode: 'creator', creatorId: CREATOR, onNavigate: jest.fn()
     });
     await settle();
     expect(atEnd.result.current.nextPost).toBeNull();
@@ -182,7 +182,7 @@ describe('post detail sequence', () => {
     ], true));
 
     const { result } = renderSequence({
-      post: openPhoto, feedPosts: [], panelTab: 'videos', creatorScopeActive: true, onNavigate: jest.fn()
+      post: openPhoto, feedPosts: [], mode: 'creator', creatorId: CREATOR, onNavigate: jest.fn()
     });
     await settle();
 
@@ -198,7 +198,7 @@ describe('post detail sequence', () => {
     getCreatorPosts.mockResolvedValue(creatorPage([pinned, newest]));
 
     const { result } = renderSequence({
-      post: newest, feedPosts: [], panelTab: 'videos', creatorScopeActive: true, onNavigate: jest.fn()
+      post: newest, feedPosts: [], mode: 'creator', creatorId: CREATOR, onNavigate: jest.fn()
     });
     await settle();
 
@@ -215,9 +215,8 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: [],
-      panelTab: null,
-      creatorScopeActive: false,
-      source: 'creator-videos-tab',
+      mode: 'creator',
+      creatorId: CREATOR,
       onNavigate: jest.fn()
     });
     await settle();
@@ -233,9 +232,8 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: [openPhoto, nextInFeed],
-      panelTab: null,
-      creatorScopeActive: false,
-      source: 'home-feed',
+      mode: 'recommendation',
+      creatorId: null,
       onNavigate: jest.fn()
     });
     await settle();
@@ -253,9 +251,8 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: [openPhoto, make('feed2', {}, OTHER)],
-      panelTab: 'comments',
-      creatorScopeActive: false,
-      source: 'home-feed',
+      mode: 'locked',
+      creatorId: null,
       onNavigate: jest.fn()
     });
     await settle();
@@ -263,5 +260,162 @@ describe('post detail sequence', () => {
     // Nothing to scroll between when the viewer is reading comments.
     expect(result.current.nextPost).toBeNull();
     expect(result.current.previousPost).toBeNull();
+  });
+});
+
+/**
+ * Mode transitions, and the races around them.
+ *
+ * These are the arrangements that let one owner's list end up inside another's:
+ * a recommendation prefetch landing while the creator grid is open, a creator
+ * page landing after the grid was closed, and a response naming a creator the
+ * viewer has already left.
+ */
+describe('post detail sequence — mode transitions', () => {
+  beforeEach(() => getCreatorPosts.mockReset());
+
+  it('does not let a growing recommendation feed into the creator grid', async () => {
+    const open = make('v1', { createdAt: '2026-06-03T00:00:00.000Z' });
+    getCreatorPosts.mockResolvedValue(creatorPage([
+      open, make('v2', { createdAt: '2026-06-01T00:00:00.000Z' })
+    ]));
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof usePostDetailSequence>[0]) => usePostDetailSequence(props),
+      {
+        initialProps: {
+          post: open,
+          feedPosts: [open],
+          mode: 'creator' as const,
+          creatorId: CREATOR,
+          onNavigate: jest.fn()
+        }
+      }
+    );
+    await settle();
+    expect(result.current.navigationPosts.map((p) => p._id)).toEqual(['v1', 'v2']);
+
+    // A recommendation prefetch lands: `feedPosts` grows with another creator's
+    // post while the grid is still open.
+    rerender({
+      post: open,
+      feedPosts: [open, make('reco', { createdAt: '2026-06-09T00:00:00.000Z' }, OTHER)],
+      mode: 'creator' as const,
+      creatorId: CREATOR,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    expect(result.current.navigationPosts.map((p) => p._id)).toEqual(['v1', 'v2']);
+    expect(result.current.creatorPosts.posts.map((p) => p._id)).toEqual(['v1', 'v2']);
+  });
+
+  it('drops an item the creator query returned that is not the captured creator', async () => {
+    const open = make('v1', { createdAt: '2026-06-03T00:00:00.000Z' });
+    // Exactly what `/posts/home-posts` used to answer with: a mixed list.
+    getCreatorPosts.mockResolvedValue(creatorPage([
+      open,
+      make('stranger', { createdAt: '2026-06-02T00:00:00.000Z' }, OTHER),
+      make('v2', { createdAt: '2026-06-01T00:00:00.000Z' })
+    ]));
+
+    const { result } = renderSequence({
+      post: open,
+      feedPosts: [],
+      mode: 'creator',
+      creatorId: CREATOR,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    expect(result.current.navigationPosts.map((p) => p._id)).toEqual(['v1', 'v2']);
+    expect(result.current.creatorPosts.posts.every((p) => p.user?._id === CREATOR)).toBe(true);
+  });
+
+  it('returns to the feed sequence when the grid closes, without merging the two', async () => {
+    const open = make('v1', { createdAt: '2026-06-03T00:00:00.000Z' });
+    const feedNext = make('feed2', { createdAt: '2026-06-09T00:00:00.000Z' }, OTHER);
+    getCreatorPosts.mockResolvedValue(creatorPage([
+      open, make('v2', { createdAt: '2026-06-01T00:00:00.000Z' })
+    ]));
+
+    const { result, rerender } = renderHook(
+      (props: Parameters<typeof usePostDetailSequence>[0]) => usePostDetailSequence(props),
+      {
+        initialProps: {
+          post: open,
+          feedPosts: [open, feedNext],
+          mode: 'creator' as const,
+          creatorId: CREATOR,
+          onNavigate: jest.fn()
+        }
+      }
+    );
+    await settle();
+    expect(result.current.nextPost?._id).toBe('v2');
+
+    rerender({
+      post: open,
+      feedPosts: [open, feedNext],
+      mode: 'recommendation' as const,
+      creatorId: null,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    // The feed, whole — not the feed with the creator's posts appended.
+    expect(result.current.navigationPosts.map((p) => p._id)).toEqual(['v1', 'feed2']);
+    expect(result.current.nextPost?._id).toBe('feed2');
+  });
+
+  it('does not navigate at all while a reading panel is open, even mid-fetch', async () => {
+    const open = make('v1');
+    getCreatorPosts.mockImplementation(() => new Promise(() => undefined));
+
+    const { result } = renderSequence({
+      post: open,
+      feedPosts: [open, make('feed2', {}, OTHER)],
+      mode: 'locked',
+      creatorId: null,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    expect(result.current.navigationPosts).toEqual([]);
+    expect(result.current.canNext).toBe(false);
+    expect(getCreatorPosts).not.toHaveBeenCalled();
+  });
+
+  it('keeps "next" alive in recommendation mode while the session refills', async () => {
+    const open = make('v1');
+    const { result } = renderSequence({
+      post: open,
+      feedPosts: [open],
+      mode: 'recommendation',
+      creatorId: null,
+      hasMoreAhead: true,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    expect(result.current.nextPost).toBeNull();
+    expect(result.current.canNext).toBe(true);
+  });
+
+  it('never claims more is coming in creator mode — a creator list pages, it does not refill', async () => {
+    const open = make('v1');
+    getCreatorPosts.mockResolvedValue(creatorPage([open]));
+
+    const { result } = renderSequence({
+      post: open,
+      feedPosts: [],
+      mode: 'creator',
+      creatorId: CREATOR,
+      hasMoreAhead: true,
+      onNavigate: jest.fn()
+    });
+    await settle();
+
+    expect(result.current.canNext).toBe(false);
   });
 });

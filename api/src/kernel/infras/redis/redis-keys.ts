@@ -69,7 +69,22 @@ export const REDIS_KEYS = {
   dirtyPosts: () => key('stats', 'post:dirty'),
   dirtyFollowUsers: () => key('stats', 'user-follow:dirty'),
   /** Share de-duplication marker. */
-  sharePost: (rest: string) => key('share', `post:${rest}`)
+  sharePost: (rest: string) => key('share', `post:${rest}`),
+
+  /** Ordered post-id list for one Home/For You recommendation feed session. */
+  recoFeedSessionItems: (sessionId: string) => key('reco-feed', `${sessionId}:items`),
+  /** Session metadata hash (subjectId, feedType, topicKey, sessionSeed, createdAt). */
+  recoFeedSessionMeta: (sessionId: string) => key('reco-feed', `${sessionId}:meta`),
+  /** Ordered post-id list for one Post Detail recommendation session (Home/notification/direct-link anchors). */
+  recoDetailSessionItems: (sessionId: string) => key('reco-detail', `${sessionId}:items`),
+  /** Detail session metadata hash (subjectId, anchorPostId, cursorIndex, sessionSeed). */
+  recoDetailSessionMeta: (sessionId: string) => key('reco-detail', `${sessionId}:meta`),
+  /**
+   * The post ids that recently led a feed for one subject, so a reload does not
+   * open on the same post every time. Keyed by subject and feed type: Home and
+   * For You rank differently and should not share a cooldown.
+   */
+  recoRecentHeroes: (feedType: string, subjectId: string) => key('reco-hero', `${feedType}:${subjectId}`)
 } as const;
 
 /**

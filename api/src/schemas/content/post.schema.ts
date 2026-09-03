@@ -245,6 +245,23 @@ export class Post {
     default: null
   })
   pinnedAt: Date | null;
+
+  /**
+   * Uniform-random value in [0, 1), assigned once at creation.
+   *
+   * Exists solely so the recommendation engine's fresh/diverse-discovery
+   * candidate sources can pull a bounded, indexed random sample
+   * (`{status, recoShuffleKey}` range scan) instead of `$sample`, which is a
+   * full collection scan at this scale. See
+   * `RecommendationCandidateService.sampleByShuffleKey`.
+   */
+  @Prop({
+    type: Number,
+    default: () => Math.random(),
+    min: 0,
+    max: 1
+  })
+  recoShuffleKey: number;
 }
 
 export type PostDocument = HydratedDocument<Post>;
@@ -305,3 +322,40 @@ PostSchema.index({
  * deletion without scanning post text.
  */
 PostSchema.index({ tags: 1 }, { name: 'idx_tags' });
+
+/**
+ * RECOMMENDATION SHUFFLE-SAMPLE INDEX
+ *
+ * Purpose: Bounded random sampling for the fresh-exploration and
+ * diverse-discovery candidate sources, without a `$sample` collection scan.
+ * A session seeds a random anchor in [0,1) and range-scans forward
+ * (wrapping to the front on a short page) — see
+ * `RecommendationCandidateService.sampleByShuffleKey`.
+ *
+ * Query Pattern:
+ * - db.posts.find({ status: 'active', isCreatorDeleted: { $ne: true },
+ *     recoShuffleKey: { $gte: anchor } }).sort({ recoShuffleKey: 1 }).limit(n)
+ */
+PostSchema.index({
+  status: 1,
+  isCreatorDeleted: 1,
+  recoShuffleKey: 1
+}, {
+  name: 'idx_status_isCreatorDeleted_recoShuffleKey'
+});
+
+/**
+ * CATEGORY-SCOPED RECOMMENDATION INDEX
+ *
+ * Purpose: Personalized/trending candidate retrieval scoped to a category
+ * (Home category tab, or a user's top-affinity categories), newest first
+ * within a bounded recency window.
+ */
+PostSchema.index({
+  status: 1,
+  isCreatorDeleted: 1,
+  topicKey: 1,
+  createdAt: -1
+}, {
+  name: 'idx_status_isCreatorDeleted_topicKey_createdAt_desc'
+});

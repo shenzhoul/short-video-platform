@@ -5,6 +5,7 @@ import SharePanel from '@components/interactions/share-panel';
 import SharePopover from '@components/interactions/share-popover';
 import VideoPlayer, { VideoPlayerRef } from '@components/ui/video-player';
 import { useFollowCreator } from '@hooks/use-follow-creator';
+import { IComment } from '@interfaces/comment';
 import { IPost } from '@interfaces/post';
 import {
   closePopupPip,
@@ -30,6 +31,7 @@ import {
 
 import { formatCompactCount, getPopupVideo, getPostMedia, getPostVideo } from './home-feed-media';
 import PostDetailDescription from './post-detail-description';
+import PostGraphicStageMedia from './post-graphic-stage-media';
 import PostVideoDetailPanel, { PostVideoDetailTab } from './post-video-detail-panel';
 
 const POST_VIDEO_PLAYER_RATIO = 0.714286;
@@ -286,6 +288,9 @@ interface PostVideoStageProps {
   isActiveSlide?: boolean;
   onPictureInPictureOpen?: () => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
+  /** Forwarded straight to the underlying `<video>` — recommendation watch-tracking composes into these. */
+  onPause?: () => void;
+  onEnded?: () => void;
   collectionLabel?: ReactNode;
   children?: ReactNode;
   className?: string;
@@ -305,6 +310,8 @@ interface PostVideoStageProps {
   onLoadMoreCreatorVideos?: () => void;
   onSelectCreatorVideo?: (post: IPost) => void;
   onTotalCommentChange?: (total: number) => void;
+  /** Forwarded to the detail panel; fires only on a real comment creation by this viewer. */
+  onCommentCreate?: (comment: IComment) => void;
   /** Remove rounded corners — use for full-screen modal mode */
   disableRounding?: boolean;
   /** Controlled PiP state from a parent feed's usePipFeedSync. Omit to have this stage track it on its own (read-only). */
@@ -320,6 +327,8 @@ export default function PostVideoStage({
   isActiveSlide = true,
   onPictureInPictureOpen,
   onTimeUpdate,
+  onPause,
+  onEnded,
   collectionLabel = 'For You',
   children,
   className,
@@ -337,6 +346,7 @@ export default function PostVideoStage({
   onLoadMoreCreatorVideos = () => undefined,
   onSelectCreatorVideo = () => undefined,
   onTotalCommentChange,
+  onCommentCreate,
   disableRounding = false,
   popupPipState: controlledPopupPipState
 }: PostVideoStageProps) {
@@ -355,6 +365,10 @@ export default function PostVideoStage({
   const creatorName = post.user?.name || post.user?.username || 'Unknown';
   const description = post.text || post.tagline || '';
   const mediaUrl = getPostMedia(post);
+  // Empty means "this post has no playable video", never "not loaded yet" —
+  // `getPostVideo` reads an already-populated `files` array. The stage draws
+  // images in that case rather than an unplayable `<video>`.
+  const videoSrc = getPostVideo(post);
   const popupPayload = getPopupVideo(post);
   const timeText = post.createdAt
     ? new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -450,31 +464,52 @@ export default function PostVideoStage({
 
           <div className="pointer-events-none absolute inset-0 bg-black/35" aria-hidden />
 
-          <VideoPlayer
-            ref={playerRef}
-            id={playerId}
-            src={getPostVideo(post)}
-            poster={mediaUrl}
-            muted
-            controls
-            preload="auto"
-            isActiveSlide={isActiveSlide}
-            autoplayOnActive={!isCurrentPopup}
-            alwaysShowControls
-            initialTime={initialTime}
-            showFullscreenControl
-            showVolumeSlider
-            showCenterPlayButton
-            forceBackgroundBlur
-            objectFit="auto"
-            pictureInPicturePayload={popupPayload || undefined}
-            pictureInPicturePlaylist={popupPlaylist}
-            onPictureInPictureOpen={onPictureInPictureOpen}
-            onTimeUpdate={onTimeUpdate}
-            className={`h-full min-h-0! ${roundedClass}`}
-            classVideo=""
-            suppressPictureInPictureOverlay
-          />
+          {/*
+            The media element is chosen from what the post actually holds, not
+            from which surface is drawing it.
+
+            For You rendered this stage for every recommended post, so a photo
+            post mounted a `<video>` whose `src` resolved to `''` — React drops
+            the attribute and warns, and the viewer gets a black rectangle with
+            transport controls while the post's images are never drawn. The
+            recommender returns photo posts by design (one seeded post in ten),
+            and ranked one first, so this was the first thing a visitor saw.
+
+            `src={url || ''}` is not a fix for that; an element that cannot play
+            is the defect, and the console warning is only how it announced
+            itself.
+          */}
+          {videoSrc ? (
+            <VideoPlayer
+              ref={playerRef}
+              id={playerId}
+              src={videoSrc}
+              poster={mediaUrl}
+              muted
+              controls
+              preload="auto"
+              isActiveSlide={isActiveSlide}
+              autoplayOnActive={!isCurrentPopup}
+              alwaysShowControls
+              initialTime={initialTime}
+              showFullscreenControl
+              showVolumeSlider
+              showCenterPlayButton
+              forceBackgroundBlur
+              objectFit="auto"
+              pictureInPicturePayload={popupPayload || undefined}
+              pictureInPicturePlaylist={popupPlaylist}
+              onPictureInPictureOpen={onPictureInPictureOpen}
+              onTimeUpdate={onTimeUpdate}
+              onPause={onPause}
+              onEnded={onEnded}
+              className={`h-full min-h-0! ${roundedClass}`}
+              classVideo=""
+              suppressPictureInPictureOverlay
+            />
+          ) : (
+            <PostGraphicStageMedia post={post} active={isActiveSlide ? !isCurrentPopup : null} />
+          )}
           {detailPanelTab !== 'details' ? (
             <div className="pointer-events-none absolute bottom-16 left-4 z-40 max-w-[min(760px,calc(100%-112px))] pr-8 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,.75)]">
               <div className="mb-2 text-lg font-bold">
@@ -524,6 +559,7 @@ export default function PostVideoStage({
             rightOffset={rightGutter}
             totalComment={totalComment}
             onTotalCommentChange={handleTotalCommentChange}
+            onCommentCreate={onCommentCreate}
           />
         ) : null}
       </section>

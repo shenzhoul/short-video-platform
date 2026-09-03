@@ -1,6 +1,7 @@
 'use client';
 
 import { useFollowCreator } from '@hooks/use-follow-creator';
+import { IComment } from '@interfaces/comment';
 import { IPost } from '@interfaces/post';
 import { useProfile } from '@providers/profile.provider';
 import dynamic from 'next/dynamic';
@@ -35,6 +36,12 @@ interface PostVideoDetailPanelProps {
   rightOffset?: string;
   totalComment?: number;
   onTotalCommentChange?: (total: number) => void;
+  /**
+   * Fires only where a comment genuinely was created by this viewer
+   * (`CommentWrapper.onCommentCreate`), never on a total-count change — which
+   * is also what somebody else's comment arriving over the socket looks like.
+   */
+  onCommentCreate?: (comment: IComment) => void;
 }
 
 const tabs: Array<{ key: PostVideoDetailTab; label: string }> = [
@@ -90,7 +97,7 @@ function CreatorVideoGrid({
         <div className='flex items-center justify-between'>
           <div className='max-w-none flex items-center'>
             <div className='flex-1'>
-              <a href={`/${post.user?.username}`} className='h-11.5 flex flex-col justify-between relative'>
+              <a href={`/${post.user?.username}`} data-panel-creator-id={post.user?._id} className='h-11.5 flex flex-col justify-between relative'>
                 <div className='max-w-none h-5.5 truncate text-white/90 text-sm flex items-center hover:text-white'>
                   <span>@</span>
                   <span>{post.user?.name}</span>
@@ -135,6 +142,8 @@ function CreatorVideoGrid({
             <button
               key={video._id}
               type="button"
+              data-post-id={video._id}
+              data-creator-id={video.user?._id}
               onClick={() => onSelectVideo(video)}
               className="group relative aspect-3/4 cursor-pointer overflow-hidden rounded-xl border border-white/10 bg-black/35 text-left"
               aria-label={isCurrent ? 'Currently playing' : `Open ${kind}: ${title}`}
@@ -186,6 +195,7 @@ export default function PostVideoDetailPanel({
   rightOffset = '0px',
   totalComment,
   onTotalCommentChange,
+  onCommentCreate,
   targetCommentId = null,
   targetCommentFallbackId = null
 }: PostVideoDetailPanelProps) {
@@ -286,6 +296,7 @@ export default function PostVideoDetailPanel({
             autoload
             initialTotalComments={totalComment ?? post.totalComment ?? 0}
             onTotalChange={onTotalCommentChange}
+            onCommentCreate={onCommentCreate}
             targetCommentId={targetCommentId}
             postOwnerId={post.user?._id || (post as any).userId || null}
             viewerId={currentUser?._id || null}

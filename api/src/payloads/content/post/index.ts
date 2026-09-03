@@ -4,3 +4,4 @@ export * from './post-create.payload';
 export * from './post-video-draft.payload';
 export * from './post-photo-drafts.payload';
 export * from './post-unlike.payload';
+export * from './recommendation-event.payload';

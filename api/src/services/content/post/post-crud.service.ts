@@ -14,6 +14,7 @@ import { __t } from "src/utils/translation";
 import { extractAndNormalizeHashtags } from "src/common/utils/hashtag.util";
 import { EVENT } from "src/kernel/constants";
 import { UserAccountManagementService } from "src/services/identity";
+import { assertPostMediaReady } from './post-media-readiness.util';
 import { PostMediaService } from './post-media.service';
 import { FileServerService } from "src/services/shared/file-server";
 import { CategoryService } from 'src/services/content/category';
@@ -277,6 +278,13 @@ export class PostCrudService {
         break;
     }
 
+    // A post never becomes publicly listed pointing at media that is missing,
+    // still processing, or failed. Enforced here, at the one place the media
+    // set is decided, so every feed inherits it and no read path has to carry
+    // a readiness clause of its own (rules/instructions §4) — see
+    // `assertPostMediaReady`.
+    assertPostMediaReady(mainFiles, payload.fileIds || []);
+
     // Detect orientation from actual media dimensions (landscape/portrait/square).
     // Only meaningful for media posts; defaults to null otherwise.
     const orientation = payload.type === 'media' ? this.detectOrientation(mainFiles) : null;
@@ -460,6 +468,12 @@ export class PostCrudService {
         }
         break;
     }
+
+    // The same invariant on the replace path: swapping a live post's media
+    // for something still processing (or gone) would republish a row pointing
+    // at media that cannot be served, which is exactly what the create-time
+    // gate exists to prevent (rules/instructions §4).
+    assertPostMediaReady(mainFiles, payload.fileIds || []);
 
     // Handle thumbnail and teaser removal/replacement - collect files to delete for batch operation
     const filesToDelete = [];

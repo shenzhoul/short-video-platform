@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body, Controller, Delete, Get, HttpCode, HttpStatus, Injectable, Param, Post, Query, UseGuards, UsePipes, ValidationPipe
 } from "@nestjs/common";
 import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiSecurity, ApiTags } from "@nestjs/swagger";
@@ -9,7 +10,9 @@ import { PostDto } from "src/dtos/content";
 import { AuthUserDto } from "src/dtos/identity/auth-user.dto";
 import { DataResponse } from "src/kernel";
 import { PageableData } from "src/kernel/common";
-import { PostRecommendationRequest, PostSearchRequest, PostUnlikePayload, ReactionSearchRequestPayload } from "src/payloads";
+import {
+  PostRecommendationRequest, PostSearchRequest, PostUnlikePayload, ReactionSearchRequestPayload, RecommendationEventBatchPayload
+} from "src/payloads";
 import { PostStatisticsService } from "src/services";
 import { ContentService } from "src/services/content";
 
@@ -170,11 +173,113 @@ export class UserPostController {
    * @returns Promise resolving to personalized home post content
    */
   async getPersonalizedHomePosts(
+    @Query() query: PostRecommendationRequest,
+    @CurrentUser() user: AuthUserDto
+  ): Promise<DataResponse<any>> {
+    const data = await this.contentService.getHomeRecommendedPosts(query, user);
+    return DataResponse.ok(data);
+  }
+
+  @Post('/recommendation-events')
+  @UseGuards(LoadUser, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } }) // Batches of events, not one call per event — see RecommendationEventBatchPayload.
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }))
+  @ApiOperation({
+    summary: 'Record recommendation telemetry',
+    description: 'Batched impression/watch/skip/dwell/detail-open/like/comment/share/follow_after_view events feeding the recommendation engine.'
+  })
+  @ApiBody({ type: RecommendationEventBatchPayload })
+  async recordRecommendationEvents(
+    @Body() payload: RecommendationEventBatchPayload,
+    @CurrentUser() user?: AuthUserDto
+  ): Promise<DataResponse<{ accepted: number; deduped: number; rejected: number }>> {
+    const result = await this.contentService.recordRecommendationEvents(payload, user);
+    return DataResponse.ok(result);
+  }
+
+  @Post('/:id/detail-session')
+  @UseGuards(LoadUser, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Open a Post Detail recommendation session',
+    description: 'Anchors a next/previous sequence on one post for Home, notification, message and direct-link sources (rules/instructions §13).'
+  })
+  @ApiParam({ name: 'id', description: 'Anchor post id', type: 'string' })
+  async openDetailSession(
+    @Param('id') id: string,
+    @Query('anonymousId') anonymousId: string | undefined,
+    @CurrentUser() user?: AuthUserDto
+  ): Promise<DataResponse<{ sessionId: string; postId: string }>> {
+    const result = await this.contentService.openPostDetailRecommendationSession(id, user, anonymousId);
+    return DataResponse.ok(result);
+  }
+
+  @Get('/detail-session/:sessionId/next')
+  @UseGuards(LoadUser, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Advance a Post Detail recommendation session' })
+  async detailSessionNext(
+    @Param('sessionId') sessionId: string,
+    @Query('anonymousId') anonymousId: string | undefined,
+    @CurrentUser() user?: AuthUserDto
+  ): Promise<DataResponse<{ postId: string } | null>> {
+    const result = await this.contentService.stepPostDetailRecommendationNext(sessionId, user, anonymousId);
+    return DataResponse.ok(result);
+  }
+
+  @Get('/detail-session/:sessionId/previous')
+  @UseGuards(LoadUser, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Step a Post Detail recommendation session back' })
+  async detailSessionPrevious(
+    @Param('sessionId') sessionId: string,
+    @Query('anonymousId') anonymousId: string | undefined,
+    @CurrentUser() user?: AuthUserDto
+  ): Promise<DataResponse<{ postId: string } | null>> {
+    const result = await this.contentService.stepPostDetailRecommendationPrevious(sessionId, user, anonymousId);
+    return DataResponse.ok(result);
+  }
+
+  /**
+   * One creator's posts, in the creator's own order.
+   *
+   * This exists because `/home-posts` stopped being able to answer it. That
+   * route used to run `userSearchPosts`, which honours `userId`, `sortBy` and
+   * the pinned-aware cursor; the recommendation work repointed it at the ranked
+   * Home feed, which has no notion of a creator filter and whose payload class
+   * (`PostRecommendationRequest`, `whitelist: true`) strips `userId` before the
+   * service ever sees it. Every caller that asked for "this creator's posts" —
+   * the creator profile grid and the Post Detail Videos tab — silently began
+   * receiving the whole ranked feed instead, which is how a creator's grid came
+   * to hold eight other creators' posts under their name.
+   *
+   * Declared above `/:id` on purpose: Nest matches routes in declaration order,
+   * and `creator-posts` would otherwise be read as a post id.
+   */
+  @Get('/creator-posts')
+  @UseGuards(LoadUser, PaginationGuard, CustomThrottlerGuard)
+  @Throttle({ default: { limit: 120, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  @ApiOperation({
+    summary: "Get one creator's posts",
+    description: "Posts belonging to a single creator, pinned first, in the creator's own ordering. Requires `userId`."
+  })
+  @ApiQuery({ type: PostSearchRequest, description: 'Creator id plus pagination/cursor parameters' })
+  @ApiResponse({ status: HttpStatus.OK, description: "The creator's posts" })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Missing or invalid userId' })
+  async getCreatorPosts(
     @Query() query: PostSearchRequest,
     @CurrentUser() user: AuthUserDto
   ): Promise<DataResponse<any>> {
-    const data = await this.contentService.userSearchPosts(query, user);
-    return DataResponse.ok(data);
+    // A creator listing with no creator is the bug this route was added to stop
+    // — answering it with an unfiltered feed is exactly what went wrong before.
+    if (!query.userId) throw new BadRequestException('userId is required');
+    return DataResponse.ok(await this.contentService.userSearchPosts(query, user));
   }
 
   @Get('/:id')

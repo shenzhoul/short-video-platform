@@ -41,3 +41,6 @@ export * from './system';
 
 // Username constants
 export * from './username.constants';
+
+// Recommendation Engine Domain - heuristic Home/For You ranking policy
+export * from './recommendation';

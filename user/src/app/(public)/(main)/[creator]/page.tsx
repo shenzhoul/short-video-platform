@@ -8,7 +8,7 @@ import { DEFAULT_META, getCanonicalUrl } from '@lib/meta-utils';
 import { getServerAuth } from '@lib/server-auth';
 import { getCachedCreatorLookup } from '@lib/server-cache';
 import { findCreatorByUsername } from '@services/creator.service';
-import { getPersonalizedHomePosts } from '@services/post.service';
+import { getCreatorPosts } from '@services/post.service';
 import { generateCreatorMeta } from '@utils/meta-utils';
 import { Metadata } from 'next';
 import { cookies } from 'next/headers';
@@ -88,8 +88,9 @@ export default async function CreatorPage({ params, searchParams }: CreatorPageP
       } = await searchParams;
       const cursorParams = cursor && cursor !== 'undefined' ? { cursor: cursor as string } : {};
       const lastCreatedAtParams = lastCreatedAt && lastCreatedAt !== 'undefined' ? { lastCreatedAt: lastCreatedAt as string } : {};
-      const postResponse = await getPersonalizedHomePosts({
-        userId: creator._id,
+      // The creator listing route, not the Home feed: `/posts/home-posts` is
+      // the ranked recommendation feed now and ignores `userId` entirely.
+      const postResponse = await getCreatorPosts(creator._id, {
         limit: POST_PAGE_LIMIT,
         offset: 0,
         sortBy: 'createdAt',

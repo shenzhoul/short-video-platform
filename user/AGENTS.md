@@ -35,6 +35,7 @@ Load the matching repo skill before changing specialized workflows:
 - `../.agents/skills/media-response-standardization/SKILL.md`
 - `../.agents/skills/websocket-integration/SKILL.md`
 - `../.agents/skills/feed-infinite-scroll/SKILL.md`
+- `../.agents/skills/recommendation-engine/SKILL.md`
 - `../.agents/skills/following-feed/SKILL.md`
 - `../.agents/skills/notification-system/SKILL.md`
 

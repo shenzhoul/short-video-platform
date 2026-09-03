@@ -28,6 +28,7 @@
  * generating its own.
  */
 
+const crypto = require('crypto');
 const { ObjectId } = require('mongodb');
 
 const logger = require('./logger');
@@ -66,6 +67,19 @@ function normalizeThumbnailUrls(thumbnails) {
 function stripSignature(url) {
   const index = String(url).indexOf('?');
   return index === -1 ? url : String(url).slice(0, index);
+}
+
+/**
+ * A stable, uniformly-distributed `recoShuffleKey` in [0, 1) for a seed key.
+ *
+ * Deterministic so a reseed produces the same sampling order — the product
+ * uses `Math.random()`, which is right for real posts and wrong for a fixture
+ * that has to be reproducible.
+ */
+function shuffleKeyFor(seedKey) {
+  const digest = crypto.createHash('sha256').update(`reco-shuffle:${seedKey}`).digest();
+  // 48 bits is plenty of resolution and stays inside a safe integer.
+  return digest.readUIntBE(0, 6) / 2 ** 48;
 }
 
 /** Same regex and normalisation as `parseHashtags` in api/src/common/utils. */
@@ -135,7 +149,16 @@ async function seedPosts({
       if (already) {
         stats.reused += 1;
         postIndex.push({
-          postId, userId, username: account.username, themeKey: account.themeKey, publishedAt: post.publishedAt, seedKey: post.seedKey
+          postId,
+          userId,
+          username: account.username,
+          themeKey: account.themeKey,
+          topicKey: account.topicKey,
+          kind: post.kind,
+          durationMs: post.media.durationMs ?? null,
+          tags: extractHashtags(post.caption),
+          publishedAt: post.publishedAt,
+          seedKey: post.seedKey
         });
         continue;
       }
@@ -237,6 +260,26 @@ async function seedPosts({
         totalView: 0,
         isCreatorDeleted: false,
         /*
+         * `Post.recoShuffleKey` carries a Mongoose `default: () => Math.random()`,
+         * and a Mongoose default only fires on `save()`. This seeder writes
+         * through the raw driver, so the field has to be written explicitly —
+         * and it is not optional decoration.
+         *
+         * Two of the five recommendation candidate sources (fresh discovery
+         * and diverse discovery) find their candidates with an indexed range
+         * scan over this field, and a missing field never satisfies `$gte`.
+         * Without it those two buckets return **nothing at all**, silently:
+         * the feed still works, still looks plausible, and is quietly built
+         * from the trending window alone. The
+         * `1788000100000-backfill-post-reco-shuffle-key` migration repairs
+         * documents written before the field existed, but a `demo:clean` +
+         * `demo:seed` cycle creates brand-new posts long after that migration
+         * ran, so the seeder has to hold up its own end. Derived from the seed
+         * key rather than `Math.random()` so a reseed reproduces the same
+         * sample order.
+         */
+        recoShuffleKey: shuffleKeyFor(post.seedKey),
+        /*
          * Pinned state comes from the plan, so it is the same on every seed.
          * Same two fields `PostCrudService.setPinned` writes -- nothing here
          * invents a field the product does not understand.
@@ -259,6 +302,16 @@ async function seedPosts({
           mediaType: isVideo ? MEDIA_TYPES.VIDEO : MEDIA_TYPES.PHOTO,
           fileId: new ObjectId(main.fileId),
           ordering: 0,
+          /*
+           * The canonical, ffprobe-measured duration, exactly as
+           * `PostMediaService.createMultiplePostMedia` records it for a real
+           * upload. Without it the recommendation engine treats every demo
+           * video as a legacy post with no known length, and can therefore
+           * never classify a watch as a completion or a quick skip — so the
+           * seeded histories would exercise none of that path. Measured at
+           * fetch time and carried on the manifest, never guessed here.
+           */
+          ...(isVideo && post.media.durationMs ? { durationMs: post.media.durationMs } : {}),
           createdAt: post.publishedAt,
           updatedAt: post.publishedAt
         });
@@ -276,7 +329,16 @@ async function seedPosts({
       stats.created += 1;
       if (isVideo) stats.videos += 1; else stats.photos += 1;
       postIndex.push({
-        postId, userId, username: account.username, themeKey: account.themeKey, publishedAt: post.publishedAt, seedKey: post.seedKey
+        postId,
+        userId,
+        username: account.username,
+        themeKey: account.themeKey,
+        topicKey: account.topicKey,
+        kind: post.kind,
+        durationMs: post.media.durationMs ?? null,
+        tags: extractHashtags(post.caption),
+        publishedAt: post.publishedAt,
+        seedKey: post.seedKey
       });
 
       if (stats.created % 10 === 0) logger.detail(`${stats.created} posts created…`);

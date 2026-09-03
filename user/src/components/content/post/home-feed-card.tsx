@@ -3,6 +3,9 @@
 import VideoPlayer from '@components/ui/video-player';
 import { toast } from '@douyin-clone/shared-toast';
 import { usePostVideoHoverPlayback } from '@hooks/use-post-video-hover-playback';
+import { useRecommendationCardDwell } from '@hooks/use-recommendation-card-dwell';
+import { useRecommendationImpression } from '@hooks/use-recommendation-impression';
+import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-tracking';
 import { IPost } from '@interfaces/post';
 import { videoDuration } from '@lib/duration';
 import { PopupPipState, PopupPipVideo } from '@lib/popup-pip';
@@ -28,6 +31,13 @@ interface HomeFeedCardProps {
   onCompactHoverChange?: (postId: string | null) => void;
   onFeaturedTimeUpdate?: (currentTime: number) => void;
   onOpenDetail?: (post: IPost, currentTime: number) => void;
+  /**
+   * The active Home recommendation session id. Omitted (or `variant="profile"`,
+   * a creator-profile grid — not a recommendation surface) disables all
+   * impression/watch/dwell tracking for this card — see
+   * `.agents/skills/recommendation-engine/SKILL.md`.
+   */
+  recommendationSessionId?: string | null;
 }
 
 /**
@@ -54,7 +64,8 @@ function HomeFeedCard({
   featuredResumeTime = 0,
   onCompactHoverChange,
   onFeaturedTimeUpdate,
-  onOpenDetail
+  onOpenDetail,
+  recommendationSessionId
 }: HomeFeedCardProps) {
   const isProfileVariant = variant === 'profile';
   const graphicPost = isGraphicPost(post);
@@ -63,6 +74,8 @@ function HomeFeedCard({
   const timeText = post.createdAt
     ? new Date(post.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     : '';
+  // A creator-profile grid is not a recommendation surface — see the prop doc.
+  const trackingEnabled = !isProfileVariant && Boolean(recommendationSessionId);
   const playback = usePostVideoHoverPlayback({
     post,
     featured,
@@ -71,6 +84,33 @@ function HomeFeedCard({
     onCompactHoverChange,
     onFeaturedTimeUpdate,
     onOpenDetail
+  });
+
+  // Impression: the same element `usePostVideoHoverPlayback` already
+  // observes for hover-teardown — a second, independent `IntersectionObserver`
+  // instance on it, not a second DOM ref.
+  useRecommendationImpression({
+    elementRef: playback.mediaRef,
+    enabled: trackingEnabled,
+    postId: post._id,
+    sessionId: recommendationSessionId,
+    source: 'home'
+  });
+
+  const watchTracking = useRecommendationWatchTracking({
+    enabled: trackingEnabled && playback.hasVideo,
+    postId: post._id,
+    sessionId: recommendationSessionId,
+    source: 'home'
+  });
+
+  // Photo dwell only for graphic cards — video cards get watch-quality signal instead.
+  useRecommendationCardDwell({
+    elementRef: playback.mediaRef,
+    enabled: trackingEnabled && graphicPost,
+    postId: post._id,
+    sessionId: recommendationSessionId,
+    source: 'home'
   });
 
   const image = (
@@ -87,6 +127,8 @@ function HomeFeedCard({
 
   return (
     <article
+      data-post-id={post._id}
+      data-creator-id={post.user?._id}
       className={`group min-w-0 ${playback.hasVideo || graphicPost ? 'cursor-pointer' : ''}`}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest('button, a, input')) return;
@@ -129,9 +171,16 @@ function HomeFeedCard({
               pictureInPicturePlaylist={popupPlaylist}
               onReady={playback.handleReady}
               onPlay={playback.handlePlay}
-              onPause={playback.handlePause}
-              onEnded={playback.handleEnded}
-              onTimeUpdate={playback.handleTimeUpdate}
+              onPause={() => {
+ playback.handlePause(); watchTracking.handlePause();
+}}
+              onEnded={() => {
+ playback.handleEnded(); watchTracking.handleEnded();
+}}
+              onTimeUpdate={(currentTime, duration) => {
+                playback.handleTimeUpdate(currentTime, duration);
+                watchTracking.handleTimeUpdate(currentTime, duration);
+              }}
               className={`${featured ? '' : 'min-h-0!'} h-full rounded-none`}
               classVideo="rounded-none"
             />

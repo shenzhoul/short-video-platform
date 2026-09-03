@@ -8,6 +8,10 @@ exports.COLLECTION = {
   AUTH: 'auth',
   CATEGORY: 'categories',
   POST: 'posts',
+  POST_RECOMMENDATION_STAT: 'post_recommendation_stats',
+  USER_RECOMMENDATION_AFFINITY: 'user_recommendation_affinities',
+  RECOMMENDATION_EVENT: 'recommendation_events',
+  RECOMMENDATION_CATEGORY_PRIOR: 'recommendation_category_priors',
 };
 
 exports.DB = mongoose.connection;

@@ -52,7 +52,14 @@ const KINDS = Object.freeze({
   /** A block or restrict flag, in `user_relationships`. */
   RELATIONSHIP: 'relationship',
   /** A category this tool created. Never one that already existed. */
-  CATEGORY: 'category'
+  CATEGORY: 'category',
+  /**
+   * One recommendation telemetry event, plus the `post_recommendation_stats`
+   * and `user_recommendation_affinities` increments it produced. Claimed on
+   * the API's own dedupe-key shape, so re-seeding is a no-op for the same
+   * reason a client retry is (see `recommendation-adapter.js`).
+   */
+  RECOMMENDATION_EVENT: 'recommendation_event'
 });
 
 function createLedger(collection, namespace) {
