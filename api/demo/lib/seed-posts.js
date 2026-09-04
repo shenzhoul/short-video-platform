@@ -58,15 +58,35 @@ function normalizeThumbnailUrls(thumbnails) {
 /**
  * Drop the signing query from a file-server URL before storing it.
  *
- * `FileDto.getThumbnails` signs even `public-read` thumbnails, so the URL it
- * returns carries `?token=...&expiresIn=3600`. That is fine to hand a browser
- * now and wrong to write into a database column that outlives the hour — a
- * stored cover would be pointing at an expired credential. The bare URL serves
- * the same bytes (verified: 200 without the query), because the file is public.
+ * `FileDto.getThumbnails` used to sign even `public-read` thumbnails, so the URL
+ * it returned carried `?hash=<jwt>&expiresIn=3600`. That is fine to hand a
+ * browser now and wrong to write into a database column that outlives the hour,
+ * hence this. On the disk engine the bare URL serves the same bytes, because the
+ * path itself is public.
+ *
+ * **On a bucket that reasoning is false, and it shipped.** A signed R2 URL
+ * points at the PRIVATE S3 endpoint, so removing the signature leaves an
+ * anonymous request to an endpoint that grants none — `400 InvalidArgument`,
+ * for all 160 seeded post covers. Stripping cannot make a URL public; only
+ * asking for a public URL can, which `getThumbnails` now does.
+ *
+ * So this stays as a belt-and-braces no-op for the disk case, and refuses the
+ * case it cannot fix: a SigV4 query means the URL is bound to a private
+ * endpoint, and neither form of it belongs in a database column. Failing here
+ * is recoverable; a seeded dataset full of dead covers is not.
  */
 function stripSignature(url) {
-  const index = String(url).indexOf('?');
-  return index === -1 ? url : String(url).slice(0, index);
+  const value = String(url);
+  if (/[?&]X-Amz-Signature=/i.test(value)) {
+    throw new Error(
+      `refusing to store a presigned object URL as a cover: ${value.split('?')[0]}\n`
+      + 'It points at the private S3 endpoint, so it is dead with or without its signature. '
+      + 'FileDto.getThumbnails must return a public URL for a public-read file.'
+    );
+  }
+
+  const index = value.indexOf('?');
+  return index === -1 ? value : value.slice(0, index);
 }
 
 /**
