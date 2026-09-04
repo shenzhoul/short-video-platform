@@ -8,8 +8,9 @@ import {
 } from 'fs';
 import { ObjectId } from 'mongodb';
 import { Model } from 'mongoose';
+import { randomUUID } from 'crypto';
 import {
-  join
+  extname, join
 } from 'path';
 import {
   FILE_STATUS,
@@ -30,6 +31,8 @@ import {
   FILE_SERVER_VIDEO_QUEUE_CHANNEL
 } from './file-manager.service';
 import { FileProcessingService } from './file-processing.service';
+import { S3StorageService } from './s3-storage.service';
+import { STORAGE_TYPES } from 'src/common/constants/content';
 
 @Injectable()
 export class FileProcessListenerService implements OnModuleInit {
@@ -41,6 +44,7 @@ export class FileProcessListenerService implements OnModuleInit {
     private readonly configService: AppConfigService,
     private readonly fileProcessingService: FileProcessingService,
     private readonly fileService: FileService,
+    private readonly s3StorageService: S3StorageService,
     private readonly dbLogger: DBLoggerService
   ) {
   }
@@ -66,20 +70,27 @@ export class FileProcessListenerService implements OnModuleInit {
     const fileData = event.data.file as FileDto;
     const options = event.data.options || {};
 
-    // Resolve video file path
-    const { publicDir } = this.configService.file;
-    let videoPath = fileData.absolutePath;
-    if (existsSync(fileData.absolutePath)) {
-      videoPath = fileData.absolutePath;
-      // Use dir of the original file
-    } else if (existsSync(join(publicDir, fileData.path))) {
-      videoPath = join(publicDir, fileData.path);
+    /*
+     * Resolved before the try, so a source that cannot be produced at all fails
+     * the job with an honest message. On a bucket deployment this downloads the
+     * object to a scratch file; on disk it returns the existing local path and
+     * does nothing.
+     */
+    let source: { path: string; cleanup: () => Promise<void> };
+    try {
+      source = await this.materializeLocalSource(fileData);
+    } catch (error) {
+      await this.markProcessingFailed(fileData, error, 'video');
+      return;
     }
+    const videoPath = source.path;
 
     try {
-      if (!videoPath) {
-        // eslint-disable-next-line no-throw-literal
-        throw new Error(`File ${videoPath} cannot be found!`);
+      // `existsSync`, not a falsy check. The guard here used to be `!videoPath`,
+      // which an object key satisfies — so a remote path was passed straight to
+      // ffprobe and failed there instead of here.
+      if (!existsSync(videoPath)) {
+        throw new Error(`Source file for ${fileData._id} is not readable at ${videoPath}`);
       }
 
       // Claim only live records. Discard marks the record deleted before
@@ -186,6 +197,10 @@ export class FileProcessListenerService implements OnModuleInit {
 
       throw new HttpException(e, 500);
     } finally {
+      // Before the event, and unconditionally: the scratch copy is removed on
+      // success, on failure and on the discard path. On disk this is a no-op.
+      await source.cleanup();
+
       // Fire event to subscriber
       if (options.publishChannel) {
         await this.queueEventService.publish(
@@ -200,6 +215,93 @@ export class FileProcessListenerService implements OnModuleInit {
         );
       }
     }
+  }
+
+  /**
+   * A local path the processing pipeline can actually open, and how to clean up.
+   *
+   * `file-manager` uploads to storage BEFORE queueing work, commenting that this
+   * "ensures queue jobs get the final storage path, not temp path". That holds
+   * for the disk engine, where uploading means moving the file into `public/`.
+   * It does not hold for a bucket: the bytes are in Cloudflare and the temp file
+   * has been deleted, so `absolutePath` is an object key.
+   *
+   * Handing that key to FFmpeg is exactly what happened in production — ffprobe
+   * reported "videos/<id>/<uuid>.mp4: No such file or directory" and the record
+   * was marked failed, because a key is a non-empty string and passed the
+   * falsy-path guard that was meant to catch this.
+   *
+   * Disk is untouched: both `existsSync` branches short-circuit before any
+   * download, so nothing about local processing changes.
+   */
+  private async materializeLocalSource(fileData: FileDto): Promise<{
+    path: string;
+    cleanup: () => Promise<void>;
+  }> {
+    const { publicDir, tempDir } = this.configService.file;
+    const noop = async () => undefined;
+
+    if (fileData.absolutePath && existsSync(fileData.absolutePath)) {
+      return { path: fileData.absolutePath, cleanup: noop };
+    }
+
+    const publicPath = fileData.path ? join(publicDir, fileData.path) : '';
+    if (publicPath && existsSync(publicPath)) {
+      return { path: publicPath, cleanup: noop };
+    }
+
+    if (fileData.storageType !== STORAGE_TYPES.S3) {
+      // Disk-backed and genuinely absent. Say so plainly rather than returning a
+      // path that does not exist for FFmpeg to fail on later.
+      throw new Error(
+        `Source file for ${fileData._id} not found locally (storageType=${fileData.storageType || 'unknown'})`
+      );
+    }
+
+    // Remote. Bring the bytes back for the duration of this job only.
+    const scratch = join(tempDir, `processing-${fileData._id}-${randomUUID()}${extname(fileData.path || '') || ''}`);
+    this.logger.log(`Materializing ${fileData._id} from object storage for processing`);
+    await this.s3StorageService.downloadToFile(fileData.path, scratch);
+
+    return {
+      path: scratch,
+      // Runs in a `finally`, so it must never throw: the job's own outcome —
+      // success or the real processing error — is what the caller needs to see.
+      cleanup: async () => {
+        try {
+          await fsPromises.rm(scratch, { force: true });
+        } catch (error) {
+          this.logger.warn(`Could not remove processing scratch file ${scratch}: ${error?.message}`);
+        }
+      }
+    };
+  }
+
+  /**
+   * Mark a record failed when its source could not even be obtained.
+   *
+   * Separate from the in-flight catch blocks because there is nothing to clean
+   * up yet and no processing event to publish — the job never started. Without
+   * this the record would sit at `pending` forever and the seeder would wait out
+   * its whole processing timeout before reporting something misleading.
+   */
+  private async markProcessingFailed(fileData: FileDto, error: any, kind: 'video' | 'photo'): Promise<void> {
+    this.dbLogger.error(
+      `${kind} source unavailable for file ${fileData._id}: ${error?.message || error}`,
+      error?.stack,
+      'FileProcessListenerService'
+    );
+
+    await this.FileModel.updateOne(
+      { _id: fileData._id, status: { $ne: FILE_STATUS.DELETED } },
+      {
+        $set: {
+          processingStatus: PROCESSING_STATUS.FAILED,
+          status: FILE_STATUS.ERROR,
+          processingError: error?.stack || String(error)
+        }
+      }
+    );
   }
 
   private async removeConvertedSource(filePath: string): Promise<void> {
@@ -226,14 +328,18 @@ export class FileProcessListenerService implements OnModuleInit {
     }
     const fileData = event.data.file as FileDto;
     const options = event.data.options || {};
-    const { publicDir } = this.configService.file;
-    let photoPath = join(publicDir, fileData.path);
 
-    if (existsSync(fileData.absolutePath)) {
-      photoPath = fileData.absolutePath;
-    } else if (existsSync(join(publicDir, fileData.path))) {
-      photoPath = join(publicDir, fileData.path);
+    // Same materialization as video. Images usually process inline, while the
+    // temp file still exists — which is why photos kept working on R2 and video
+    // did not — but a queued photo takes this path and would fail identically.
+    let source: { path: string; cleanup: () => Promise<void> };
+    try {
+      source = await this.materializeLocalSource(fileData);
+    } catch (error) {
+      await this.markProcessingFailed(fileData, error, 'photo');
+      return;
     }
+    const photoPath = source.path;
 
     try {
       // Claim only live records. A discarded queued photo is cleaned without
@@ -326,6 +432,9 @@ export class FileProcessListenerService implements OnModuleInit {
 
       throw new HttpException(e, 500);
     } finally {
+      // See _processVideo: unconditional, and a no-op on disk.
+      await source.cleanup();
+
       // Publish completion event if requested
       if (options.publishChannel) {
         await this.queueEventService.publish(

@@ -384,8 +384,59 @@ async function main() {
     const tailBody = Buffer.from(await tailResponse.arrayBuffer());
     check('trailing bytes match the source', tailBody.equals(video.buffer.subarray(tailStart)));
 
+    // ------------------------------------------------- processing round trip
+    /*
+     * The path the demo seed actually broke on.
+     *
+     * `file-manager` uploads to storage BEFORE queueing processing, so on a
+     * bucket deployment the queued job has no local copy and must fetch the
+     * object back. Sections 1-4 exercise upload and public delivery; none of
+     * them touch that. Its absence here is why a production seed was the thing
+     * that discovered ffprobe being handed an object key.
+     */
+    heading('5. Processing round trip (download back for FFmpeg/Sharp)');
+    const scratch = join(tmpdir(), `r2-verify-download-${crypto.randomUUID()}.mp4`);
+    try {
+      await storage.downloadToFile(videoKey, scratch);
+      check('downloadToFile produced a local file', existsSync(scratch));
+
+      const roundTripped = readFileSync(scratch);
+      check('downloaded bytes match the uploaded video byte-for-byte',
+        roundTripped.equals(video.buffer),
+        `got ${roundTripped.length} bytes, expected ${video.buffer.length}`);
+
+      // What the processing pipeline does first. A key handed to ffprobe fails
+      // exactly here, so this is the assertion that would have caught it.
+      if (video.real) {
+        try {
+          const probe = execFileSync(process.env.FFPROBE_PATH || 'ffprobe', [
+            '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', scratch
+          ], { encoding: 'utf8' }).trim();
+          check('ffprobe can read the downloaded file', Number(probe) > 0, `duration=${probe}`);
+        } catch (error) {
+          check('ffprobe can read the downloaded file', false, String(error.message).slice(0, 160));
+        }
+      } else {
+        console.log('  SKIP  ffprobe check (no FFmpeg when the fixture was made)');
+      }
+
+      // No leftovers: a partial download that passes existsSync is worse than
+      // no file at all, because the pipeline would try to process it.
+      const missingKey = `${runPrefix}/definitely-absent.bin`;
+      let refused = false;
+      try {
+        await storage.downloadToFile(missingKey, `${scratch}.absent`);
+      } catch { refused = true; }
+      check('a missing key throws rather than leaving a partial file', refused);
+      check('no partial file remains after a failed download', !existsSync(`${scratch}.absent`));
+    } finally {
+      if (existsSync(scratch)) unlinkSync(scratch);
+      if (existsSync(`${scratch}.absent`)) unlinkSync(`${scratch}.absent`);
+    }
+
     // ---------------------------------------------------------------- delete
-    heading('5. Delete removes the actual objects');
+    heading('6. Delete removes the actual objects');
     const deleteResult = await storage.deleteFiles([imageKey, videoKey]);
     check('delete reports success', deleteResult.success === true, JSON.stringify(deleteResult.errors));
     check('delete counted both objects', deleteResult.deletedCount === 2, `got ${deleteResult.deletedCount}`);
@@ -403,7 +454,7 @@ async function main() {
     check('deleting an already-deleted key is idempotent', repeat.success === true);
   } finally {
     // ------------------------------------------------------------- cleanup
-    heading('6. Cleanup — nothing left under the run prefix');
+    heading('7. Cleanup — nothing left under the run prefix');
     const listed = await client.send(new ListObjectsV2Command({
       Bucket: bucket,
       Prefix: normalizeObjectKey(runPrefix, basePrefix)

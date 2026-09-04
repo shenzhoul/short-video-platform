@@ -7,9 +7,10 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger } from '@nestjs/common';
-import { createReadStream, existsSync, promises as fsPromises } from 'fs';
+import { createReadStream, createWriteStream, existsSync, promises as fsPromises } from 'fs';
 import { chunk, uniq } from 'lodash';
-import { extname } from 'path';
+import { dirname, extname } from 'path';
+import { pipeline } from 'stream/promises';
 
 import { STORAGE_TYPES } from 'src/common/constants/content';
 import {
@@ -265,6 +266,48 @@ export class S3StorageService implements AbstractStorage {
       skippedCount,
       errors: errors.length ? errors : undefined
     };
+  }
+
+  /**
+   * Stream an object out of the bucket to a local file.
+   *
+   * The processing pipeline is built around a local path: `file-manager`
+   * uploads to storage BEFORE queueing work, on the assumption that the
+   * "final storage path" is still something FFmpeg and Sharp can open. That
+   * holds for the disk engine, where uploading means moving the file into
+   * `public/`. It does not hold here — the bytes are in Cloudflare and the temp
+   * file has been removed — so a queued job needs to bring them back before it
+   * can do anything.
+   *
+   * Writes through a temp sibling and renames on completion, so a failure
+   * midway leaves no half-file that a later `existsSync` would happily hand to
+   * ffprobe.
+   */
+  async downloadToFile(key: string, destinationPath: string): Promise<void> {
+    const objectKey = this.objectKey(key);
+    const partialPath = `${destinationPath}.partial`;
+
+    await fsPromises.mkdir(dirname(destinationPath), { recursive: true });
+
+    try {
+      const object = await this.getClient().send(new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey
+      }));
+
+      if (!object.Body) {
+        throw new Error(`Object ${objectKey} returned no body`);
+      }
+
+      await pipeline(object.Body as NodeJS.ReadableStream, createWriteStream(partialPath));
+      await fsPromises.rename(partialPath, destinationPath);
+    } catch (error) {
+      // Never leave the partial behind: the caller's next step is an
+      // `existsSync` and a truncated file would pass it.
+      await fsPromises.rm(partialPath, { force: true }).catch(() => undefined);
+      this.logger.error(`Download failed for ${objectKey}: ${(error as Error).message}`);
+      throw error;
+    }
   }
 
   /**
