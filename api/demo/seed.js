@@ -37,6 +37,7 @@ const { createNotificationAdapter } = require('./lib/notification-adapter');
 const { createMessageAdapter } = require('./lib/message-adapter');
 const { resolveAccountPlan, assertCategoryCoverage } = require('./lib/account-plan');
 const { reconcileAll } = require('./lib/reconcile');
+const { guardSeed } = require('./lib/production-guard');
 
 /**
  * Everything that must be true before a single document is written.
@@ -109,6 +110,15 @@ async function main() {
   const connections = env.loadSeedConnections();
   logger.detail(`mongo: ${connections.mongoUri.replace(/\/\/[^@]*@/, '//***@')}`);
   logger.detail(`file server: ${connections.fileServerBaseUrl}`);
+
+  // Before anything is read, let alone written: is this the database we meant?
+  const guard = guardSeed(connections.mongoUri);
+  if (!guard.allowed) {
+    logger.error(guard.message);
+    process.exitCode = 1;
+    return;
+  }
+  if (guard.message) logger.info(guard.message);
 
   // 1. The plan, entirely from local data.
   const manifest = manifestLib.load(config.MANIFEST_PATH);

@@ -34,16 +34,34 @@ const dbLib = require('./lib/db');
 const { createLedger, KINDS } = require('./lib/ledger');
 const { createFilePipeline } = require('./lib/file-pipeline');
 const { reconcileTags } = require('./lib/reconcile');
+const { guardClean } = require('./lib/production-guard');
 
 const hasFlag = (name) => process.argv.slice(2).includes(name);
 
 async function main() {
-  const dryRun = hasFlag('--dry-run');
+  let dryRun = hasFlag('--dry-run');
   const purge = hasFlag('--purge');
-
-  logger.step(`Demo clean${dryRun ? ' (dry run — nothing will be deleted)' : ''}`);
+  const confirmProduction = hasFlag('--confirm-production');
 
   const connections = env.loadSeedConnections();
+
+  /*
+   * Decided before the step banner is printed, because the banner has to state
+   * what is actually about to happen. On a production target with no explicit
+   * confirmation this downgrades the run to a dry run rather than refusing it:
+   * the mistyped command then prints the deletion plan, which is both harmless
+   * and the thing the operator wanted to see anyway.
+   */
+  const guard = guardClean(connections.mongoUri, { dryRun, confirmProduction });
+  if (!guard.allowed) {
+    logger.error(guard.message);
+    process.exitCode = 1;
+    return;
+  }
+  if (guard.forceDryRun) dryRun = true;
+  if (guard.message) logger.info(guard.message);
+
+  logger.step(`Demo clean${dryRun ? ' (dry run — nothing will be deleted)' : ''}`);
   const db = await dbLib.connect(connections.mongoUri);
   const pipeline = createFilePipeline({
     baseUrl: connections.fileServerBaseUrl,
