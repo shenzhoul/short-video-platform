@@ -169,6 +169,19 @@ services:
       REDIS_QUEUE_PORT: 6379
       REDIS_QUEUE_PASSWORD: ${REDIS_PASSWORD}
       REDIS_QUEUE_DB: 1
+      # ONE shared secret under TWO names, derived here rather than documented.
+      #
+      # `InternalApiGuard` compares the `X-API-Key` header against
+      # API_SECRET_KEY. Every caller — the API (`config/file-server.ts` ->
+      # `file-server.service.ts`) and `demo:seed` — sends FILE_SERVER_API_KEY in
+      # that header. So the two names must hold the same value.
+      #
+      # They were previously listed as separate secrets in .env.example, so two
+      # independent values got generated and every /internal/files call answered
+      # 401: the demo seed failed its preflight, and the running API could not
+      # have attached a single uploaded file. Deriving it makes the mistake
+      # unrepresentable instead of merely documented.
+      API_SECRET_KEY: ${FILE_SERVER_API_KEY:?FILE_SERVER_API_KEY is required}
       # `BASE_URL` arrives from env_file as the API's public origin, but this
       # service needs its OWN. `tus-auth.service.ts` builds the resumable-upload
       # URL handed back to browsers from BASE_URL, so inheriting the API's value
