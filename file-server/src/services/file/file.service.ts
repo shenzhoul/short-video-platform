@@ -28,6 +28,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { FileMediaValidationService } from "src/services/file/file-media-validation.service";
 import { IMulterUploadedFile } from "src/common/lib/file/multer/multer.utils";
+import { configuredStorageType } from "src/services/file/storage-driver";
 import { isImage, isVideo } from "src/lib/file-type";
 import { IFileUploadOptions } from "src/common/lib/file";
 import { FileManagerService } from "src/services/file/file-manager.service";
@@ -165,7 +166,7 @@ export class FileService {
       fileExtension: parse(filename).ext || '',
       description: '',
       mimeType: contentType || getMimeTypeFromExtension(filename),
-      storageType: 'diskStorage',
+      storageType: configuredStorageType(),
       path: fileKey,
       absolutePath: join(this.configService.file.publicDir, fileKey),
       processingStatus: PROCESSING_STATUS.PENDING,

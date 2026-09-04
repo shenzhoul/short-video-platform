@@ -18,6 +18,7 @@ import {
   FileValidationService,
   FileVideoService,
   ImageService,
+  S3StorageService,
   StorageService
 } from './services';
 
@@ -33,6 +34,10 @@ export const appProviders = [
   ImageService,
   FileVideoService,
   DiskStorageService,
+  // Bucket-backed engine. Registered unconditionally even on a disk deploy:
+  // `StorageService` injects it, and its client is only built on first use, so
+  // an unconfigured R2 costs nothing until something actually asks for it.
+  S3StorageService,
 
   // Enhanced file services
   FileManagerService,

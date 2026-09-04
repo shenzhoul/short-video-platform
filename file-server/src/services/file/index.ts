@@ -8,3 +8,6 @@ export * from './file-validation.service';
 export * from './image.service';
 export * from './video.service';
 export * from './disk-storage.service';
+export * from './s3-storage.service';
+export * from './storage-driver';
+export * from './object-key';

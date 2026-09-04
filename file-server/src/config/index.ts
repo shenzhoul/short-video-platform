@@ -4,6 +4,7 @@ import image from './image';
 import processing from './processing';
 import queue from './queue';
 import security from './security';
+import storage from './storage';
 import video from './video';
 
 /**
@@ -18,6 +19,7 @@ export default () => ({
   processing,
   queue,
   security,
+  storage,
   video
 });
 
@@ -32,4 +34,7 @@ export { default as imageConfig } from './image';
 export { default as processingConfig } from './processing';
 export { default as queueConfig } from './queue';
 export { default as securityConfig } from './security';
+export { default as storageConfig } from './storage';
+export { STORAGE_DRIVERS } from './storage';
+export type { StorageDriver } from './storage';
 export { default as videoConfig } from './video';

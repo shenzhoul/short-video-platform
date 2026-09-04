@@ -6,6 +6,7 @@ import { IMulterUploadedFile } from "src/common/lib/file/multer/multer.utils";
 import { isImage, isVideo } from "src/lib/file-type";
 import { ImageService } from "src/services/file/image.service";
 import { FileVideoService } from "src/services/file/video.service";
+import { configuredStorageType } from "src/services/file/storage-driver";
 
 /**
  * File Metadata Service
@@ -143,7 +144,10 @@ export class FileMetadataService {
       description: (options as any).description || '',
       fileName: filePaths.fileName,
       mimeType: metadata.mimeType,
-      storageType: STORAGE_TYPES.DISK_STORAGE, // or 's3' based on storage configuration
+      // Where this deployment puts new uploads. Hardcoding disk here recorded
+      // every bucket-backed file as local, and reads dispatch on this field —
+      // so every URL would have been built as a local path.
+      storageType: configuredStorageType(),
       path: filePaths.mainFileKey,
       absolutePath: processingResults.finalPath || multerData.path,
       width: processingResults.width || metadata.width,

@@ -9,6 +9,50 @@ import {
   IGetFileUrlOptions
 } from 'src/common/interfaces/file';
 import { DiskStorageService } from './disk-storage.service';
+import { S3StorageService } from './s3-storage.service';
+import { storageConfig, STORAGE_DRIVERS } from 'src/config';
+
+/**
+ * Engines for the *static* URL path, which cannot go through DI.
+ *
+ * `FileDto.getUrl()` and its siblings are plain class instances produced by
+ * `plainToInstance` — Nest never constructs them, so they cannot be injected
+ * into. They call `StorageService.getFileUrl` statically, and before this that
+ * method hardcoded `new DiskStorageService()`. With a bucket configured, every
+ * media URL in every API response would still have been built as a local path.
+ *
+ * These are module singletons rather than a `new` per call because the S3
+ * client holds a connection pool, and a DTO can be mapped thousands of times in
+ * one feed response.
+ */
+const readEngines = {
+  disk: new DiskStorageService(),
+  s3: null as S3StorageService | null
+};
+
+function getS3ReadEngine(): S3StorageService {
+  if (!readEngines.s3) readEngines.s3 = new S3StorageService();
+  return readEngines.s3;
+}
+
+/**
+ * Pick the engine for reading a file back.
+ *
+ * Dispatch is on the **file's own stored `storageType`**, not on the configured
+ * driver, and that distinction is the whole point. Turning `STORAGE_DRIVER=r2`
+ * on decides where new uploads go; it must not change how the media already on
+ * disk is addressed. Reading the configured driver here instead would rewrite
+ * every existing local file's URL to a bucket path on the next deploy and break
+ * all of it at once, with nothing logged.
+ *
+ * A record with no `storageType` predates the field, which means it was written
+ * before there was any engine but disk — so an unknown type resolves to disk,
+ * never to the configured driver.
+ */
+function resolveStorageEngineForRead(storageType?: string): AbstractStorage {
+  if (storageType === STORAGE_TYPES.S3) return getS3ReadEngine();
+  return readEngines.disk;
+}
 
 /**
  * Storage Service
@@ -55,7 +99,8 @@ import { DiskStorageService } from './disk-storage.service';
 @Injectable()
 export class StorageService {
   constructor(
-    private readonly diskStorageService: DiskStorageService
+    private readonly diskStorageService: DiskStorageService,
+    private readonly s3StorageService: S3StorageService
   ) { }
 
   /**
@@ -81,8 +126,7 @@ export class StorageService {
       return key;
     }
 
-    // TODO: Make this configurable to support different storage engines
-    const storage = new DiskStorageService();
+    const storage = resolveStorageEngineForRead(options?.storageType);
     const url = await storage.getFileUrl(key, options);
     return url;
   }
@@ -147,10 +191,22 @@ export class StorageService {
    * @private
    */
   private getStorageEngine(storageType?: string): AbstractStorage {
+    /*
+     * An explicit type always wins, and that is what makes deletion correct: a
+     * delete carries the *file's own* recorded `storageType`, so media written
+     * to disk before a cutover is still removed from disk after it, rather than
+     * being looked for in a bucket it was never in and reported as already
+     * gone. Removing a record while its bytes survive is the one failure the
+     * sweeper can never repair, because the row that named them is what it
+     * would have needed.
+     */
+    if (storageType === STORAGE_TYPES.S3) return this.s3StorageService;
     if (storageType === STORAGE_TYPES.DISK_STORAGE) return this.diskStorageService;
 
-    // Default to disk storage
-    // TODO: Add support for S3, CDN, and other storage types
-    return this.diskStorageService;
+    // No type given — this is a fresh write, so it goes wherever the deployment
+    // is configured to put new uploads.
+    return storageConfig.driver === STORAGE_DRIVERS.R2
+      ? this.s3StorageService
+      : this.diskStorageService;
   }
 }

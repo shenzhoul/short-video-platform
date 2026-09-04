@@ -35,6 +35,9 @@ lerna-debug.log*
 
 .env*
 !.env.example
+# Templates only — real values live in the un-suffixed files, which stay
+# ignored. Mirrors the root .gitignore, which already carries this rule.
+!.env.*.example
 
 /public
 

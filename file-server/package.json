@@ -12,9 +12,14 @@
     "lint": "eslint '{src,apps,libs,test}/**/*.ts' --fix",
     "verify:policies": "node scripts/verify-upload-policies.js",
     "migrate": "node migrate",
-    "migrate:create": "migrate create"
+    "migrate:create": "migrate create",
+    "verify:r2": "node scripts/verify-r2-storage.js",
+    "verify:r2:staging": "node scripts/verify-r2-storage.js --env-file .env.r2-staging.local"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1020.0",
+    "@aws-sdk/lib-storage": "3.1020.0",
+    "@aws-sdk/s3-request-presigner": "3.1020.0",
     "@douyin-clone/upload-policy": "file:../shared/upload-policy",
     "@nestjs-modules/ioredis": "^2.0.2",
     "@nestjs/axios": "^3.0.2",

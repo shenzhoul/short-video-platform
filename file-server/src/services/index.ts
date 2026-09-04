@@ -7,6 +7,7 @@ export { StorageService } from './file/storage.service';
 export { ImageService } from './file/image.service';
 export { FileVideoService } from './file/video.service';
 export { DiskStorageService } from './file/disk-storage.service';
+export { S3StorageService } from './file/s3-storage.service';
 
 // Enhanced file services
 export { FileManagerService } from './file/file-manager.service';
