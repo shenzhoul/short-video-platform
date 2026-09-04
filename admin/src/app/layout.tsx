@@ -38,6 +38,27 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     description: '',
     keywords: '',
+    /*
+     * The admin dashboard is deployed to a public *.vercel.app origin with no
+     * network-level restriction in front of it, so the only thing keeping it
+     * out of search results is this. Without it the login page — and the site
+     * name, and the fact that an admin panel exists here at all — is
+     * crawlable and indexable.
+     *
+     * This is not an access control. Authorization is enforced by the API's
+     * role guards on every request; `noindex` only stops the panel being
+     * advertised. Both are needed: one stops discovery, the other stops entry.
+     *
+     * `src/app/robots.ts` disallows crawling at the robots.txt level too.
+     * A well-behaved crawler honours either; a page reached by a direct link
+     * still carries this header, which robots.txt cannot do.
+     */
+    robots: {
+      index: false,
+      follow: false,
+      nocache: true,
+      googleBot: { index: false, follow: false }
+    },
     icons: {
       icon: favicon,
       shortcut: favicon,
