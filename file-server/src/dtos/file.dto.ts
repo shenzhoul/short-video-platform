@@ -173,10 +173,33 @@ export class FileDto {
         return results;
       }
 
-      // if it is public read, we won't provide authenticated due to cache option?
-      const overwriteAuth = this.acl === 'public-read';
+      /*
+       * A public thumbnail gets a public URL. This is the same rule `getUrl()`
+       * and `getBlurImage()` already apply, and it used to say the opposite:
+       *
+       *   const overwriteAuth = this.acl === 'public-read';   // signed when public
+       *
+       * — which signed precisely the files that must not be signed. The comment
+       * beside it described the correct behaviour, so only the code was wrong.
+       *
+       * On the disk engine the damage was invisible: signing yields
+       * `…/thumb.webp?hash=<jwt>`, which still serves. On a bucket it yields a
+       * presigned URL against the PRIVATE S3 endpoint
+       * (`<account>.r2.cloudflarestorage.com`) rather than the public Worker —
+       * so it expires in an hour, is uncacheable, bypasses the Worker's Range
+       * and CORS handling, and publishes the R2 account id and an access key id
+       * to every viewer.
+       *
+       * It also reached the database. `PostCrudService.create` stores
+       * `normalizeThumbnailUrls(mainFile.thumbnails)[0]` as `cover3x4Url`, so
+       * every post persisted a URL that dies within the hour; the demo seeder
+       * additionally stripped the query (correct on disk, where the bare path is
+       * public) and persisted an unsigned request to a private endpoint, which
+       * R2 answers `400 InvalidArgument`. Measured in production: all 160 post
+       * covers dead, repaired by `api/scripts/backfill-post-cover-urls.js`.
+       */
       const url = await StorageService.getFileUrl(t.path, {
-        authenticated: overwriteAuth,
+        authenticated: this.acl !== 'public-read',
         expiresIn: 60 * 60,
         storageType: this.storageType
       });
