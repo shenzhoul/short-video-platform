@@ -64,6 +64,29 @@ COPY --from=build /repo/api/migrate.js ./migrate.js
 # production guards refuse to run without an explicit opt-in.
 COPY --from=build /repo/api/demo ./demo
 
+# `scripts/` is NOT optional tooling — the migration runner reaches into it.
+#
+#   1735228800000-settings.js          require('../scripts/migrate-settings')
+#   1756258634605-create-admin-account require('../scripts/reset-admin-pw')
+#   1787810000000-auth-token-ttl       execFileSync(.../scripts/repair-auth-token-ttl-index.js)
+#
+# The third is spawned as a CHILD PROCESS by path, so it is invisible to any
+# require-graph analysis and to the load check below. Copying the whole 284 KB
+# directory rather than the three named files is deliberate: a future migration
+# that reaches for another script would otherwise fail in production, and the
+# audit/repair scripts are worth having on the box for diagnostics anyway.
+COPY --from=build /repo/api/scripts ./scripts
+
+# Fail the BUILD if a migration cannot be loaded, rather than discovering it
+# against a production database halfway through a run.
+#
+# This exists because the omission above shipped: `migrations/` was copied but
+# `scripts/` was not, so `node migrate.js` died on MODULE_NOT_FOUND at the first
+# migration. Requiring each module opens no connection -- `migrations/lib`
+# exports `mongoose.connection`, which is an unconnected object until something
+# calls `connect()`.
+RUN node -e "const fs=require('fs');const m=fs.readdirSync('migrations').filter(f=>f.endsWith('.js'));m.forEach(f=>require('/app/migrations/'+f));const s=fs.readdirSync('scripts').filter(f=>f.endsWith('.js'));if(!s.length)throw new Error('scripts/ is empty');console.log('migration load check: '+m.length+' migrations, '+s.length+' scripts');"
+
 # Never run as root. The image writes nothing outside /tmp.
 USER node
 
