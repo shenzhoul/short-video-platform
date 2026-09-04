@@ -127,6 +127,18 @@ services:
       REDIS_QUEUE_HOST: redis
       REDIS_QUEUE_PORT: 6379
       REDIS_QUEUE_PASSWORD: ${REDIS_PASSWORD}
+      # The API has TWO independent Redis configurations and needs both.
+      # `config/queue.ts` reads REDIS_QUEUE_* for BullMQ; `config/redis.ts`
+      # reads REDIS_* and backs BOTH the RedisModule client (`InjectRedis`) and
+      # the Socket.IO RedisIoAdapter. Setting only the queue pair left the
+      # second one on its '127.0.0.1' default, so the adapter tried to reach
+      # Redis inside the api container, `connectToRedis()` threw, and the
+      # process exited 1 on every start. `file-server` never showed this: it
+      # has no socket adapter and no RedisModule, so REDIS_QUEUE_* is all it
+      # reads.
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
       FILE_SERVER_BASE_URL: http://file-server:8000
       # Behind host nginx, so the socket peer is the proxy. Without this every
       # rate limit keys on one address and throttles all users together.
@@ -157,6 +169,13 @@ services:
       REDIS_QUEUE_PORT: 6379
       REDIS_QUEUE_PASSWORD: ${REDIS_PASSWORD}
       REDIS_QUEUE_DB: 1
+      # `BASE_URL` arrives from env_file as the API's public origin, but this
+      # service needs its OWN. `tus-auth.service.ts` builds the resumable-upload
+      # URL handed back to browsers from BASE_URL, so inheriting the API's value
+      # sends every TUS upload to api.<host>, where nginx routes it to a service
+      # with no TUS endpoint and a 10m body cap. `environment` overrides
+      # `env_file`, which is what makes this work.
+      BASE_URL: ${FILE_SERVER_PUBLIC_URL:?FILE_SERVER_PUBLIC_URL is required}
       # --- FFmpeg / libvips concurrency on a 2 vCPU box -------------------
       # Transcode concurrency is already 1: the video and photo processing
       # workers subscribe without a `concurrency` option and BullMQ's default
