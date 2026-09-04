@@ -161,7 +161,27 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico, sitemap.xml, robots.txt (metadata files)
+     * - anything ending in a real static-asset extension (see below)
+     *
+     * The trailing extension group is what keeps `public/` cacheable. Every
+     * file in `user/public` — `no_avatar.jpeg`, `dark_bg_default.png`,
+     * `icons/*.png`, `upload_icon.svg`, `file-sw.js` — is served from the root
+     * path, so without it each one ran this proxy, paid a `getToken()` JWT
+     * decrypt, and came back with `Cache-Control: no-store` on a response the
+     * CDN should have kept forever.
+     *
+     * It is a WHITELIST of asset extensions on purpose, never a blanket
+     * `\.[\w]+$`. Creator profiles live at the root as `/[creator]`, and a
+     * username may contain a dot — every seeded demo account is of the form
+     * `maitran.eats` / `diego.streetbites`. A blanket rule excludes all of them
+     * from the edge, so a visitor landing on a profile first gets no
+     * recommendation subject and no viewport hint, silently. Do not "simplify"
+     * this into a generic extension match, and do not add an extension here
+     * that a person could plausibly end a username with.
+     *
+     * `user/src/proxy.spec.ts` pins both halves: every seeded username still
+     * reaches the proxy, and every asset in `public/` does not.
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)'
+    '/((?!api|_next/static|_next/image|favicon\\.ico|sitemap\\.xml|robots\\.txt|.*\\.(?:png|jpe?g|gif|bmp|svg|webp|avif|ico|css|js|mjs|map|json|xml|txt|woff2?|ttf|otf|eot|mp4|webm|mov|m4v|mp3|wav|ogg|pdf|wasm)$).*)'
   ]
 };

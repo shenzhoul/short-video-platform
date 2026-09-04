@@ -289,3 +289,31 @@ Load the relevant repo skills when the task matches them:
 - Run targeted `yarn test` commands for changed behavior, then `yarn lint` and `yarn build`.
 - Add or update focused tests when component logic or rendering behavior is important.
 - Dev and production write to separate output directories on purpose: `next dev` uses `dist/.next-dev`, `next build` uses `dist/.next`. They used to share one, and a build run while a dev server was up rewrote that server's routing state in place — the dev server kept answering, but every `/api/*` route resolved to the not-found page, so next-auth's session fetch failed with `CLIENT_FETCH_ERROR` ("Unexpected token '<'") on every page, and the generated `routes.d.ts` was left corrupted so the next build failed too. Do not point them back at the same directory.
+
+## The Proxy Matcher Is A Whitelist Of Asset Extensions, Never `\.[\w]+$`
+
+`proxy.ts` runs on every matched request: it decrypts a session JWT with
+`getToken()`, and it sets `Cache-Control: no-store, no-cache, must-revalidate`
+on the response. Both are correct for a page render and wrong for a static file.
+
+The matcher originally excluded only `api`, `_next/static`, `_next/image`,
+`favicon.ico`, `sitemap.xml` and `robots.txt`. Everything in `user/public/` is
+served from the **root** path — `no_avatar.jpeg`, `dark_bg_default.png`,
+`icons/*.png`, `upload_icon.svg`, `file-sw.js` — so all ~30 of them ran the
+proxy and came back uncacheable. `_next/static` bundles were fine; the images
+and the service worker were not.
+
+The obvious fix is the wrong one. **A generic `.*\.[\w]+$` exclusion breaks
+every creator profile.** Profiles are a root-level `/[creator]` segment and a
+username may contain a dot — *every* seeded demo account is of that shape
+(`maitran.eats`, `diego.streetbites`, `sofia.builds`). Excluding them from the
+edge means no recommendation-subject cookie and no viewport hint on a first
+visit that lands on a profile, silently.
+
+So the exclusion is a whitelist of real asset extensions, and an extension a
+person could plausibly end a username with must not be added to it.
+
+`proxy.spec.ts` pins both directions, and the asset half **reads
+`user/public/` from disk** rather than listing paths literally — dropping a
+`.woff2` or an `.mp4` in there and forgetting the matcher is precisely the
+regression it exists to catch, and a hand-written list would keep passing.

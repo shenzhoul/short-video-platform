@@ -42,7 +42,10 @@ jest.mock('next-auth/jwt', () => ({
   getToken: async () => token
 }));
 
-import { proxy } from './proxy';
+import { readdirSync } from 'fs';
+import { join, relative, sep } from 'path';
+
+import { config, proxy } from './proxy';
 
 /**
  * A request with a mutable cookie jar, as `NextRequest` has. `cookies.set` on
@@ -321,5 +324,139 @@ describe('the guest recommendation-subject cookie', () => {
     }
     expect(seen.size).toBe(25);
     expect([...seen]).not.toContain('guest');
+  });
+});
+
+/**
+ * What the edge is allowed to run on at all.
+ *
+ * These assert the exported `config.matcher`, not the handler. A matcher defect
+ * is invisible to every test that calls `proxy()` directly — the handler is
+ * correct and simply never runs, or runs where it must not. Both directions
+ * have a cost that only shows in production:
+ *
+ *  - too narrow, and a page renders with no recommendation subject
+ *  - too wide, and every image in `public/` gets `Cache-Control: no-store`
+ *    plus a `getToken()` JWT decrypt, which is what shipped before this.
+ */
+describe('the proxy matcher', () => {
+  const matcher = new RegExp(`^${config.matcher[0]}$`);
+  const runsOn = (path: string) => matcher.test(path);
+
+  describe('does not run on static assets', () => {
+    /*
+     * Read the real directory rather than a hand-written list. Dropping a
+     * `.woff2` or an `.mp4` into `public/` and forgetting the matcher is
+     * exactly the regression this is here to catch, and a literal list would
+     * happily keep passing.
+     */
+    const publicDir = join(__dirname, '..', 'public');
+    const assets = readdirSync(publicDir, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => `/${relative(publicDir, join(entry.parentPath ?? entry.path, entry.name)).split(sep).join('/')}`);
+
+    it('finds the assets it is meant to be checking', () => {
+      // Guards the guard: a glob that silently matched nothing would make every
+      // assertion below vacuously true.
+      expect(assets.length).toBeGreaterThan(10);
+      expect(assets).toContain('/no_avatar.jpeg');
+      expect(assets).toContain('/icons/ic_camera.svg');
+    });
+
+    it.each(assets)('leaves %s to the CDN', (asset) => {
+      expect(runsOn(asset)).toBe(false);
+    });
+  });
+
+  it.each([
+    '/_next/static/chunks/main.js',
+    '/_next/image?url=%2Fno_avatar.jpeg',
+    '/api/auth/session',
+    '/favicon.ico',
+    '/robots.txt',
+    '/sitemap.xml'
+  ])('does not run on %s', (path) => {
+    expect(runsOn(path)).toBe(false);
+  });
+
+  /**
+   * The half a generic `\.[\w]+$` rule would have broken. Creator profiles are
+   * a root-level `/[creator]` segment and every seeded username contains a dot,
+   * so an extension-shaped exclusion silently swallows the entire creator
+   * namespace: no subject cookie, no viewport hint, and nothing logged.
+   */
+  it.each([
+    '/maitran.eats',
+    '/diego.streetbites',
+    '/elena.offmap',
+    '/kai.wanders',
+    '/marcus.sixstring',
+    '/yuki.homestudio',
+    '/priya.moves',
+    '/owen.fosters',
+    '/noor.thread',
+    '/sofia.builds',
+    '/iris.inthefield',
+    '/tomasberg.plays',
+    '/hana.inks',
+    '/adrien.onset',
+    '/camille.everyday',
+    '/hannah.andco'
+  ])('still runs on the creator profile %s', (path) => {
+    expect(runsOn(path)).toBe(true);
+  });
+
+  it.each([
+    '/',
+    '/for-you',
+    '/following',
+    '/friend',
+    '/search',
+    '/messages',
+    '/creator/publish/video',
+    '/auth/verify-email',
+    '/auth/reset-password'
+  ])('still runs on %s', (path) => {
+    expect(runsOn(path)).toBe(true);
+  });
+});
+
+/**
+ * Headers as they actually leave the edge.
+ *
+ * The cookie tests above prove the *value* is right. These prove the response
+ * carries what it should and nothing it should not — in particular that a
+ * returning visitor with a valid subject gets no `Set-Cookie` at all, on any
+ * kind of response, rather than having it replayed on every request.
+ */
+describe('the response the proxy returns', () => {
+  const KEY = 'douyin-clone-reco-anonymous-id';
+  const valid = '3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+
+  it('marks a page render uncacheable, because it is per-visitor', async () => {
+    const result: any = await proxy(request('/'));
+
+    expect(result.headers.set).toHaveBeenCalledWith(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, proxy-revalidate'
+    );
+  });
+
+  it.each([
+    ['an ordinary page', '/'],
+    ['a creator profile', '/maitran.eats'],
+    ['a public token route', '/auth/verify-email'],
+    ['a redirect', '/auth/login']
+  ])('replays no Set-Cookie for a returning visitor on %s', async (_label, path) => {
+    const result: any = await proxy(request(path, { [KEY]: valid }));
+
+    expect(result.setCookies).toHaveLength(0);
+  });
+
+  it('forwards the request headers so the server render sees this request\'s subject', async () => {
+    await proxy(request('/'));
+
+    const [, init] = rewrite.mock.calls[0];
+    expect(init).toEqual({ request: { headers: expect.any(Headers) } });
   });
 });
