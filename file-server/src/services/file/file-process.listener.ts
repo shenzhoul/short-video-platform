@@ -76,7 +76,7 @@ export class FileProcessListenerService implements OnModuleInit {
      * object to a scratch file; on disk it returns the existing local path and
      * does nothing.
      */
-    let source: { path: string; cleanup: () => Promise<void> };
+    let source: { path: string; workDir?: string; cleanup: () => Promise<void> };
     try {
       source = await this.materializeLocalSource(fileData);
     } catch (error) {
@@ -108,11 +108,17 @@ export class FileProcessListenerService implements OnModuleInit {
         return;
       }
 
-      // Use centralized video processing logic
+      /*
+       * `toDir` points the transcode output and the thumbnails at the scratch
+       * directory when the source came from a bucket. Without it `processVideo`
+       * falls back to `publicDir/videos`, which does not exist on an R2
+       * deployment. On disk `workDir` is undefined and the original behaviour
+       * is untouched.
+       */
       const processingResult = await this.fileProcessingService.processVideo(
         videoPath,
         fileData,
-        options
+        source.workDir ? { ...options, toDir: source.workDir } : options
       );
 
       // Update file record with processing results
@@ -236,6 +242,7 @@ export class FileProcessListenerService implements OnModuleInit {
    */
   private async materializeLocalSource(fileData: FileDto): Promise<{
     path: string;
+    workDir?: string;
     cleanup: () => Promise<void>;
   }> {
     const { publicDir, tempDir } = this.configService.file;
@@ -258,20 +265,35 @@ export class FileProcessListenerService implements OnModuleInit {
       );
     }
 
-    // Remote. Bring the bytes back for the duration of this job only.
-    const scratch = join(tempDir, `processing-${fileData._id}-${randomUUID()}${extname(fileData.path || '') || ''}`);
+    /*
+     * Remote. Bring the bytes back for the duration of this job, into a
+     * directory of their own.
+     *
+     * A directory rather than a bare file because the transcode and the
+     * thumbnails need somewhere to be WRITTEN too. `processVideo` otherwise
+     * derives that from `publicDir/videos`, which on a bucket deployment is a
+     * path nothing ever creates — only `DiskStorageService` mkdirs that subtree.
+     * FFmpeg was told to write there and failed identically on all three
+     * thumbnail formats, which is what a missing output directory looks like.
+     */
+    const workDir = join(tempDir, `processing-${fileData._id}-${randomUUID()}`);
+    await fsPromises.mkdir(workDir, { recursive: true });
+    const scratch = join(workDir, `source${extname(fileData.path || '') || ''}`);
     this.logger.log(`Materializing ${fileData._id} from object storage for processing`);
     await this.s3StorageService.downloadToFile(fileData.path, scratch);
 
     return {
       path: scratch,
+      workDir,
       // Runs in a `finally`, so it must never throw: the job's own outcome —
       // success or the real processing error — is what the caller needs to see.
+      // Removes the source, the transcode output and the thumbnails together.
+      // Safe in a `finally`: by then every artefact has been uploaded.
       cleanup: async () => {
         try {
-          await fsPromises.rm(scratch, { force: true });
+          await fsPromises.rm(workDir, { recursive: true, force: true });
         } catch (error) {
-          this.logger.warn(`Could not remove processing scratch file ${scratch}: ${error?.message}`);
+          this.logger.warn(`Could not remove processing scratch dir ${workDir}: ${error?.message}`);
         }
       }
     };
@@ -332,7 +354,7 @@ export class FileProcessListenerService implements OnModuleInit {
     // Same materialization as video. Images usually process inline, while the
     // temp file still exists — which is why photos kept working on R2 and video
     // did not — but a queued photo takes this path and would fail identically.
-    let source: { path: string; cleanup: () => Promise<void> };
+    let source: { path: string; workDir?: string; cleanup: () => Promise<void> };
     try {
       source = await this.materializeLocalSource(fileData);
     } catch (error) {

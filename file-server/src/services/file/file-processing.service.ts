@@ -414,19 +414,43 @@ export class FileProcessingService {
     mimeType = actualMimeType;
 
     if (respThumb.length) {
-      await respThumb.reduce(async (cb, name) => {
+      /*
+       * Everything that READS a generated thumbnail must do so from the LOCAL
+       * file, before the upload removes it — never from the value the upload
+       * returns.
+       *
+       * On the disk engine `uploadedThumb.absolutePath` is the final public
+       * path and is readable, so reading it back worked. On a bucket it is an
+       * object key, and Sharp reported "Input file is missing:
+       * videos/<id>/thumbnails/<name>.webp". `rename: true` also deletes the
+       * local copy, so the read has to happen first either way.
+       */
+      let blurBuffer: Buffer | null = null;
+
+      await respThumb.reduce(async (cb, name, index) => {
         await cb;
+        const localThumbPath = join(defaultVideoDir, name);
+
+        // Read metadata while the file still exists locally.
+        const thumbnailMeta = await this.imageService.getMetaData(localThumbPath);
+
+        // The blur placeholder is derived from the first thumbnail. Produce it
+        // now for the same reason — after the upload there is nothing to read.
+        if (index === 0) {
+          blurBuffer = await this.imageService.blur(localThumbPath) as Buffer;
+        }
+
         // From main key, ignore protected folder if any, set thumbnail as public?
         const key = `/videos/${fileData._id}/thumbnails/${name}`;
         const uploadedThumb = await this.storageService.uploadFileToStorage({
-          fromFile: join(defaultVideoDir, name), // Generate thumbnail to the same folder of original
+          fromFile: localThumbPath, // Generate thumbnail to the same folder of original
           key,
           acl: 'public-read', // By default it is public-read, thumbnails are always public
           contentType: 'image/webp',
           rename: true,
           deleteOriginalFile: true
         });
-        const thumbnailMeta = await this.imageService.getMetaData(uploadedThumb.absolutePath);
+
         thumbnails.push({
           path: uploadedThumb.path,
           absolutePath: uploadedThumb.absolutePath,
@@ -436,17 +460,17 @@ export class FileProcessingService {
         return Promise.resolve();
       }, Promise.resolve());
 
-      // Generate blur image
-      const blurBuffer = await this.imageService.blur(thumbnails[0].absolutePath);
-      const uploadedBlur = await this.storageService.uploadFileToStorage({
-        body: blurBuffer,
-        key: `/videos/${fileData._id}/blur.webp`,
-        acl: 'public-read',
-        contentType: 'image/webp',
-        rename: true,
-        deleteOriginalFile: true
-      });
-      blurImagePath = uploadedBlur.path;
+      if (blurBuffer) {
+        const uploadedBlur = await this.storageService.uploadFileToStorage({
+          body: blurBuffer,
+          key: `/videos/${fileData._id}/blur.webp`,
+          acl: 'public-read',
+          contentType: 'image/webp',
+          rename: true,
+          deleteOriginalFile: true
+        });
+        blurImagePath = uploadedBlur.path;
+      }
     }
 
     metadata = {
