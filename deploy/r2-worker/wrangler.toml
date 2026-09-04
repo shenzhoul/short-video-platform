@@ -31,6 +31,12 @@ workers_dev = true
 # --------------------------------------------------------------- staging
 [env.staging]
 name = "douyin-media-staging"
+# Declared per-environment, not inherited. Whether a top-level `workers_dev`
+# reaches a named environment has differed between Wrangler versions, and the
+# failure is quiet in the worst way: the deploy succeeds, but no *.workers.dev
+# route is assigned — and that URL is the entire public media origin, so the
+# app would come up with every image and video pointing at nothing.
+workers_dev = true
 
 [[env.staging.r2_buckets]]
 binding = "MEDIA_BUCKET"
@@ -44,6 +50,8 @@ CACHE_CONTROL = "public, max-age=31536000, immutable"
 # ------------------------------------------------------------ production
 [env.production]
 name = "douyin-media"
+# See the note under [env.staging].
+workers_dev = true
 
 [[env.production.r2_buckets]]
 binding = "MEDIA_BUCKET"
