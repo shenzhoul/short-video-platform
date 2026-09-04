@@ -860,12 +860,21 @@ async function checkMessaging(db, userIds, postIds) {
   };
 }
 
-/** ffprobe the real dimensions of a local file. */
+/**
+ * ffprobe the real dimensions of a local file.
+ *
+ * `{ unavailable: true }` and `null` mean different things: the first is "the
+ * tool is not installed here", the second is "this file did not probe". Both
+ * used to collapse into `null` and then into a per-file failure, so running
+ * verification in the production api image — which carries no ffmpeg — reported
+ * all 224 cached videos as broken. A check that cannot run has not failed.
+ */
 function probeDimensions(file) {
   return new Promise((resolve) => {
     execFile('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', file],
       { timeout: 60000, maxBuffer: 262144, windowsHide: true },
       (error, stdout) => {
+        if (error?.code === 'ENOENT') return resolve({ unavailable: true });
         if (error) return resolve(null);
         try {
           const streams = JSON.parse(stdout).streams || [];
@@ -902,8 +911,25 @@ async function checkManifestOrientation(ledger) {
   let checked = 0;
   const byLocalFile = new Map();
 
+  // Poster-frame integrity needs no probe, so it runs whether ffprobe is here
+  // or not.
+  for (const entry of videos) {
+    // A poster frame belongs to exactly one video.
+    if (!entry.thumbnail) fail(`manifest: video ${entry.localFile} has no extracted poster frame`);
+    else if (byLocalFile.has(entry.thumbnail.localFile)) {
+      fail(`manifest: poster ${entry.thumbnail.localFile} is claimed by two videos`);
+    } else byLocalFile.set(entry.thumbnail.localFile, entry.localFile);
+  }
+
+  // The measurements do.
   for (const entry of videos) {
     const real = await probeDimensions(path.join(config.MEDIA_DIR, entry.localFile));
+    if (real?.unavailable) {
+      warn(`ffprobe is not installed here, so the manifest's own width/height/orientation claims `
+        + `were not re-checked (${videos.length} videos). The api image carries no ffmpeg by design; `
+        + 'run this where it is available to cover that. Everything else above still ran.');
+      break;
+    }
     checked += 1;
     if (!real) { fail(`manifest: ${entry.localFile} could not be probed`); continue; }
 
@@ -925,11 +951,6 @@ async function checkManifestOrientation(ledger) {
     if (bucket && bucket !== realOrientation) {
       fail(`manifest: ${entry.localFile} sits in '${entry.purpose}' but is ${realOrientation}`);
     }
-    // A poster frame belongs to exactly one video.
-    if (!entry.thumbnail) fail(`manifest: video ${entry.localFile} has no extracted poster frame`);
-    else if (byLocalFile.has(entry.thumbnail.localFile)) {
-      fail(`manifest: poster ${entry.thumbnail.localFile} is claimed by two videos`);
-    } else byLocalFile.set(entry.thumbnail.localFile, entry.localFile);
   }
 
   // No media file may be consumed by two posts.
