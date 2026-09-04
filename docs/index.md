@@ -4,7 +4,7 @@ description: Maintained map of the current Douyin Clone documentation.
 audience: [developer-agent]
 domain: cross
 status: active
-updated: 2026-09-01
+updated: 2026-09-04
 tags: [index, documentation]
 ---
 
@@ -15,6 +15,8 @@ tags: [index, documentation]
 | [README.md](./README.md) | Scope and entry points |
 | [highlights.md](./highlights.md) | Verified product and technical highlights |
 | [architecture.md](./architecture.md) | System architecture and runtime dependencies |
+| [deployment/README.md](./deployment/README.md) | **Production deployment**: GCE VM + Vercel + Cloudflare R2/Worker — architecture, env matrix, runbook, cost and rollback |
+| [deployment/free-tier-feasibility.md](./deployment/free-tier-feasibility.md) | Historical: the Render Free study whose measurements set the current memory limits |
 | [by-pages/README.md](./by-pages/README.md) | Implemented user/admin routes |
 | [features/README.md](./features/README.md) | Implemented feature index |
 | [features/authentication.md](./features/authentication.md) | Credentials authentication |

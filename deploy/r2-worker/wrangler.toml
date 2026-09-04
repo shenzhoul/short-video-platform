@@ -1,0 +1,60 @@
+# Public media delivery Worker.
+#
+# Deployed with the Cloudflare account that owns the buckets:
+#
+#   cd deploy/r2-worker
+#   npx wrangler login
+#   npx wrangler deploy --env staging      # do this one first
+#   npx wrangler deploy --env production
+#
+# THERE ARE NO SECRETS IN THIS FILE, and none are needed. Access to the bucket
+# comes from the `r2_buckets` **binding**, which Cloudflare injects at runtime —
+# not from an S3 access key. That is the main reason to serve media this way
+# rather than through presigned URLs: the R2 API tokens stay on the file server
+# and never travel to the edge, to Vercel, or into a browser.
+#
+# `bucket_name` and `ALLOWED_ORIGINS` are identifiers and public origins, not
+# credentials.
+
+name = "douyin-media"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-04"
+
+# The free workers.dev subdomain is the public media origin until a custom
+# domain exists. It is stable for the life of the Worker name + account.
+workers_dev = true
+
+# No default bucket binding on purpose: a top-level binding would make a bare
+# `wrangler deploy` (no --env) publish something pointed at a real bucket. Both
+# environments below are explicit.
+
+# --------------------------------------------------------------- staging
+[env.staging]
+name = "douyin-media-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "douyin-media-staging"
+
+[env.staging.vars]
+# Preview/staging front ends. Add the Vercel preview origin once it exists.
+ALLOWED_ORIGINS = ""
+CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+# ------------------------------------------------------------ production
+[env.production]
+name = "douyin-media"
+
+[[env.production.r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "douyin-media-production"
+
+[env.production.vars]
+# Exact production front-end origins, comma-separated. Fill in after the Vercel
+# projects exist, e.g.
+#   "https://douyin-clone.vercel.app,https://douyin-clone-admin.vercel.app"
+#
+# An empty value does NOT block media — media is public and still served. It
+# only means no cross-origin script may read the bytes.
+ALLOWED_ORIGINS = ""
+CACHE_CONTROL = "public, max-age=31536000, immutable"

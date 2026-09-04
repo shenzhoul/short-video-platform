@@ -1,0 +1,103 @@
+# Build context is the REPOSITORY ROOT (both Dockerfiles need `shared/`, which
+# resolves outside their own directory). Everything the two backend images do
+# not need must be excluded here, or it is uploaded to the daemon on every build
+# and, worse, can end up inside the image.
+#
+# The measured reason this file exists: `api/demo/media` is **2.1 GB** of cached
+# stock video. `api.Dockerfile` copies `api/demo` so the dataset tooling ships
+# with the image, and without the exclusion below that copy takes the media with
+# it — onto a 30 GB VM disk, through a build context uploaded over the network.
+# The seed is run from a developer machine anyway (see docs/deployment), so the
+# media is never needed on the server.
+
+# ---------------------------------------------------------------- secrets
+# Nothing carrying a credential may enter the build context. `.env.example`
+# files are templates with empty values and are deliberately kept.
+.env
+.env.*
+!.env.example
+!.env.*.example
+deploy/.env
+**/.env
+**/.env.local
+**/.env.production
+*.pem
+*.key
+*.p12
+id_rsa*
+
+# ------------------------------------------------------------- dependencies
+# Reinstalled inside the image from the lockfile. Copying a host tree in would
+# also bring native binaries built for the wrong platform — the usual cause of
+# "Could not load the sharp module" or an FFmpeg binding that will not link.
+**/node_modules
+
+# ------------------------------------------------------------ build output
+**/dist
+**/.next
+**/out
+**/coverage
+**/.turbo
+**/*.tsbuildinfo
+
+# ------------------------------------------------ apps this image never builds
+# The build context is the repository ROOT (both Dockerfiles need `shared/`,
+# which resolves outside their own directory), so Docker uploads everything not
+# excluded here — including the two Next.js apps, which neither backend image
+# copies. Measured with build artefacts present: user/ 3.4 GB, admin/ 1.5 GB.
+# They are Vercel projects and have no business in a backend image, nor in the
+# tarball sent to the daemon over the network.
+user
+admin
+
+# --------------------------------------------------------- the 2.1 GB reason
+# Cached stock media for the demo dataset. The seeder runs from a developer
+# machine against the production API, so the server never reads these bytes.
+api/demo/media
+
+# ------------------------------------------------------- runtime/local state
+# Uploaded and processed media on a disk-storage deployment, plus resumable
+# upload chunks. These are volumes at runtime and must never be baked in.
+file-server/public
+file-server/temp
+file-server/storage
+api/public/uploads
+
+# ------------------------------------------------------------- repo furniture
+.git
+.gitignore
+.github
+.vscode
+.idea
+.claude
+.agents
+.code-review-graph
+.mcp.json
+output
+docs
+**/*.md
+!**/README.md
+
+# ------------------------------------------------------------------- logs
+**/*.log
+**/logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -------------------------------------------------------------------- tests
+# Not run inside the image; the CI/local gate covers them.
+**/*.spec.ts
+**/*.spec.tsx
+**/*.test.ts
+**/__tests__
+**/browser-verify
+**/playwright-report
+**/test-results
+
+# ---------------------------------------------------------------- deploy self
+# The images do not build themselves, and the Worker is deployed by wrangler.
+deploy/r2-worker
+deploy/docker-compose.yml
+deploy/nginx
+deploy/gce

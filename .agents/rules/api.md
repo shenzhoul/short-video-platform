@@ -286,3 +286,53 @@ Invalid Date, which the driver refuses to serialise, so the endpoint answers
 - `api/package.json` exposes Jest unit tests and build scripts; run `yarn test`, then `yarn build`.
 - `file-server/package.json` exposes `lint` and `build` but no test script; run `yarn lint` and `yarn build`.
 - Put focused unit tests beside the service under test with a `.spec.ts` suffix. Mock MongoDB, Redis, queues, and remote services at the unit boundary.
+
+## Storage Engines Dispatch On The File, Not On The Config
+
+`file-server` has two storage engines: `DiskStorageService` and
+`S3StorageService` (Cloudflare R2, S3-compatible). `STORAGE_DRIVER` selects
+where **new** uploads go. It must never select where an **existing** file is
+read from or deleted from.
+
+Every file record stores its own `storageType`, and both
+`StorageService.getStorageEngine` (writes and deletes) and
+`resolveStorageEngineForRead` (the static URL path) dispatch on that value,
+falling back to the driver only when no type is recorded. Reading the driver
+instead would rewrite every disk-era file's URL to a bucket path on the next
+deploy, and — worse — send deletes for disk media to a bucket that never held
+it, reporting success while the bytes survive with no row left to name them.
+
+- `file-metadata.service.ts` and `file.service.ts` stamp the record with
+  `configuredStorageType()` at creation. They used to hardcode `diskStorage`
+  with a `// or 's3' based on storage configuration` comment, which would have
+  recorded every bucket-backed file as local.
+- `FileDto.getUrl()` is not a DI-managed object — `plainToInstance` builds it —
+  so it calls `StorageService.getFileUrl` **statically**. That static method
+  hardcoded `new DiskStorageService()`. A static call site is exactly where a
+  new backend silently fails to take effect; check for them before assuming a
+  provider swap is complete.
+- Object keys are normalised through `object-key.ts` on the way to a bucket.
+  Most of a key is server-generated (`photos/<ObjectId>/<uuid>.webp`), but
+  `generateFilePaths` appends `extname(multerData.originalname)`, which is
+  user-controlled: `clip.mp4?x=1` yields a legal S3 key and a broken URL. `..`
+  and control characters are **refused**, not repaired — `..` is the one input
+  that can move an object out of the prefix separating staging from production.
+
+## A Configuration Error Must Exit, Not Hang
+
+Validating configuration *after* `NestFactory.create` means the throw happens
+with Mongo, Redis and the socket adapter already open, and a logger possibly
+already redirected to the database. Measured on `file-server`: the process did
+not die, it **hung** — exit 124 under a timeout, nothing on stdout. A container
+that hangs is worse than one that crashes, because the orchestrator never
+restarts it and no health check gets to answer.
+
+- Validate at the **top of `bootstrap()`**, before anything is opened.
+- End with `bootstrap().catch(...)` that logs and `process.exit(1)`, never
+  `void bootstrap()`.
+- `CORS_ORIGIN` is the current example: both services now refuse to start in
+  production without it, because `origin: '*'` with `credentials: true` is not
+  permissive but *broken* — browsers reject the combination, so the wildcard
+  fallback breaks every authenticated request instead of loosening anything. It
+  never shows locally, where both web apps reach the backends through their own
+  Next rewrite and are same-origin.

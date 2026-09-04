@@ -1,0 +1,12 @@
+{
+  "name": "douyin-media-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only public media delivery from Cloudflare R2 via a Worker binding.",
+  "scripts": {
+    "test": "node --test test/worker.test.mjs",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production"
+  }
+}

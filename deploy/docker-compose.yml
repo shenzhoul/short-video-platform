@@ -1,0 +1,197 @@
+# =============================================================================
+# Douyin Clone — backend stack for the Google Compute Engine VM
+# =============================================================================
+# Target: douyin-prod-01, e2-medium (2 vCPU / 4 GB, ~3.8 GB usable),
+#         Ubuntu 24.04 LTS, 30 GB balanced PD, asia-southeast1-b.
+#
+# `user/` and `admin/` are NOT here — they are Vercel projects.
+# Media is NOT served from here — Cloudflare R2 via the Worker in
+# `deploy/r2-worker/`. This box never sends a video byte.
+#
+# Run from the REPOSITORY ROOT (the build context must see `shared/`):
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# NETWORKING — the whole security model in three lines:
+#   - mongodb and redis publish NO host port (`expose:` only). They are
+#     reachable solely on this project's bridge network, by service name.
+#     `localhost:27017` on the VM reaches nothing, and neither does the internet.
+#   - api and file-server bind 127.0.0.1 ONLY. The GCE firewall allows 80/443,
+#     but even if it did not, these are not on a public interface.
+#   - nginx on the host is the single public entrypoint.
+#
+# MEMORY — 3.8 GB total, and every limit below is deliberate. Without limits the
+# first FFmpeg transcode competes with MongoDB's WiredTiger cache and the OOM
+# killer picks a victim by heuristic, which is usually mongod. Measured figures
+# behind these numbers are in docs/deployment/README.md.
+#
+#     mongodb      1.0G   (WiredTiger cache pinned to 0.5G — see command)
+#     redis        256M   (maxmemory 192M, below the container cap)
+#     api          768M   (measured ~170M idle)
+#     file-server  1.2G   (measured ~134M idle + up to ~400M for one FFmpeg)
+#     ----------------
+#     total       ~3.2G,  leaving ~600M for the host, nginx and dockerd
+#
+# Swap (2 GB, created by deploy/gce/bootstrap.sh) is a safety margin for a burst,
+# NOT capacity. If these limits are routinely hit the answer is a bigger machine,
+# not more swap: swapping mongod is indistinguishable from an outage.
+
+name: ${COMPOSE_PROJECT_NAME:-douyin-clone}
+
+# Caps per-container logs. The VM has 30 GB and no log shipping (Ops Agent is
+# off by design), so an unrotated JSON log is the most likely way to fill the
+# disk — and a full disk takes down uploads and mongod together.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ---------------------------------------------------------------- datastores
+  mongodb:
+    image: mongo:8.0
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-mongodb
+    restart: unless-stopped
+    logging: *default-logging
+    # WiredTiger otherwise sizes its cache at ~50% of (host RAM - 1 GB) — about
+    # 1.4 GB here — because it reads the HOST's memory, not the container limit.
+    # It would then be killed for exceeding mem_limit under load.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.5"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required}
+    # `expose`, never `ports`. Adding a host port here is the single edit that
+    # would put the database on the public internet.
+    expose:
+      - "27017"
+    volumes:
+      - mongo-data:/data/db
+      - ${MONGO_BACKUP_DIR:-./backups/mongodb}:/backup
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks: [internal]
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-redis
+    restart: unless-stopped
+    logging: *default-logging
+    # A password even though it is unreachable from outside: it is the second
+    # factor if the network is ever misconfigured, and it costs one variable.
+    #
+    # `noeviction` is not a default worth changing here — BullMQ job state is not
+    # cache, and silently evicting it under memory pressure would drop queued
+    # work with no error. maxmemory sits below mem_limit so Redis refuses writes
+    # before the kernel kills it.
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      --appendonly yes
+      --maxmemory 192mb
+      --maxmemory-policy noeviction
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [internal]
+
+  # ------------------------------------------------------------------ services
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-api
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: [./.env]
+    environment:
+      NODE_ENV: production
+      HTTP_PORT: 8080
+      # Overridden here, not in .env: inside the network these are service
+      # names, and a copied-in localhost URI would reach the container itself.
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-douyin-clone}?authSource=admin
+      LOGGER_MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-douyin-clone}-logger?authSource=admin
+      REDIS_QUEUE_HOST: redis
+      REDIS_QUEUE_PORT: 6379
+      REDIS_QUEUE_PASSWORD: ${REDIS_PASSWORD}
+      FILE_SERVER_BASE_URL: http://file-server:8000
+      # Behind host nginx, so the socket peer is the proxy. Without this every
+      # rate limit keys on one address and throttles all users together.
+      TRUST_PROXY_HEADERS: "true"
+    ports:
+      # Loopback only. Host nginx proxies to this; nothing else can reach it.
+      - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
+    mem_limit: 768m
+    depends_on:
+      mongodb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [internal]
+
+  file-server:
+    build:
+      context: ..
+      dockerfile: deploy/file-server.Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-file-server
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: [./.env]
+    environment:
+      NODE_ENV: production
+      HTTP_PORT: 8000
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-douyin-clone}-file-server?authSource=admin
+      LOGGER_MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE:-douyin-clone}-logger?authSource=admin
+      REDIS_QUEUE_HOST: redis
+      REDIS_QUEUE_PORT: 6379
+      REDIS_QUEUE_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_DB: 1
+      # --- FFmpeg / libvips concurrency on a 2 vCPU box -------------------
+      # Transcode concurrency is already 1: the video and photo processing
+      # workers subscribe without a `concurrency` option and BullMQ's default
+      # is 1. These two bound the *validation* path, which runs inline in the
+      # request and is what TUS completions fan out into.
+      #
+      # One 720p transcode was measured at ~392 MB peak RSS. Two at once do not
+      # fit beside MongoDB on this machine, so probes are pinned to 1.
+      VIDEO_PROBE_CONCURRENCY: "1"
+      IMAGE_VALIDATION_CONCURRENCY: "1"
+    ports:
+      - "127.0.0.1:${FILE_SERVER_HOST_PORT:-8000}:8000"
+    mem_limit: 1200m
+    volumes:
+      # Transcode scratch. Needs several times the largest accepted file.
+      - file-temp:/app/temp
+      # Resumable-upload chunks. Losing this volume aborts in-flight uploads.
+      - file-tus:/app/storage/tus-uploads
+      # Media written before the R2 cutover, still recorded as
+      # `storageType: diskStorage` and therefore still read from here. On a
+      # clean deploy this stays empty — but dropping it later would 404 that
+      # media even with R2 working perfectly.
+      - file-public:/app/public
+    depends_on:
+      mongodb: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [internal]
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:
+  file-temp:
+  file-tus:
+  file-public:
