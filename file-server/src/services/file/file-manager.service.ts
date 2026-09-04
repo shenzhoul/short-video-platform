@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import { existsSync, promises as fsPromises } from "fs";
 import { IFileUploadOptions } from "src/common/lib/file";
 import { IMulterUploadedFile } from "src/common/lib/file/multer/multer.utils";
 import { FileDto } from "src/dtos/file.dto";
@@ -51,6 +52,8 @@ export const FILE_EVENT = {
  */
 @Injectable()
 export class FileManagerService {
+  private readonly logger = new Logger(FileManagerService.name);
+
   constructor(
     @InjectModel(File.name) private readonly fileModel: Model<FileDocument>,
     private readonly validationService: FileValidationService,
@@ -138,13 +141,36 @@ export class FileManagerService {
       queued: false
     };
 
+    /*
+     * The multer temp file is the ONLY local copy of the uploaded bytes, and
+     * the immediate-processing branch below reads it by path.
+     *
+     * Step 5 uploads it with `rename: true`, which asks the engine to remove
+     * the source once the object is durable. That is right for the QUEUED
+     * branch -- the listener materializes the object back out of the bucket --
+     * and destroys the input of the IMMEDIATE branch, which runs a few lines
+     * later with nothing left to read.
+     *
+     * It never showed on the disk engine because there "uploaded" and "still
+     * readable locally" are the same thing: the file is moved into publicDir
+     * and `processPhoto` finds it again through the record's absolutePath. On
+     * a bucket that path is an object key, so every candidate misses and Sharp
+     * fails with "Input file is missing". Measured in production on
+     * `post-photo`; `message-photo` and `comment-photo` upload the same way.
+     *
+     * So: keep the source when we are about to read it, and take ownership of
+     * deleting it afterwards (the `finally` on the processing call below).
+     */
+    const keepLocalSourceForProcessing = requiresProcessing && shouldProcessImmediately;
+
     // Step 5: Upload to storage FIRST (before queueing)
     // This ensures queue jobs get the final storage path, not temp path
     const uploadResult = await this.uploadToStorage(
       multerData,
       options,
       filePaths,
-      processingResults
+      processingResults,
+      keepLocalSourceForProcessing
     );
 
     // update file path to DB, require if this is an existing file (TUS)
@@ -165,12 +191,20 @@ export class FileManagerService {
     // Step 6: Process file (immediate or queue) - AFTER upload
     if (requiresProcessing) {
       if (shouldProcessImmediately) {
-        processingResults = await this.processFileImmediately(
-          multerData,
-          options,
-          processingFileType,
-          fileId
-        );
+        try {
+          processingResults = await this.processFileImmediately(
+            multerData,
+            options,
+            processingFileType,
+            fileId
+          );
+        } finally {
+          // We suppressed the engine's own cleanup above, so removing the temp
+          // source is ours. In a `finally` because a failed upload must not
+          // leave the bytes behind either: the callers that clean up after this
+          // method only do so on their success path.
+          await this.removeLocalSource(multerData.path);
+        }
       } else {
         // Queue for background processing with FINAL storage path
         // Create updated multerData with final storage path for queue processing
@@ -439,7 +473,8 @@ export class FileManagerService {
     multerData: IMulterUploadedFile,
     options: IFileUploadOptions,
     filePaths: Record<string, any>,
-    processingResults: Record<string, any>
+    processingResults: Record<string, any>,
+    keepLocalSource = false
   ): Promise<IFileUploadResponse> {
     const bIsImage = isImage(multerData);
 
@@ -459,14 +494,36 @@ export class FileManagerService {
       contentType = 'video/mp4';
     }
 
-    // Read file for upload
+    // Read file for upload.
+    //
+    // `rename` asks the engine to consume the source. Suppressed when the
+    // caller still needs it: the disk engine then copies instead of moving,
+    // which leaves publicDir in exactly the same state, and the S3 engine
+    // leaves the temp file for the processing step to read.
     return this.storageService.uploadFileToStorage({
       fromFile: fileToUpload,
       acl: options.acl || 'public-read',
       key: filePaths.mainFileKey,
       contentType,
-      rename: true
+      rename: !keepLocalSource
     });
+  }
+
+  /**
+   * Remove a temp source this service asked the storage engine not to delete.
+   *
+   * Never throws: it runs in a `finally`, potentially while a processing
+   * failure is already on its way to the client, and a tidy-up problem must not
+   * replace the real error with a misleading one.
+   */
+  private async removeLocalSource(sourcePath?: string): Promise<void> {
+    if (!sourcePath || !existsSync(sourcePath)) return;
+
+    try {
+      await fsPromises.unlink(sourcePath);
+    } catch (error) {
+      this.logger.warn(`Could not remove the upload temp file ${sourcePath}: ${(error as Error).message}`);
+    }
   }
 
   /**

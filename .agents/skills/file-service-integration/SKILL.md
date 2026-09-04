@@ -524,6 +524,57 @@ One optional image per comment, and the lifecycle is the reusable part.
 - **Do not render an empty `<p>` for an image-only comment** — it still costs its
   line height and top margin, which reads as an accidental gap.
 
+## Where the bytes are when processing runs
+
+`file-server` uploads to storage **first** and processes **after**
+(`FileManagerService.processUploadedFile`, "Step 5" then "Step 6"). Whether the
+processing step can still read the file depends entirely on the engine, and the
+difference is invisible in development:
+
+| | disk | R2 |
+|---|---|---|
+| what "upload" does | moves the temp file into `public/` | PUTs the object, then unlinks the temp file |
+| `record.absolutePath` | a readable local path | an object key |
+| local copy afterwards | yes, in `public/` | **none** |
+
+So on disk, `processPhoto`'s three-candidate path resolution (record
+`absolutePath` → `publicDir/<path>` → the multer temp path) always finds
+something, and on a bucket it finds nothing.
+
+**Two branches, two owners of the bytes:**
+
+- **Queued** (`immediateProcess: false` — every video, and photos that ask for
+  it). Step 5 keeps `rename: true`, the temp file goes away, and
+  `file-process.listener.ts` calls `materializeLocalSource()`, which downloads
+  the object into `temp/processing-<id>-<uuid>/source<ext>` via
+  `S3StorageService.downloadToFile` and removes the whole work dir in a
+  `finally`. On disk it short-circuits to the existing local file.
+- **Immediate** (`immediateProcess: true` — `post-photo`, `message-photo`,
+  `comment-photo`; `shouldProcessImmediately` also defaults images to true).
+  Step 5 passes `rename: false` so the multer temp file survives, and
+  `processUploadedFile` deletes it itself in a `finally` around the processing
+  call. Do not "fix" that back to `rename: true`: it is what the immediate
+  branch reads.
+
+**When adding an upload type, decide which branch it lands in and check the
+bytes are there.** `requiresProcessing` (thumbnails enabled, `replaceOriginal`,
+or md5 hashing) decides *whether* processing happens at all — a `post-thumbnail`
+sets `generateThumbnail: false`, so it never processes and is unaffected by any
+of this, which is exactly why poster images kept working while photo posts
+failed.
+
+**Verify against a real bucket, through the HTTP endpoint**, and assert on the
+object rather than the status code. The upload step writes the *raw* file to the
+main key, and processing overwrites it; if processing dies in between, the key
+still answers `200` — holding the original bytes under a `.webp` name with
+`Content-Type: image/jpeg`. Comparing the served `Content-Length` against the
+source file's size is what tells the two apart.
+
+Note two pre-existing behaviours so they are not mistaken for regressions:
+`replaceWithoutExif` preserves the input format, so a JPEG stays a JPEG under a
+`.webp` key (the `imageFormat: 'webp'` processing option is not honoured on this
+path), and `ServeStaticModule` ignores `FILE_PUBLIC_DIR`.
+
 ## Bundled Rules
 
 Read only the relevant files under `rules/` for security, processing, frontend, performance, or error-handling details. Verify every referenced path against the current repository before applying an example.

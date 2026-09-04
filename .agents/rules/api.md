@@ -318,6 +318,61 @@ it, reporting success while the bytes survive with no row left to name them.
   and control characters are **refused**, not repaired — `..` is the one input
   that can move an object out of the prefix separating staging from production.
 
+## "Uploaded" And "Still Readable Locally" Are The Same Thing Only On Disk
+
+Every processing step in `file-server` takes a **local path**. The disk engine
+makes that free: uploading means moving the file into `public/`, so a record's
+`absolutePath` is both the final location and something Sharp and FFmpeg can
+open. On a bucket it is an object key, and the local copy is gone — the engine
+deletes it, because `rename: true` is how the caller says "consume my file".
+
+Six defects across three rounds of fixes have come from that one assumption,
+every one of them invisible on disk and fatal on R2:
+
+| Where | What happened |
+|---|---|
+| `_processVideo` | handed FFmpeg an object key as the input path |
+| `_processPhoto` (queued) | same, for queued photos |
+| `_processVideo` guard | `if (!videoPath)` could never fire — the string was fine, the file was not |
+| `processVideo` thumbnails | written into `publicDir/videos`, a directory an R2 deployment never creates |
+| `processVideo` thumbnails | `getMetaData`/`blur` read the path the *upload* returned, after it had deleted the local copy |
+| `processUploadedFile` | uploaded the multer temp file with `rename: true`, then immediately processed photos from that same path |
+
+The rules that fall out:
+
+- **Decide who owns the bytes before the first step, and write it down.** The
+  queued path materializes the object back out of the bucket
+  (`S3StorageService.downloadToFile`, into a per-job work dir it later removes).
+  The immediate path keeps the multer temp file — `rename: false` — and deletes
+  it itself in a `finally`. Both are correct; what is never correct is a step
+  that assumes somebody else left a file lying around.
+- **Read from the local file before uploading it, never from what the upload
+  returned.** The return value is a key on a bucket, and the upload has already
+  deleted the thing you wanted to read.
+- **A `finally` that cleans up must run on the failure path too.** The callers of
+  `processUploadedFile` tidy the temp file *after* it returns, so a throw left
+  the bytes behind.
+- **`existsSync`, not truthiness.** A path variable is almost never empty; the
+  file behind it very often is missing.
+- **Never let a decoder answer for you.** "Input file is missing:
+  /app/temp/<uuid>.jpeg" is a fact about libvips that the upload controller
+  forwarded verbatim as a 400 — telling the client something untrue about the
+  file it sent, leaking a server path, and, because nothing logged it, leaving
+  the only copy of the real cause in somebody else's HTTP response. Refuse in the
+  service's own words, with the file id and the storage type, and log the rest.
+- **Verify a storage change against a bucket, through the real HTTP path.** The
+  fastest proof that processing actually ran is the object's **size**: before the
+  photo fix, the object at the main key was byte-identical to the uploaded source
+  (3,294,278 bytes — the raw upload, never overwritten) and served
+  `Content-Type: image/jpeg`; after it, 3,290,024 bytes of EXIF-stripped re-encode
+  from the same source in both `r2` and `disk` mode. A status code proves nothing
+  here — the pre-fix upload also returned `200` for the object.
+- **Photos and videos take different branches.** `shouldProcessImmediately`
+  returns false for every video, and defaults to **true** for images, so a photo
+  is processed inside the upload request and a video is queued. A fix verified on
+  one says nothing about the other; the queued path is the one with a listener,
+  the immediate path is the one with a request waiting on it.
+
 ## A Configuration Error Must Exit, Not Hang
 
 Validating configuration *after* `NestFactory.create` means the throw happens

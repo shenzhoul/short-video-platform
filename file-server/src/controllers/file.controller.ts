@@ -82,6 +82,10 @@ export class FileController {
     @Body('token') uploadToken: string,
     @UploadedFile() file: IMulterUploadedFile
   ) {
+    // Hoisted so the catch below can name the record in the log. The token is
+    // validated inside the try, so its payload is not in scope down there.
+    let uploadedFileId: string | undefined;
+
     try {
       if (!file) {
         throw new BadRequestException('No file uploaded');
@@ -105,6 +109,7 @@ export class FileController {
 
       // Validate and decode upload token
       const tokenPayload = this.validateUploadToken(uploadToken);
+      uploadedFileId = tokenPayload.fileId;
       const fileDB = await this.fileService.findById(tokenPayload.fileId);
       if (!fileDB) {
         // Clean up the uploaded file before throwing error
@@ -142,7 +147,29 @@ export class FileController {
         throw error;
       }
 
-      throw new BadRequestException(error.message || 'Upload failed');
+      /*
+       * Anything reaching here is an internal failure, not a statement about
+       * the uploaded file -- a decoder's "Input file is missing: /app/temp/...",
+       * an S3 error carrying request context, a Mongo timeout. Forwarding that
+       * text told the client something untrue about what it sent, leaked server
+       * paths, and -- because nothing logged it -- left the real cause visible
+       * only in the HTTP response of whoever happened to be uploading.
+       *
+       * So: the detail goes to the log, and the client gets wording this
+       * service wrote plus a stable code to match on.
+       */
+      this.logger.error(
+        `Upload processing failed for file ${uploadedFileId || 'unknown'} `
+        + `(${file?.originalname || 'unnamed'}, ${file?.mimetype || 'unknown type'}, ${file?.size ?? '?'} bytes): `
+        + `${error?.message || error}`,
+        error?.stack
+      );
+
+      throw new BadRequestException({
+        message: 'We could not process that upload. Please try again.',
+        error: 'UPLOAD_PROCESSING_FAILED',
+        statusCode: HttpStatus.BAD_REQUEST
+      });
     }
   }
 

@@ -53,7 +53,7 @@ export class FileProcessingService {
   }> {
     // TODO - should check from photo dir
     const { publicDir } = this.configService.file;
-    let actualPhotoPath = photoPath;
+    let actualPhotoPath: string | null = null;
     // Resolve the actual file path using platform-specific paths
     const platformAbsolutePath = fromPosixPath(fileData.absolutePath);
     const platformRelativePath = fromPosixPath(fileData.path);
@@ -65,6 +65,26 @@ export class FileProcessingService {
       actualPhotoPath = join(publicDir, platformRelativePath);
     } else if (existsSync(fromPosixPath(photoPath))) {
       actualPhotoPath = fromPosixPath(photoPath);
+    }
+
+    /*
+     * Refuse in our own words rather than letting the decoder answer.
+     *
+     * This used to fall through with `actualPhotoPath` still holding a path
+     * that does not exist, so the first Sharp call threw "Input file is
+     * missing: /app/temp/<uuid>.jpeg" -- a fact about libvips that the upload
+     * controller then forwarded to the client, and which says nothing about the
+     * real condition: on a bucket-backed deployment none of the three
+     * candidates is a local file unless the caller kept the upload's temp
+     * source or downloaded the object first.
+     */
+    if (!actualPhotoPath) {
+      throw new Error(
+        `No local copy of file ${fileData._id} is available to process (storageType=${fileData.storageType || 'unknown'}). `
+        + `Tried the record's absolutePath, ${join(publicDir, platformRelativePath)}, and the upload's temp path ${photoPath}. `
+        + 'A bucket-backed caller must keep the temp source until processing has read it, '
+        + 'or download the object first.'
+      );
     }
 
     // Create thumbnail
