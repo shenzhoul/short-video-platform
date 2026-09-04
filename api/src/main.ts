@@ -20,7 +20,47 @@ import { HttpExceptionLogFilter } from './common/lib/logger/http-exception-log.f
  * Sets up CORS, validation pipes, WebSocket adapter, Swagger docs, and starts the server
  * @returns Promise<void>
  */
+/**
+ * The allowed cross-origin callers, validated before anything is opened.
+ *
+ * `origin: '*'` together with `credentials: true` is not a permissive
+ * configuration — it is a broken one. The spec forbids the combination, so
+ * browsers reject the response outright: the wildcard does not widen access, it
+ * removes it, and every authenticated request from the user and admin apps
+ * fails with an opaque CORS error rather than a 401 anyone could diagnose.
+ *
+ * Locally it never shows, because both apps call the API through their own Next
+ * rewrite (`PROXY_API_TARGET`) and are therefore same-origin. It appears the
+ * moment a browser talks to `api.<domain>` directly.
+ *
+ * Refusing to boot is the honest option: the alternative is a service that
+ * starts, looks healthy, passes its own readiness check, and cannot log anybody
+ * in.
+ */
+function resolveCorsOrigins(): string[] | string {
+  const origins = process.env.CORS_ORIGIN?.split(',').map((value) => value.trim()).filter(Boolean) || [];
+
+  if (process.env.NODE_ENV === 'production' && !origins.length) {
+    throw new Error(
+      'CORS_ORIGIN is empty. In production it must list the exact user and admin '
+      + 'origins (comma-separated, e.g. https://app.example.com,https://admin.example.com). '
+      + 'Refusing to fall back to a wildcard, which browsers reject when credentials are sent.'
+    );
+  }
+
+  return origins.length ? origins : '*';
+}
+
 async function bootstrap() {
+  /*
+   * Checked before `NestFactory.create` opens Mongo, Redis and the socket
+   * adapter. Validating afterwards makes a configuration error hang the process
+   * instead of killing it — measured on the file server: exit 124 under a
+   * timeout, nothing on stdout, because the open handles keep the event loop
+   * alive and the rejection lands after the logger has been redirected.
+   */
+  resolveCorsOrigins();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const httpAdapter = app.getHttpAdapter();
   // Configure logger based on environment
@@ -44,9 +84,7 @@ async function bootstrap() {
     }
   }
 
-  // SECURITY FIX: Implement proper CORS configuration with allowed origins
-  const origin = process.env.CORS_ORIGIN?.split(',').map((value) => value.trim()).filter(Boolean) || [];
-  const corsOrigins = origin.length ? origin : '*';
+  const corsOrigins = resolveCorsOrigins();
   app.enableCors({
     origin: corsOrigins,
     credentials: true, // Allow cookies and authentication tokens
@@ -234,4 +272,13 @@ async function bootstrap() {
   console.log(`🚀 Application is running on: http://localhost:${port}`);
 }
 
-void bootstrap();
+/*
+ * An explicit catch, not `void bootstrap()`. A startup failure must exit
+ * non-zero with a readable message rather than leaving a container that is
+ * never ready and never restarted.
+ */
+bootstrap().catch((error) => {
+  // eslint-disable-next-line no-console
+  console.error(`Fatal: API failed to start. ${error?.message || error}`);
+  process.exit(1);
+});

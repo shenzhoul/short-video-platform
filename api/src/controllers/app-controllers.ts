@@ -3,6 +3,7 @@ import {
   AdminPermissionController,
   AdminUserController,
   AppController,
+  HealthController,
   AdminAuthController,
   LoginController,
   LogoutController,
@@ -28,6 +29,7 @@ import { ContentFileController } from 'src/controllers/content/content-file.cont
 
 export const appControllers = [
   // Core app controllers
+  HealthController,
   AppController,
 
   // auth

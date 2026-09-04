@@ -2,7 +2,8 @@
 // This file exports all controllers from their respective modules
 
 // Core app controllers
-export { AppController } from '../app.controller';;
+export { AppController } from '../app.controller';
+export { HealthController } from './health.controller';
 
 // Internal API controllers
 export { FileInternalController } from './internal/file-internal.controller';

@@ -1,6 +1,7 @@
 import {
   // Core app controllers
   AppController,
+  HealthController,
   // External API controllers
   FileController,
   // Internal API controllers
@@ -10,6 +11,7 @@ import {
 export const appControllers = [
   // Core app controllers
   AppController,
+  HealthController,
   // Internal API controllers
   FileInternalController,
   // External API controllers
