@@ -69,6 +69,36 @@ export async function proxy(request: NextRequest) {
   // Check for NextAuth session token
   const session = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET }) as any;
 
+  /*
+    TEMPORARY — every input to the branch decisions below.
+
+    `middleware.env` was appearing without `middleware.users-me`, which proves
+    `isRealAdminUser` is never entered and the redirect comes from an earlier
+    branch. The cookie names are logged (NAMES ONLY, never values) because
+    next-auth's `getToken` picks which cookie to read from `NEXTAUTH_URL`:
+
+      secureCookie = NEXTAUTH_URL.startsWith("https://")
+      cookieName   = secureCookie ? "__Secure-next-auth.session-token"
+                                  : "next-auth.session-token"
+
+    while auth-options.ts overrides the name to the NON-prefixed form. If those
+    disagree, getToken reads a cookie that does not exist and returns null.
+  */
+  const cookieNames = request.cookies.getAll().map((c) => c.name);
+  // eslint-disable-next-line no-console
+  console.warn('[auth-diag] middleware.session: '
+    + `path=${pathname} `
+    + `nextauthUrlHttps=${Boolean(process.env.NEXTAUTH_URL?.startsWith('https://'))} `
+    + `getTokenLooksFor=${process.env.NEXTAUTH_URL?.startsWith('https://') ? '__Secure-next-auth.session-token' : 'next-auth.session-token'} `
+    + `cookiesPresent=[${cookieNames.join(',')}] `
+    + `decoded=${Boolean(session)} `
+    + `hasUser=${Boolean(session?.user)} `
+    + `hasUserId=${Boolean(session?.user?._id)} `
+    + `isAdminValue=${String(session?.user?.isAdmin)} `
+    + `isAdminType=${typeof session?.user?.isAdmin} `
+    + `hasAccessToken=${Boolean(session?.accessToken)} `
+    + `topLevelKeys=[${session ? Object.keys(session).join(',') : ''}]`);
+
   /**
    * `/auth/forgot` is retired.
    *
@@ -96,27 +126,44 @@ export async function proxy(request: NextRequest) {
 
   // If accessing auth pages and already authenticated, redirect to dashboard
   if (isAuthPage && !isLogoutPage && session?.user?._id) {
+    // eslint-disable-next-line no-console
+    console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-HAS-SESSION entering=isRealAdminUser');
     // here is to verify server once again because token may expired, we need to double check and avoid redirect loop
     const isAdmin = await isRealAdminUser(session.accessToken);
     if (!isAdmin) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-NOT-ADMIN -> /auth/logout?redirect=login');
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
+    // eslint-disable-next-line no-console
+    console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-OK -> /dashboard');
     return NextResponse.redirect(`${origin}/dashboard`);
   }
 
   // If not auth page, require authentication
   if (!isAuthPage) {
     if (!session?.user?._id || !session.user.isAdmin) {
+      const reason = !session ? 'getToken-returned-null'
+        : (!session.user ? 'no-user-in-payload'
+          : (!session.user._id ? 'no-user-id' : 'isAdmin-falsy'));
+      // eslint-disable-next-line no-console
+      console.warn(`[auth-diag] middleware.branch: taken=PROTECTED-NO-SESSION reason=${reason} -> /auth/logout?redirect=login`);
       // No valid session — clean up and redirect to login
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
+    // eslint-disable-next-line no-console
+    console.warn('[auth-diag] middleware.branch: taken=PROTECTED-HAS-SESSION entering=isRealAdminUser');
     // check real user and token validity
     const isAdmin = await isRealAdminUser(session.accessToken);
     if (!isAdmin) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth-diag] middleware.branch: taken=PROTECTED-NOT-ADMIN -> /auth/logout?redirect=login');
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
   }
 
+  // eslint-disable-next-line no-console
+  console.warn('[auth-diag] middleware.branch: taken=ALLOW -> next()');
   const response = NextResponse.next();
   return response;
 }
