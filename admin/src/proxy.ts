@@ -2,8 +2,6 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-import { fingerprint } from '@lib/auth-fingerprint';
-
 export const config = {
   matcher: [
     /*
@@ -23,23 +21,6 @@ export async function proxy(request: NextRequest) {
   const baseApiUrl = process.env.API_ENDPOINT || process.env.API_SERVER_ENDPOINT || process.env.NEXT_PUBLIC_API_ENDPOINT || origin;
 
   const isRealAdminUser = async (accessToken: string) => {
-    /*
-      TEMPORARY — the sixth fingerprint in the auth handoff trace.
-
-      Logged UNCONDITIONALLY rather than behind ADMIN_AUTH_DIAGNOSTICS: this
-      runs in the edge runtime, where whether runtime environment variables are
-      visible at all is itself one of the open questions. Gating on one could
-      suppress exactly the evidence we need — and `diagEnvVisible` below answers
-      that question as a side effect.
-
-      A fingerprint only; never the token. Remove with the rest of the tracing.
-    */
-    // eslint-disable-next-line no-console
-    console.info('[auth-diag] 6.middleware: '
-      + `authorizationFp=${await fingerprint(accessToken)} `
-      + `diagEnvVisible=${Boolean(process.env.ADMIN_AUTH_DIAGNOSTICS)} `
-      + `apiBaseSet=${Boolean(baseApiUrl)}`);
-
     try {
       const user = await fetch(`${baseApiUrl}/users/me`, {
         method: 'GET',
@@ -48,10 +29,6 @@ export async function proxy(request: NextRequest) {
         }
       })
         .then(res => res.json());
-      // eslint-disable-next-line no-console
-      console.info('[auth-diag] 6.middleware result: '
-        + `isAdmin=${user?.data?.isAdmin === true} `
-        + `message=${user?.message || '(none)'}`);
       return user?.data?.isAdmin === true;
     } catch {
       return false;
@@ -60,22 +37,6 @@ export async function proxy(request: NextRequest) {
 
   // Check for NextAuth session token
   const session = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET }) as any;
-
-  /*
-    TEMPORARY — what the middleware actually decoded from the cookie.
-
-    This is the boundary the six-point trace exists to find: everything before
-    it happens in the Node runtime, everything after it in the edge runtime, and
-    `secretVisible=false` here would explain a null session on its own.
-  */
-  // eslint-disable-next-line no-console
-  console.info('[auth-diag] 5b.middleware-decode: '
-    + `path=${pathname} `
-    + `secretVisible=${Boolean(process.env.NEXTAUTH_SECRET)} `
-    + `session=${Boolean(session)} `
-    + `userId=${Boolean(session?.user?._id)} `
-    + `isAdminFlag=${session?.user?.isAdmin === true} `
-    + `accessTokenFp=${await fingerprint(session?.accessToken)}`);
 
   /**
    * `/auth/forgot` is retired.

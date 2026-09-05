@@ -1,4 +1,3 @@
-import { fingerprint } from '@lib/auth-fingerprint';
 import { getResponseError } from '@lib/utils';
 import axios from 'axios';
 import { cookies } from 'next/headers';
@@ -101,12 +100,11 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Access denied. Admin role required.');
           }
 
-          authDiagnostic('1.authorize', {
+          authDiagnostic('authorize', {
             user: true,
             id: Boolean(profile._id),
             isAdmin: profile.isAdmin === true,
-            accessToken: Boolean(token),
-            fp: await fingerprint(token)
+            accessToken: Boolean(token)
           });
 
           // Any object returned will be saved in `user` property of the JWT
@@ -176,29 +174,26 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = user.token;
         token.user = user;
       }
-      void (async () => authDiagnostic(user ? '2.jwt-signin' : '4.jwt-subsequent', {
+      authDiagnostic('jwt', {
         trigger: trigger || 'none',
         user: Boolean(user),
         tokenUser: Boolean(token.user),
         tokenId: Boolean((token.user as any)?._id),
         admin: (token.user as any)?.isAdmin === true,
         accessToken: Boolean(token.accessToken),
-        sub: Boolean(token.sub),
-        userTokenFp: await fingerprint((user as any)?.token),
-        accessTokenFp: await fingerprint(token.accessToken)
-      }))();
+        sub: Boolean(token.sub)
+      });
       return token;
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
       session.user = token.user as any;
-      authDiagnostic('5.session', {
+      authDiagnostic('session', {
         tokenUser: Boolean(token.user),
         tokenId: Boolean((token.user as any)?._id),
         admin: (token.user as any)?.isAdmin === true,
         accessToken: Boolean(token.accessToken),
-        sessionUser: Boolean(session.user),
-        accessTokenFp: await fingerprint(session.accessToken)
+        sessionUser: Boolean(session.user)
       });
       return session;
     }
