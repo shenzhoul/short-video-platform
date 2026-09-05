@@ -20,17 +20,48 @@ export async function proxy(request: NextRequest) {
 
   const baseApiUrl = process.env.API_ENDPOINT || process.env.API_SERVER_ENDPOINT || process.env.NEXT_PUBLIC_API_ENDPOINT || origin;
 
+  /*
+    TEMPORARY — which endpoint the middleware actually resolved, and what it got.
+
+    `console.warn`, never `console.info`: next.config.js strips info/log in
+    production builds (`removeConsole`, excluding error and warn), which
+    silently deleted three earlier rounds of diagnostics in this investigation.
+
+    Booleans for the candidates and the resolved URL only — no token, no secret.
+    The two-path probe already showed that this same token succeeds against the
+    API on loopback, through nginx, and with an Origin header, but that the
+    ADMIN origin answers `200 text/html` with no `data.isAdmin` — so if the
+    fallback to `origin` is being taken, that is the whole failure.
+  */
+  // eslint-disable-next-line no-console
+  console.warn('[auth-diag] middleware.env: '
+    + `API_ENDPOINT=${Boolean(process.env.API_ENDPOINT)} `
+    + `API_SERVER_ENDPOINT=${Boolean(process.env.API_SERVER_ENDPOINT)} `
+    + `NEXT_PUBLIC_API_ENDPOINT=${Boolean(process.env.NEXT_PUBLIC_API_ENDPOINT)} `
+    + `resolvedBaseApiUrl=${baseApiUrl} `
+    + `fellBackToOrigin=${baseApiUrl === origin}`);
+
   const isRealAdminUser = async (accessToken: string) => {
     try {
-      const user = await fetch(`${baseApiUrl}/users/me`, {
+      const res = await fetch(`${baseApiUrl}/users/me`, {
         method: 'GET',
         headers: {
           'Authorization': accessToken
         }
-      })
-        .then(res => res.json());
+      });
+      const contentType = res.headers.get('content-type') || '(none)';
+      const user = await res.json().catch(() => null);
+
+      // eslint-disable-next-line no-console
+      console.warn('[auth-diag] middleware.users-me: '
+        + `status=${res.status} `
+        + `contentType=${contentType.split(';')[0]} `
+        + `isAdmin=${user?.data?.isAdmin === true}`);
+
       return user?.data?.isAdmin === true;
-    } catch {
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(`[auth-diag] middleware.users-me: THREW ${(error as Error)?.name}`);
       return false;
     }
   };
