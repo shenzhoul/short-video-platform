@@ -6,6 +6,8 @@ import {
   useMemo,
   useState
 } from 'react';
+import { traceAuth } from 'src/lib/auth-trace';
+import { getApiAuthToken, hasApiAuthToken } from 'src/services/api-request';
 import { authService } from 'src/services/auth.service';
 import { userService } from 'src/services/user.service';
 
@@ -46,6 +48,16 @@ export function ProfileContextProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = async () => {
     const token = authService.getToken();
+
+    // TEMPORARY — which source this consumer decided from, and whether it
+    // matches what the session published. Remove with the fix.
+    traceAuth('profile.loadProfile', {
+      source: token ? 'cookie' : 'none',
+      memoryHasToken: hasApiAuthToken(),
+      cookieFp: token,
+      effectiveFp: getApiAuthToken()
+    });
+
     if (token) {
       try {
         setFetching(true);

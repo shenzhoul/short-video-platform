@@ -1,5 +1,6 @@
 import { isUrl } from '@lib/string';
 import { appMessage as message } from '@lib/antd-message';
+import { traceAuth } from '@lib/auth-trace';
 import axios from 'axios';
 import cookie from 'js-cookie';
 // import getConfig from 'next/config';
@@ -85,6 +86,17 @@ export abstract class APIRequest {
       ...headers || {}
     };
     const baseApiEndpoint = this.getBaseApiEndpoint();
+
+    // TEMPORARY — what is actually attached, per request. `source` says whether
+    // the in-memory copy or the cookie fallback supplied it, which is the
+    // distinction the render-time publication was supposed to make. Remove with
+    // the fix.
+    traceAuth('request', {
+      url: `${verb} ${url}`,
+      source: inMemoryToken ? 'memory' : (cookie.get(TOKEN) ? 'cookie' : 'none'),
+      attachedFp: updatedHeader.Authorization
+    });
+
     return axios({
       method: verb,
       url: isUrl(url) ? url : `${baseApiEndpoint}${url}`,
