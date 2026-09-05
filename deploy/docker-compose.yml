@@ -299,6 +299,18 @@ services:
       # A DIFFERENT value from the user app's. One secret across both origins
       # would let a session minted for one be presented to the other.
       NEXTAUTH_SECRET: ${ADMIN_NEXTAUTH_SECRET:?ADMIN_NEXTAUTH_SECRET is required}
+      # Presence-only auth diagnostics (see admin/src/lib/auth-options.ts).
+      #
+      # Declared here because this service has no `env_file`: unlike api and
+      # file-server it is given only the handful of variables it needs, so a
+      # host variable reaches it only if it is named. Prefixing a value onto
+      # `docker compose up` without this line sets it for the compose PROCESS
+      # (where it feeds `${...}` substitution) and not for the container.
+      #
+      # Defaults empty, so diagnostics are off unless deliberately switched on,
+      # and it is a runtime variable: enabling it is a container recreate, not
+      # a rebuild.
+      ADMIN_AUTH_DIAGNOSTICS: ${ADMIN_AUTH_DIAGNOSTICS:-}
     ports:
       - "127.0.0.1:${ADMIN_HOST_PORT:-8082}:8082"
     mem_limit: 384m
