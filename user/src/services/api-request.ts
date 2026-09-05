@@ -11,6 +11,45 @@ export interface IResponse<T> {
 
 export const TOKEN = 'token';
 
+/**
+ * The API token, held in memory as well as in the cookie.
+ *
+ * Auth lives in two stores that update at different times: next-auth's session
+ * (which drives `status === 'authenticated'`) and the `token` cookie (which
+ * fills the Authorization header). The bridge between them used to be a
+ * `useEffect` in `session.provider.tsx`, and React runs a child subtree's
+ * effects BEFORE a later sibling's — so every consumer's effect fired while the
+ * cookie was still unwritten.
+ *
+ * Measured in production: immediately after login, `GET /notifications/unread-count`
+ * went out with `Authorization:` empty and came back 403. It was invisible in the
+ * UI because the badge refresher swallows its errors by design.
+ *
+ * `setApiAuthToken` is therefore called during RENDER, not from an effect. The
+ * render phase completes for the whole tree before any effect in that commit
+ * runs, so the token is in place for every consumer regardless of where the
+ * bridge sits in the tree. The cookie is still written — it is what survives a
+ * reload and what other tabs see — but it is no longer what the first request
+ * of a session depends on.
+ */
+let inMemoryToken: string | null = null;
+
+/** Set (or clear, with `null`) the token used for the Authorization header. */
+export const setApiAuthToken = (token: string | null): void => {
+  inMemoryToken = token || null;
+};
+
+/**
+ * The token to authenticate with: memory first, cookie as the fallback.
+ *
+ * The cookie is authoritative across reloads, the memory copy is authoritative
+ * within a session that has just started. Neither alone is enough.
+ */
+export const getApiAuthToken = (): string => inMemoryToken || cookie.get(TOKEN) || '';
+
+/** Whether an authenticated request can currently be made at all. */
+export const hasApiAuthToken = (): boolean => Boolean(getApiAuthToken());
+
 export abstract class APIRequest {
   static API_ENDPOINT: any = null;
 
@@ -57,7 +96,7 @@ export abstract class APIRequest {
     const updatedHeader = {
       'Content-Type': 'application/json',
       // TODO - check me
-      Authorization: cookie.get(TOKEN) || '',
+      Authorization: getApiAuthToken(),
       ...headers || {}
     };
     const baseApiEndpoint = this.getBaseApiEndpoint();
@@ -72,7 +111,7 @@ export abstract class APIRequest {
       .catch((e) => {
         const { response } = e;
         if (response?.status === 401) {
-          const token = cookie.get(TOKEN);
+          const token = getApiAuthToken();
           if (token && typeof window !== 'undefined') {
             // The session is dead. `endExpiredSession` revokes it and lands on
             // `/`; it used to navigate to `/auth/logout`, a page that did the
