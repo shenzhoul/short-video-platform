@@ -17,6 +17,28 @@ declare module 'next-auth' {
   }
 }
 
+/**
+ * TEMPORARY — presence-only diagnostics for the production session failure.
+ *
+ * `/api/auth/session` answers `{}` immediately after a sign-in that returned no
+ * credential error, so the fault is inside next-auth rather than in the
+ * middleware that acts on its result. These lines say which callbacks ran and
+ * which fields were populated, and nothing else.
+ *
+ * Booleans only. Never a token, an id, an email or a secret: this runs in a
+ * container whose stdout the Docker logging driver writes to disk, so anything
+ * printed here outlives the request.
+ *
+ * Off unless ADMIN_AUTH_DIAGNOSTICS=1, so it can be enabled with a restart and
+ * disabled the same way. Remove once the root cause is fixed.
+ */
+const authDiagnostic = (stage: string, fields: Record<string, boolean | string>): void => {
+  if (process.env.ADMIN_AUTH_DIAGNOSTICS !== '1') return;
+  const summary = Object.entries(fields).map(([key, value]) => `${key}=${value}`).join(' ');
+  // eslint-disable-next-line no-console
+  console.info(`[auth-diag] ${stage}: ${summary}`);
+};
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -77,6 +99,13 @@ export const authOptions: NextAuthOptions = {
           if (!profile.isAdmin) {
             throw new Error('Access denied. Admin role required.');
           }
+
+          authDiagnostic('authorize', {
+            user: true,
+            id: Boolean(profile._id),
+            isAdmin: profile.isAdmin === true,
+            accessToken: Boolean(token)
+          });
 
           // Any object returned will be saved in `user` property of the JWT
           return {
@@ -140,16 +169,32 @@ export const authOptions: NextAuthOptions = {
       if (user) return true;
       return false;
     },
-    jwt({ token, user }) {
+    jwt({ token, user, trigger }) {
       if (user) {
         token.accessToken = user.token;
         token.user = user;
       }
+      authDiagnostic('jwt', {
+        trigger: trigger || 'none',
+        user: Boolean(user),
+        tokenUser: Boolean(token.user),
+        tokenId: Boolean((token.user as any)?._id),
+        admin: (token.user as any)?.isAdmin === true,
+        accessToken: Boolean(token.accessToken),
+        sub: Boolean(token.sub)
+      });
       return token;
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
       session.user = token.user as any;
+      authDiagnostic('session', {
+        tokenUser: Boolean(token.user),
+        tokenId: Boolean((token.user as any)?._id),
+        admin: (token.user as any)?.isAdmin === true,
+        accessToken: Boolean(token.accessToken),
+        sessionUser: Boolean(session.user)
+      });
       return session;
     }
   },
@@ -171,12 +216,41 @@ export const authOptions: NextAuthOptions = {
     }
   },
   logger: {
+    /*
+      Forward every error except the one this override exists to silence.
+
+      As originally written this method suppressed EVERYTHING: it returned early
+      for the decryption case and then fell off the end for every other code,
+      logging nothing at all. next-auth's default logger was replaced by a black
+      hole, so a production session failure — `/api/auth/session` answering `{}`
+      right after a successful sign-in — produced not one line in the container
+      log, and the absence of warnings looked like evidence that nothing was
+      wrong.
+
+      The intended suppression is kept and narrowed: a stale session cookie
+      encrypted with a previous NEXTAUTH_SECRET is expected noise after a secret
+      rotation, and there is nothing an operator can do about it. Everything
+      else is a real fault and must be visible.
+
+      Only the code and the message are logged. next-auth's metadata can carry
+      the token, so it is never spread into the output.
+    */
     error(code, metadata) {
-      if (code === 'JWT_SESSION_ERROR' || code === 'SIGNOUT_ERROR') {
-        if (typeof metadata?.message === 'string' && metadata.message.includes('decryption operation failed')) {
-          return;
-        }
+      const message = typeof (metadata as any)?.message === 'string' ? (metadata as any).message : '';
+
+      if ((code === 'JWT_SESSION_ERROR' || code === 'SIGNOUT_ERROR')
+        && message.includes('decryption operation failed')) {
+        // A cookie signed with an older secret. The browser is told to drop it
+        // on the next sign-in; nothing to act on.
+        return;
       }
+
+      // eslint-disable-next-line no-console
+      console.error(`[next-auth] ${code}${message ? `: ${message}` : ''}`);
+    },
+    warn(code) {
+      // eslint-disable-next-line no-console
+      console.warn(`[next-auth] ${code}`);
     }
   }
 };
