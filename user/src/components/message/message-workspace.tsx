@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useMessages } from '@providers/message.provider';
 import {
   MESSAGE_WORKSPACE_WIDTH,
@@ -113,7 +114,7 @@ export default function MessageWorkspace() {
                         <FiChevronLeft aria-hidden="true" />
                       </button>
                       <img
-                        src={participant?.avatar || '/no_avatar.jpeg'}
+                        src={resolveAvatarUrl(participant?.avatar)}
                         alt=""
                         className="h-8 w-8 shrink-0 rounded-full object-cover"
                       />

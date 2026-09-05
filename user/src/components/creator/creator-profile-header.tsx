@@ -12,6 +12,7 @@ import { toast } from '@douyin-clone/shared-toast';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { useFollowStats } from '@hooks/use-follow-stats';
 import { ICreator } from '@interfaces/creator';
+import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from '@lib/avatar';
 import { useFollowListModal } from '@providers/follow-list.provider';
 import { FiAlertTriangle, FiGrid, FiLink } from 'react-icons/fi';
 import { DownloadIcon, EditIcon, HelpCircleIcon, MaleIcon, MoreIcon } from 'src/icons';
@@ -154,20 +155,20 @@ export default function CreatorProfileHeader({
   const shareFriends: ShareFriend[] = [
     {
       name: currentUser?.username || 'Longkhongmap',
-      avatar: '/no_avatar.jpeg'
+      avatar: DEFAULT_AVATAR_URL
     },
     {
       name: 'ShenZhouI',
-      avatar: previewAvatar || '/no_avatar.jpeg',
+      avatar: resolveAvatarUrl(previewAvatar),
       status: 'Online yesterday'
     },
     {
       name: 'Minimalist IAN',
-      avatar: '/no_avatar.jpeg'
+      avatar: DEFAULT_AVATAR_URL
     },
     {
       name: 'Turning shadows to prayers',
-      avatar: previewCover || previewAvatar || '/no_avatar.jpeg'
+      avatar: resolveAvatarUrl(previewCover || previewAvatar)
     }
   ];
 
@@ -214,7 +215,7 @@ export default function CreatorProfileHeader({
               onClick={onOpenAvatarPreview}
               aria-label="Preview avatar"
             >
-              <img src={previewAvatar} className='rounded-full w-full h-full object-cover block relative border-none' />
+              <img src={resolveAvatarUrl(previewAvatar)} className='rounded-full w-full h-full object-cover block relative border-none' />
             </button>
           </div>
           <div className='min-h-30 flex-1 flex-wrap flex items-center content-center ml-8'>

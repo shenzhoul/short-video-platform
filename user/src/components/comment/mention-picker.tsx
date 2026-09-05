@@ -1,6 +1,7 @@
 'use client';
 
 import type { MentionOption } from '@hooks/use-textarea-mentions';
+import { resolveAvatarUrl } from '@lib/avatar';
 
 interface MentionPickerProps {
   options: MentionOption[];
@@ -69,7 +70,7 @@ export default function MentionPicker({
           }`}
         >
           <img
-            src={option.user?.avatar || '/no_avatar.jpeg'}
+            src={resolveAvatarUrl(option.user?.avatar)}
             alt=""
             className="h-7 w-7 shrink-0 rounded-full object-cover"
           />

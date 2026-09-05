@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useMessages } from '@providers/message.provider';
 import { useMessageWorkspace } from '@providers/message-workspace.provider';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -68,7 +69,7 @@ function MessagesPageContent() {
             header={(
               <div className="flex h-14 shrink-0 items-center gap-3 border-b border-(--border-faint) px-5">
                 <img
-                  src={participant?.avatar || '/no_avatar.jpeg'}
+                  src={resolveAvatarUrl(participant?.avatar)}
                   alt=""
                   className="h-8 w-8 shrink-0 rounded-full object-cover"
                 />

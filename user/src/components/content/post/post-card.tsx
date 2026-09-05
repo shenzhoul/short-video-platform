@@ -31,6 +31,7 @@
 import { PostActions, PostMenu } from '@components/content/post';
 import { usePostDetails } from '@hooks/use-content';
 import { useUserOnlineStatus } from '@hooks/use-user-online-status';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { linkifyText } from '@lib/html-helper';
 import { formatDateFromNow } from '@lib/index';
 import { useAuthModal } from '@providers/auth-modal.provider';
@@ -122,7 +123,7 @@ export default function PostCard({ post, onDelete }: Props) {
         <div className="flex justify-between p-3 pb-0">
           <Link href={`/${creator?.username || ''}`}>
             <div className="flex cursor-pointer relative">
-              <img alt="creator_avatar" src={creator?.avatar || '/no_avatar.jpeg'} width="50" height="50" className="w-10 h-10 rounded-full" />
+              <img alt="creator_avatar" src={resolveAvatarUrl(creator?.avatar)} width="50" height="50" className="w-10 h-10 rounded-full" />
               <div className="px-2">
                 <h4 className="text-sm font-semibold m-0 capitalize">{creator?.name || 'N/A'}</h4>
                 <h5 className="text-xs opacity-70 m-0">@{creator?.username || 'N/A'}</h5>

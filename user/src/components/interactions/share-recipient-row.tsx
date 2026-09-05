@@ -1,6 +1,7 @@
 'use client';
 
 import type { ShareRecipient } from '@hooks/use-share-recipients';
+import { resolveAvatarUrl } from '@lib/avatar';
 
 /** Where one recipient's share stands. */
 export type ShareRowStatus = 'idle' | 'sharing' | 'sent' | 'failed';
@@ -11,8 +12,6 @@ interface ShareRecipientRowProps {
   error?: string | null;
   onShare: (recipient: ShareRecipient) => void;
 }
-
-const FALLBACK_AVATAR = '/no-avatar.png';
 
 /**
  * One person in the share list.
@@ -43,7 +42,7 @@ export default function ShareRecipientRow({
   return (
     <li className="flex items-center gap-3 px-3 py-2">
       <img
-        src={recipient.avatar || FALLBACK_AVATAR}
+        src={resolveAvatarUrl(recipient.avatar)}
         alt=""
         className="h-9 w-9 shrink-0 rounded-full object-cover"
       />

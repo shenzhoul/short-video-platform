@@ -9,6 +9,7 @@ import UserStatusTag from '@components/user/user-status-tag';
 import { useCursorPaginationState } from '@hooks/use-cursor-pagination-state';
 import { useUsers } from '@hooks/use-users';
 import { Breadcrumb as BreadcrumbComponent, Page } from "@layout/components";
+import { resolveAvatarUrl } from '@lib/avatar';
 import { formatDate } from '@lib/date';
 import { Avatar, Button, Card, Col, Row, Table, Tag } from 'antd';
 import { ColumnProps } from 'antd/es/table';
@@ -122,7 +123,7 @@ export default function UserList() {
       width: 80,
       render: (avatar: string, record: IUser) => (
         <Avatar
-          src={avatar || '/no-avatar.png'}
+          src={resolveAvatarUrl(avatar)}
           alt={record.name || record.username}
           size={40}
         />

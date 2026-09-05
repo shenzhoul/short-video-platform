@@ -3,6 +3,7 @@
 import { formatCompactCount } from '@components/content/post/home-feed-media';
 import { useTextareaMentions } from '@hooks/use-textarea-mentions';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 
@@ -116,7 +117,7 @@ export default function ComposerTextarea({
               <span className="flex min-w-0 items-center gap-2">
                 {option.user ? (
                   <img
-                    src={option.user.avatar || '/no_avatar.jpeg'}
+                    src={resolveAvatarUrl(option.user.avatar)}
                     alt=""
                     className="h-6 w-6 shrink-0 rounded-full object-cover"
                   />

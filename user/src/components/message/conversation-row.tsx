@@ -2,6 +2,7 @@
 
 import type { IConversation } from '@interfaces/message';
 import { MESSAGE_TYPE } from '@interfaces/message';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { formatActivityTimestamp } from '@lib/date';
 
 interface ConversationRowProps {
@@ -67,7 +68,7 @@ export default function ConversationRow({
     >
       <div className="relative shrink-0">
         <img
-          src={participant?.avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(participant?.avatar)}
           alt=""
           className={`rounded-full object-cover ${comfortable ? 'h-12 w-12' : 'h-11 w-11'}`}
         />

@@ -6,6 +6,7 @@ import CommentReplies from '@components/comment/comment-replies';
 import { LikeButton } from '@components/interactions';
 import { IComment } from '@interfaces/comment';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import moment from 'moment';
 import Link from 'next/link';
 import { AiOutlineDown, AiOutlineUp } from 'react-icons/ai';
@@ -103,7 +104,7 @@ export function CommentItem({
       <Link href={profileHref} prefetch={false} className="mt-0.5 shrink-0">
         <img
           alt="user-avatar"
-          src={item?.user?.avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(item?.user?.avatar)}
           className={`${isReply ? 'h-8 w-8' : 'h-9 w-9'} rounded-full object-cover`}
         />
       </Link>

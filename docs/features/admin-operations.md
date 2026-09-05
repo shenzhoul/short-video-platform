@@ -4,7 +4,7 @@ description: Current admin user management, settings, balance field, and operati
 audience: [admin, operator, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-25
+updated: 2026-09-06
 tags: [admin, users, settings, logs, categories]
 ---
 
@@ -13,6 +13,12 @@ tags: [admin, users, settings, logs, categories]
 The admin application currently provides:
 
 - user list/search, create, update, detail, avatar, and delete operations;
+  A user with no uploaded avatar is shown the shared `no_avatar.jpeg`
+  placeholder in the list, the user selector and the avatar tile on
+  detail/edit — a display fallback only, never written to the record. The
+  upload affordance stays visible over the placeholder, so a tile that has not
+  been set still reads as clickable. See
+  [creator profiles → the default avatar](./creator-profiles.md#the-default-avatar-2026-09-06);
 - post category management (**Content → Categories**);
 - admin-role listing and toggle operations;
 - stored user balance editing (without a wallet or transaction domain);

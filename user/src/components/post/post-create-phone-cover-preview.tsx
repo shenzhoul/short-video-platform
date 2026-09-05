@@ -1,6 +1,7 @@
 'use client';
 
 import type { PostCoverRatio } from '@hooks/use-post-create';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useProfile } from '@providers/profile.provider';
 
 interface PostCreatePhoneCoverPreviewProps {
@@ -44,9 +45,7 @@ function CoverCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <div className="mr-1 h-[15px] w-[15px] flex-col justify-center rounded-[50%] bg-[hsla(0,0%,100%,.2)]">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="" className="h-full w-full rounded-[50%]" />
-              ) : null}
+              <img src={resolveAvatarUrl(avatarUrl)} alt="" className="h-full w-full rounded-[50%]" />
             </div>
             <div className="w-[56px] origin-left truncate text-[8px]">{creatorName}</div>
           </div>

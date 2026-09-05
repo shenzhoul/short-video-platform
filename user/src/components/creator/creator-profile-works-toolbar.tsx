@@ -2,6 +2,7 @@
 
 import { CreatorProfileTabItem } from '@components/creator/creator-profile-types';
 import { Tabs } from '@components/ui/tabs';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { FiCalendar, FiCheck, FiChevronDown, FiPlus, FiTrash2 } from 'react-icons/fi';
 import { LockIcon, SearchIcon } from 'src/icons';
 
@@ -87,7 +88,7 @@ export default function CreatorProfileWorksToolbar({
           </div>
           {scrollStage >= 2 && !canEditProfile ? (
             <div className='bg-[rgba(254,44,85,.1)] w-26 h-10 cursor-pointer rounded-[20px] flex items-center absolute left-1/2 -translate-x-1/2'>
-              <img src={previewAvatar} alt="" className='w-8 h-8 rounded-full ml-1' />
+              <img src={resolveAvatarUrl(previewAvatar)} alt="" className='w-8 h-8 rounded-full ml-1' />
               <div className='text-[#ff2c55] text-sm leading-5.5 flex ml-0.5 items-center'>
                 <FiPlus />
                 <span>Follow</span>

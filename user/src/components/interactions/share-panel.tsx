@@ -3,6 +3,7 @@
 import Modal from '@components/ui/modal';
 import NoData from '@components/ui/no-data';
 import { useFollowList } from '@hooks/use-follow-list';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useProfile } from '@providers/profile.provider';
 import { useEffect, useRef, useState } from 'react';
 import { AiOutlineShareAlt } from 'react-icons/ai';
@@ -140,7 +141,7 @@ export default function SharePanel({
             users.map((user) => (
               <div key={user._id} className="flex items-center gap-3 rounded-lg px-2 py-2">
                 <img
-                  src={user.avatar || '/no_avatar.jpeg'}
+                  src={resolveAvatarUrl(user.avatar)}
                   alt=""
                   className="h-9 w-9 shrink-0 rounded-full object-cover"
                 />

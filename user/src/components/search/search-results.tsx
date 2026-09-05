@@ -9,6 +9,7 @@ import { useRelatedSearches } from '@hooks/use-related-searches';
 import { type SearchTabKey, useSearchResults } from '@hooks/use-search-results';
 import { IPost } from '@interfaces/post';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { addSearchHistory } from '@lib/search-history';
 import type { ITagSearchResult } from '@services/search.service';
 import Link from 'next/link';
@@ -50,7 +51,7 @@ function UserRow({ user }: { user: IUser }) {
     <div className="flex items-center gap-3 py-3">
       <Link href={`/${user.username}`} className="shrink-0">
         <img
-          src={user.avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(user.avatar)}
           alt={displayName}
           className="h-14 w-14 rounded-full object-cover"
         />
@@ -123,7 +124,6 @@ export default function SearchResults({ query }: SearchResultsProps) {
             key={post._id}
             post={post}
             popupPipState={playback.popupPipState}
-            popupPlaylist={playback.popupPlaylist}
             onOpenDetail={playback.openDetailPost}
           />
         ))}
@@ -237,7 +237,6 @@ export default function SearchResults({ query }: SearchResultsProps) {
         <PostDetailModal
           post={playback.detailPost}
           posts={posts}
-          popupPlaylist={playback.popupPlaylist}
           initialTime={playback.detailInitialTime}
           onInteractionChange={playback.handleInteractionChange}
           onClose={playback.closeDetailPost}

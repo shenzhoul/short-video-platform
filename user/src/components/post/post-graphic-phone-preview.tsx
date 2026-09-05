@@ -2,6 +2,7 @@
 
 import { Carousel, CarouselProgressControl } from '@components/ui/carousel';
 import type { GraphicFileItem } from '@hooks/use-post-graphic-create';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { GRAPHIC_SLIDE_DURATION_MS } from '@lib/post-graphic';
 import { useProfile } from '@providers/profile.provider';
 import { useState } from 'react';
@@ -43,7 +44,7 @@ export default function PostGraphicPhonePreview({ items, caption }: PostGraphicP
         </button>
       </div>
       <img src="/phone_image_layout.png" alt="" className="pointer-events-none absolute top-0 h-[515px] w-[243px]" />
-      {current?.avatar ? <img src={current.avatar} alt="" className="absolute right-[10px] top-[184px] h-[30px] w-[30px] rounded-full border-[0.5px] border-white object-cover" /> : null}
+      <img src={resolveAvatarUrl(current?.avatar)} alt="" className="absolute right-[10px] top-[184px] h-[30px] w-[30px] rounded-full border-[0.5px] border-white object-cover" />
       <div className="absolute right-[5px] top-[178px] h-[278px]">
         <img src="/phone_action_layout.png" alt="" className="pointer-events-none relative block h-[278px]" />
         <img src="/douyin_play_icon.png" alt="" className={`absolute bottom-2 right-1 h-[30px] w-[30px] rounded-full object-cover ${isPlaying ? 'post-create-douyin-disc-playing' : ''}`} />

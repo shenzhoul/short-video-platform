@@ -9,9 +9,8 @@
  * empty header and was refused — silently, since the badge refresher swallows
  * its errors.
  */
-import cookie from 'js-cookie';
-
 import { getApiAuthToken, hasApiAuthToken, setApiAuthToken } from '@services/api-request';
+import cookie from 'js-cookie';
 
 jest.mock('js-cookie', () => ({
   __esModule: true,

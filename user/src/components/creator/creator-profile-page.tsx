@@ -18,6 +18,7 @@ import { useCreatorPostSearch } from '@hooks/use-creator-post-search';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
 import { useLikedPosts } from '@hooks/use-liked-posts';
 import type { PostInteractionChangeHandler } from '@hooks/use-post-interactions';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 function getProfileTabs(canEditProfile: boolean, worksTotal: number): CreatorProfileTabItem[] {
@@ -61,7 +62,7 @@ export default function CreatorProfilePage({
   const [scrollStage, setScrollStage] = useState(0);
   const [previewName, setPreviewName] = useState(creator?.name || creator?.username || '');
   const [previewBio, setPreviewBio] = useState(creator?.bio || '');
-  const [previewAvatar, setPreviewAvatar] = useState(creator?.avatar || '/no_avatar.jpeg');
+  const [previewAvatar, setPreviewAvatar] = useState(resolveAvatarUrl(creator?.avatar));
   const [previewCover, setPreviewCover] = useState(creator?.cover || '');
   const [previewCoverBgColor, setPreviewCoverBgColor] = useState(creator?.coverBgColor || 'hsl(313deg 26.38% 15%)');
   const canEditProfile = currentUser?._id === creator._id;
@@ -250,7 +251,6 @@ export default function CreatorProfilePage({
                                 post={post}
                                 metricVariant={isLikedTab || !canEditProfile ? 'likes' : 'views'}
                                 popupPipState={playback.popupPipState}
-                                popupPlaylist={playback.popupPlaylist}
                                 onCompactHoverChange={setHoveredPostId}
                                 onOpenDetail={playback.openDetailPost}
                                 batchMode={batchManagement.active}
@@ -316,7 +316,6 @@ export default function CreatorProfilePage({
         <PostDetailModal
           post={playback.detailPost}
           posts={posts}
-          popupPlaylist={playback.popupPlaylist}
           initialTime={playback.detailInitialTime}
           onPlaybackTimeChange={() => undefined}
           onClose={playback.closeDetailPost}

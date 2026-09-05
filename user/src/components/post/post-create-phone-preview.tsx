@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useProfile } from '@providers/profile.provider';
 import { useEffect, useRef, useState } from 'react';
 import { DouyinFavicon } from 'src/icons';
@@ -78,13 +79,11 @@ export default function PostCreatePhonePreview({
         alt=""
         className="pointer-events-none absolute top-0 h-[515px] w-[243px]"
       />
-      {current?.avatar ? (
-        <img
-          src={current.avatar}
-          alt=""
-          className="absolute right-[10px] top-[184px] h-[30px] w-[30px] rounded-[20px] border-[0.5px] border-white"
-        />
-      ) : null}
+      <img
+        src={resolveAvatarUrl(current?.avatar)}
+        alt=""
+        className="absolute right-[10px] top-[184px] h-[30px] w-[30px] rounded-[20px] border-[0.5px] border-white"
+      />
       <div className="absolute right-[5px] top-[178px] h-[278px]">
         <img
           src="/phone_action_layout.png"

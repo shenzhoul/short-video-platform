@@ -219,6 +219,68 @@ change by asserting the server's *observable* effect — here, the `subjectId`
 stored on the Redis session after a request carrying the cookie — not by reading
 the code.
 
+## One Fallback, In One Place — The Default Avatar
+
+`user/src/lib/avatar.ts` (`resolveAvatarUrl`) and its byte-identical twin
+`admin/src/lib/avatar.ts` are the only definition of "what to show for a user
+with no picture". Never write `user.avatar || '/no_avatar.jpeg'` at a call site
+again.
+
+That inline form is what this replaced, and it was wrong in three different ways
+at once across the two apps: 23 files spelled it correctly, the account dropdown
+drew an `AvatarIcon` glyph on a grey disc instead, and two call sites
+(`share-recipient-row.tsx`, `admin`'s `user-list.tsx`/`user-selector.tsx`)
+pointed at `/no-avatar.png` — a file that exists in neither `public/` directory,
+so those lists rendered a broken image. Nothing errored; a fallback that is
+itself missing looks exactly like a slow one.
+
+- **It is presentation only.** Nothing writes the placeholder path anywhere: no
+  Mongo field, no file-server record, no R2 object. An account with no avatar
+  keeps the field absent, which is what keeps "never set one" distinguishable
+  from "chose this" and keeps the unused-file sweeper from seeing a phantom.
+- **Blank counts as absent.** `'   '` is truthy and is not a URL — in `src` it
+  resolves against the page and silently re-requests the current document.
+- **`admin` needs its own copy of the bytes.** It is a separate Next app on its
+  own origin, and `public/` is served from disk at the app root, so a shared
+  package would still need a build step to copy the file in. The duplication is
+  deliberate and pinned: `user/src/lib/avatar.spec.ts` compares
+  `user/public/no_avatar.jpeg` and `admin/public/no_avatar.jpeg` byte for byte.
+  It lives in the user app's suite because `admin` has a `test` script but no
+  Jest configuration.
+- **A placeholder must not eat an affordance.** `admin`'s `AvatarUploader` draws
+  the placeholder *and* keeps the camera/"Upload" overlay on top; replacing the
+  empty state with the image alone would have removed the only cue that the tile
+  is clickable, so an unset avatar would have looked final.
+
+## Picture-In-Picture Navigates A Session, Not The DOM
+
+`openPopupPip` takes **no playlist**. It used to take the Home grid's video posts
+in rendered order, and the floating player's next/previous stepped through that
+array — so "next" was whichever card happened to sit below the one playing, and
+scrolling the page underneath changed what "next" meant.
+
+The window now walks the same anchor-based Post Detail recommendation session the
+detail viewer walks (`stepPostDetailRecommendationNext(..., videoOnly)`), which
+is what stops there being two unrelated ideas of "another video".
+
+- **Next** comes from the session, which excludes everything it has handed out —
+  so it can never return the post that is playing, and never repeat one.
+- **Previous** is `PopupPipState.history` and nothing else. It replays exactly
+  what was shown and never calls the server, which is also why the server cursor
+  stays at the head and the next forward step always computes something new.
+- **Recycling is deterministic**: exhaustion wraps to `history[0]`, never a
+  random pick from posts the viewer has just been through.
+- **One session per PiP browse.** `appendPopupPipVideo` writes the session id in
+  the same state write as the video; opening a second session would reset the
+  exclusions and start recommending posts already in the history.
+- **State that must survive a track change lives in `PopupPipState` or a ref, not
+  in the render.** The mute choice is a ref (`preferredMutedRef`) because the
+  load effect used to assign `video.muted = true` unconditionally, so unmuting
+  was undone by the next press of "next". The transport only resets when the
+  `videoId` actually changed — a write that merely records the session id must
+  not send the video back to 0:00.
+- Cover: `user/src/components/ui/popup-pip-navigation.spec.tsx`.
+
 ## Do Not `preventDefault` A Wheel You Are Not Consuming
 
 React attaches `wheel` passively, so `preventDefault()` in an `onWheel` handler
@@ -226,6 +288,34 @@ suppresses nothing and logs "Unable to preventDefault inside passive event
 listener invocation" on every tick. `usePostNavigationWheel` therefore returns
 early when neither direction can navigate — with a reading panel open the scroll
 belongs to the panel — and guards the call with `event.cancelable`.
+
+## The End Of A Ranked Session Is Not The End Of The Feed
+
+Home and For You page through a Redis-stored ranked session. A session is a
+bounded *sample* — 70 of 160 posts on this catalogue — and that bound is the
+thing that makes a reload a new selection rather than a re-sort.
+
+It was also where Home stopped: `hasMore` went false at item 70 and `loadMore`
+returned early, leaving two thirds of the corpus unreachable by scrolling.
+
+- **`!hasMore` means "this session is done", not "the feed is done".** Roll over:
+  send the spent `sessionId` with `rollover: 'true'` and **no cursor**, append the
+  successor session's posts, dedupe by id.
+- **The stop condition is a rollover that added nothing** (`catalogueSpent`), not
+  `hasMore`. Report `hasMore || !catalogueSpent` so the scroller keeps asking
+  across a session boundary, and latch `catalogueSpent` or the rollover fires on
+  every scroll to the bottom for the rest of the session.
+- **Never raise the session limit toward the pool size to "fix" a short feed.**
+  That deletes the ranking rather than continuing the scroll, and reinstates a
+  documented defect: a session equal to the catalogue meant reloading could only
+  re-sort one fixed set, and the same post led all ten measured reloads.
+- **Attribution follows the post, not the newest session.** Keep a
+  `sessionByPostId` map and expose `sessionForPost(id)`. A chain crosses several
+  sessions while earlier cards are still on screen; reporting their impressions
+  under whichever session is newest files that evidence against a ranking that
+  never chose them, and the first session to serve a post owns it.
+- Cover: `user/src/hooks/use-home-feed-infinite-scroll.spec.tsx`. See
+  `.agents/skills/recommendation-engine/SKILL.md` for the server half.
 
 ## Feed Rendering And Scroll Performance
 

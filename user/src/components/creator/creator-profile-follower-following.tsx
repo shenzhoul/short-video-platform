@@ -8,6 +8,7 @@ import { toast } from '@douyin-clone/shared-toast';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { FollowListSort, useFollowList } from '@hooks/use-follow-list';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useProfile } from '@providers/profile.provider';
 import { removeFollower as requestRemoveFollower } from '@services/user.service';
 import Link from 'next/link';
@@ -102,7 +103,7 @@ function FollowListRow({
           <Link href={`/${user.username}`} onClick={onNavigate} className='relative bg-transparent'>
             <span className='bg-transparent w-15 h-15 rounded-full box-border block relative overflow-hidden border border-solid border-(--border-faint)'>
               <img
-                src={user.avatar || '/no_avatar.jpeg'}
+                src={resolveAvatarUrl(user.avatar)}
                 alt={displayName}
                 className='rounded-full w-full h-full object-cover block relative'
               />

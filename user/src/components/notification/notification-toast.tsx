@@ -1,5 +1,6 @@
 'use client';
 
+import { resolveAvatarUrl } from '@lib/avatar';
 import type { NotificationToast as ToastEntry } from '@providers/notification.provider';
 import { useNotifications } from '@providers/notification.provider';
 import { useRouter } from 'next/navigation';
@@ -46,7 +47,7 @@ function ToastCard({ toast, onDismiss }: { toast: ToastEntry; onDismiss: () => v
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left disabled:cursor-default"
       >
         <img
-          src={notification.actor?.avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(notification.actor?.avatar)}
           alt=""
           className="h-9 w-9 shrink-0 rounded-full object-cover"
         />

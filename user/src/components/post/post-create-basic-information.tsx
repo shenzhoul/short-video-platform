@@ -5,6 +5,7 @@ import { useComposerSuggestions } from '@hooks/use-composer-suggestions';
 import type { PostCoverRatio } from '@hooks/use-post-create';
 import { usePostTopics } from '@hooks/use-post-topics';
 import type { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { type FormEvent, type RefObject, useEffect } from 'react';
 import { FiChevronDown, FiChevronRight, FiPlus, FiX } from 'react-icons/fi';
 import { DouyinFavicon } from 'src/icons';
@@ -173,7 +174,7 @@ export function PostCreateDescriptionEditor({
                     <span className="flex min-w-0 items-center gap-2">
                       {option.user ? (
                         <img
-                          src={option.user.avatar || '/no_avatar.jpeg'}
+                          src={resolveAvatarUrl(option.user.avatar)}
                           alt=""
                           className="h-6 w-6 shrink-0 rounded-full object-cover"
                         />

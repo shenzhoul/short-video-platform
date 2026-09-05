@@ -3,6 +3,7 @@
 import { formatCompactCount } from '@components/content/post/home-feed-media';
 import { useSearchDiscovery } from '@hooks/use-search-discovery';
 import { useSearchSuggestions } from '@hooks/use-search-suggestions';
+import { resolveAvatarUrl } from '@lib/avatar';
 import {
   clearSearchHistory,
   readSearchHistory,
@@ -159,7 +160,7 @@ export default function SearchSuggestionPanel({ term = '' }: SearchSuggestionPan
                     className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left transition hover:bg-(--hover-bg)"
                   >
                     <img
-                      src={user.avatar || '/no_avatar.jpeg'}
+                      src={resolveAvatarUrl(user.avatar)}
                       alt=""
                       className="h-7 w-7 shrink-0 rounded-full object-cover"
                     />

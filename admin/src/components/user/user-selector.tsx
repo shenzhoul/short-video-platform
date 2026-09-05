@@ -1,6 +1,7 @@
 'use client';
 
 import { appMessage as message } from '@lib/antd-message';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { userService } from '@services/user.service';
 import { Avatar, Select } from 'antd';
 import { debounce } from 'lodash';
@@ -104,7 +105,7 @@ export function UserSelector({
       {users.map((u: any) => (
         <Select.Option key={u._id} value={u._id}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Avatar src={u.avatar || '/no-avatar.png'} size="small" alt={u.name || u.username} />
+            <Avatar src={resolveAvatarUrl(u.avatar)} size="small" alt={u.name || u.username} />
             <span>{u.name || u.username} ({u.email})</span>
           </div>
         </Select.Option>

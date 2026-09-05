@@ -1,6 +1,7 @@
 'use client';
 
 import type { ISharedPost } from '@interfaces/message';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { FiImage, FiPlay, FiSlash } from 'react-icons/fi';
 
 interface SharedPostCardProps {
@@ -90,7 +91,7 @@ export default function SharedPostCard({ sharedPost, onOpen }: SharedPostCardPro
         {author ? (
           <span className="flex items-center gap-1.5">
             <img
-              src={author.avatar || '/no_avatar.jpeg'}
+              src={resolveAvatarUrl(author.avatar)}
               alt=""
               className="h-4 w-4 shrink-0 rounded-full object-cover"
             />

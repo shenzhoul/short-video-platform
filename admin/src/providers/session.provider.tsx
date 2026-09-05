@@ -1,10 +1,9 @@
 'use client';
 
+import { setApiAuthToken } from '@services/api-request';
 import cookie from 'js-cookie';
 import { SessionProvider as Session, SessionProviderProps, useSession } from 'next-auth/react';
 import { createElement, useEffect } from 'react';
-
-import { setApiAuthToken } from '@services/api-request';
 
 /**
  * Component that syncs the NextAuth session token to a client-side cookie

@@ -12,6 +12,7 @@ import { useFollowStats } from '@hooks/use-follow-stats';
 import { useLikedPostCount } from '@hooks/use-liked-post-count';
 import { useLogout } from '@hooks/use-logout';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useAuthModal } from '@providers/auth-modal.provider';
 import { useFollowListModal } from '@providers/follow-list.provider';
 import { useRouter } from 'next/navigation';
@@ -106,21 +107,13 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
   };
 
   const trigger = (
-    loggedIn && user?.avatar ? (
+    loggedIn ? (
       <button
         type="button"
         className="ml-4 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-(--hover-bg) text-(--text-strong) transition hover:opacity-85"
         aria-label={displayName}
       >
-        <img src={user.avatar} alt={displayName} className="h-full w-full object-cover" />
-      </button>
-    ) : loggedIn ? (
-      <button
-        type="button"
-        className="ml-4 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-(--hover-bg) text-(--text-strong) transition hover:opacity-85"
-        aria-label={displayName}
-      >
-        <AvatarIcon className='text-xl' />
+        <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
       </button>
     ) : (
       <button
@@ -144,13 +137,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
       <div className="max-h-[calc(100vh-72px)] overflow-y-auto p-3 scrollbar-custom">
         <div className="flex items-center gap-3 px-1 pb-3">
           <span className="flex h-13 w-13 overflow-hidden rounded-full bg-(--surface-soft)">
-            {user?.avatar ? (
-              <img src={user.avatar} alt={displayName} className="h-full w-full object-cover" />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center bg-[rgba(127,127,127,.32)] opacity-80">
-                <AvatarIcon className='text-[52px] text-(--text-soft)' />
-              </span>
-            )}
+            <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
           </span>
           <div className="min-w-0">
             <div className="mb-2 truncate text-sm font-semibold text-(--text-strong)">{displayName}</div>

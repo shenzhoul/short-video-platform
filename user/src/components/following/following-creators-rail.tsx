@@ -2,6 +2,7 @@
 
 import Dropdown from '@components/ui/dropdown-menu';
 import { IUser } from '@interfaces/user';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { useMemo, useState } from 'react';
 import { MoreIcon, PlaylistArrowLeftIcon, PlaylistArrowRightIcon, SearchIcon, SortIcon } from 'src/icons';
 
@@ -134,7 +135,7 @@ export default function FollowingCreatorsRail({
                       aria-label={`Show posts by ${creatorName}`}
                     >
                       <span className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-(--border-faint) ${!expanded && isActive ? 'ring-2 ring-[#fe2c55] ring-offset-2 ring-offset-(--surface)' : ''}`}>
-                        <img src={creator.avatar || '/no_avatar.jpeg'} alt="" className="h-full w-full object-cover" />
+                        <img src={resolveAvatarUrl(creator.avatar)} alt="" className="h-full w-full object-cover" />
                       </span>
 
                       {expanded ? (

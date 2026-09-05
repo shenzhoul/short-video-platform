@@ -2,6 +2,7 @@
 
 import type { IMessage, IMessageFile, IPendingMessage } from '@interfaces/message';
 import { MESSAGE_TYPE } from '@interfaces/message';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { FiAlertCircle, FiPlay } from 'react-icons/fi';
 
 import SharedPostCard from './shared-post-card';
@@ -135,7 +136,7 @@ export default function MessageBubble({
     <div className={`flex w-full items-end gap-2 ${outgoing ? 'flex-row-reverse' : 'flex-row'}`}>
       {!outgoing ? (
         <img
-          src={avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(avatar)}
           alt=""
           className="h-7 w-7 shrink-0 rounded-full object-cover"
         />

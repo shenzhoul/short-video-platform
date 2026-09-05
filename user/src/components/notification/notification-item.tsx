@@ -3,6 +3,7 @@
 import Dropdown from '@components/ui/dropdown-menu';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { INotification } from '@interfaces/notification';
+import { resolveAvatarUrl } from '@lib/avatar';
 import { formatActivityTimestamp } from '@lib/date';
 import { useNotifications } from '@providers/notification.provider';
 import { useRouter } from 'next/navigation';
@@ -57,7 +58,7 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
     >
       <div className='relative'>
         <img
-          src={notification.actor?.avatar || '/no_avatar.jpeg'}
+          src={resolveAvatarUrl(notification.actor?.avatar)}
           alt=""
           className="h-10 w-10 shrink-0 self-start rounded-full object-cover"
         />

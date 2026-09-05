@@ -4,6 +4,7 @@ import './index.module.css';
 
 /* eslint-disable react/require-default-props */
 import { CameraOutlined, LoadingOutlined } from '@ant-design/icons';
+import { hasCustomAvatar, resolveAvatarUrl } from '@lib/avatar';
 import { message, Upload } from 'antd';
 import ImgCrop from 'antd-img-crop';
 import { useEffect, useState } from 'react';
@@ -127,18 +128,44 @@ export function AvatarUploader({
     delete (uploadProps as any).onChange;
   }
 
+  /*
+    The tile always draws an image: a user who has never set an avatar shows
+    the shared placeholder, the same one the admin user list and the whole user
+    app show, instead of an empty square that looked like a loading failure.
+
+    The camera/"Upload" cue is kept as an overlay rather than replaced by the
+    placeholder. Drawing the placeholder *instead of* the button would have
+    removed the only affordance telling an admin the tile is clickable — the
+    picture would look final when in fact nothing has been uploaded yet.
+  */
+  const showUploadHint = loading || !hasCustomAvatar(currentImageUrl);
+
   return (
     <ImgCrop>
       <Upload {...uploadProps}>
-        {currentImageUrl ? (
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <img
-            src={currentImageUrl}
+            src={resolveAvatarUrl(currentImageUrl)}
             alt="avatar"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
-        ) : (
-          uploadButton
-        )}
+          {showUploadHint ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0, 0, 0, 0.45)',
+                color: '#fff'
+              }}
+            >
+              {uploadButton}
+            </div>
+          ) : null}
+        </div>
       </Upload>
     </ImgCrop>
   );

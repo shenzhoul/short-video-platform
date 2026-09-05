@@ -1,9 +1,8 @@
 'use client';
 
+import { setApiAuthToken } from '@services/api-request';
 import cookie from 'js-cookie';
 import { SessionProvider as Session, SessionProviderProps, useSession } from 'next-auth/react';
-
-import { setApiAuthToken } from '@services/api-request';
 import { createElement, useEffect } from 'react';
 
 /**
