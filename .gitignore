@@ -126,3 +126,18 @@ __pycache__/
 *.log
 coverage/
 .cache/
+
+# Vercel CLI state. Vercel is no longer a deployment target (see
+# docs/deployment/README.md), but `vercel link`/`vercel build` recreate this
+# directory, and a prebuilt `.vercel/output` is hundreds of megabytes of
+# duplicated function bundles.
+.vercel
+
+# SWC's transform cache, created by `next dev`/`next build`.
+.swc
+
+# NOTE: the env rules live at the top of this file (`.env`, `.env.*`, with
+# `!.env.example` / `!.env.*.example` re-including the templates). The Vercel
+# CLI appended a broader `.env*` here, and because the LAST matching pattern
+# wins it silently re-ignored those negations — `deploy/.env.example` is
+# tracked but became invisible to `git add`. Do not reintroduce it.
