@@ -57,8 +57,15 @@ export async function fingerprint(value: unknown): Promise<string> {
  * line carries its own stage name.
  */
 export function traceAuth(stage: string, fields: Record<string, unknown>): void {
-  if (typeof window === 'undefined') return;
+  /*
+    Deliberately NOT restricted to the browser.
 
+    The remaining comparison spans both runtimes: the token the API issues is
+    only visible server-side, in `authorize()`, while the token actually sent is
+    only visible client-side. Logging in both places puts the two fingerprints
+    in reach of one another — container logs for the first, the browser console
+    for the second.
+  */
   void (async () => {
     const parts: string[] = [];
     for (const [key, value] of Object.entries(fields)) {

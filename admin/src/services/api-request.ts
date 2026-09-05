@@ -104,12 +104,30 @@ export abstract class APIRequest {
       headers: updatedHeader,
       proxy: typeof window === 'undefined' ? false : undefined
     })
-      .then((resp) => resp.data)
+      .then((resp) => {
+        // TEMPORARY — the outcome of the traced request. Remove with the fix.
+        traceAuth('response', { url: `${verb} ${url}`, status: resp.status, ok: true });
+        return resp.data;
+      })
       .catch((e) => {
         if (e.code === 'ECONNREFUSED') {
           throw new Error('ECONNREFUSED!');
         }
         const { response } = e;
+
+        /*
+          TEMPORARY — captured BEFORE the 401/403 branch below navigates away.
+          That navigation is what has been destroying the evidence: the console
+          survives it only with "Preserve log", and the response body never did.
+          `apiError` is the API's own machine-readable code, which distinguishes
+          an auth refusal from a CORS or proxy-level one. Remove with the fix.
+        */
+        traceAuth('response', {
+          url: `${verb} ${url}`,
+          status: response?.status ?? 'no-response',
+          apiError: response?.data?.error ?? '(none)',
+          apiMessage: response?.data?.message ?? '(none)'
+        });
         // allow 403 as well, because if user try to access resource that he is not allowed to access, we need to logout as well
         if (response && [401, 403].includes(response.status)) {
           const token = getApiAuthToken();

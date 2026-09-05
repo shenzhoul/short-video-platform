@@ -1,3 +1,4 @@
+import { traceAuth } from '@lib/auth-trace';
 import { getResponseError } from '@lib/utils';
 import axios from 'axios';
 import { cookies } from 'next/headers';
@@ -102,6 +103,12 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Access denied. Admin role required.');
           }
 
+          traceAuth('SERVER.authorize', {
+            loginHttpOk: true,
+            isAdmin: profile.isAdmin === true,
+            loginTokenFp: token
+          });
+
           authDiagnostic('authorize', {
             user: true,
             id: Boolean(profile._id),
@@ -176,6 +183,12 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = user.token;
         token.user = user;
       }
+      traceAuth(user ? 'SERVER.jwt-signin' : 'SERVER.jwt-subsequent', {
+        hasUser: Boolean(user),
+        userTokenFp: (user as any)?.token,
+        accessTokenFp: token.accessToken
+      });
+
       authDiagnostic('jwt', {
         trigger: trigger || 'none',
         user: Boolean(user),
