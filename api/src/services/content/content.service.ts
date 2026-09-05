@@ -284,7 +284,8 @@ export class ContentService {
       sessionId: req.sessionId,
       cursor: req.cursor || null,
       limit: Number(req.limit) || PAGINATION_DEFAULTS.DEFAULT_LIMIT,
-      debug: includeDebug
+      debug: includeDebug,
+      rollover: Boolean(req.rollover)
     });
 
     const data = result.data.length ? await this.populatePostData(result.data, { user, ...options }) : [];
@@ -312,8 +313,24 @@ export class ContentService {
     return this.recommendationFeedService.openDetailSession(postId, { viewerId: user?._id?.toString(), anonymousId });
   }
 
-  async stepPostDetailRecommendationNext(sessionId: string, user?: UserDto | AuthUserDto, anonymousId?: string) {
-    return this.recommendationFeedService.detailNext(sessionId, { viewerId: user?._id?.toString(), anonymousId });
+  /**
+   * Advance a Post Detail recommendation session.
+   *
+   * `videoOnly` is set by the picture-in-picture window, which can only draw a
+   * post that carries a video — see `RecommendationFeedService.detailNext`.
+   */
+  async stepPostDetailRecommendationNext(
+    sessionId: string,
+    user?: UserDto | AuthUserDto,
+    anonymousId?: string,
+    videoOnly = false
+  ) {
+    return this.recommendationFeedService.detailNext(
+      sessionId,
+      { viewerId: user?._id?.toString(), anonymousId },
+      RECOMMENDATION_FEED_TYPES.HOME,
+      videoOnly
+    );
   }
 
   async stepPostDetailRecommendationPrevious(sessionId: string, user?: UserDto | AuthUserDto, anonymousId?: string) {

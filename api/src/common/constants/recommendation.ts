@@ -181,7 +181,19 @@ export const FEED_SESSION_POLICY = {
   ttlSeconds: 45 * 60,
   maxItems: 160, // Matches the benchmarked-safe Home render ceiling (rules/user.md).
   defaultPageSize: 10,
-  loadMoreLockTtlMs: 5000
+  loadMoreLockTtlMs: 5000,
+  /**
+   * Ceiling on one chain's seen-post set (see `REDIS_KEYS.recoFeedChainSeen`).
+   *
+   * The natural bound is the eligible corpus — once a chain has seen every
+   * post, retrieval comes back empty and the chain is recycled, which clears
+   * the set. This is the guard for the case where that never happens because
+   * the catalogue keeps growing: a single scroll must not be able to allocate
+   * an unbounded Redis set. Reaching it recycles the chain exactly as
+   * exhaustion does, and it is deliberately far above `maxItems` so an
+   * ordinary session chain never trips it.
+   */
+  maxChainSeenIds: 5000
 } as const;
 
 /** Post Detail recommendation-session policy (Home / notification / direct-link anchors). */

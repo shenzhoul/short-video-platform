@@ -50,6 +50,26 @@ export class PostRecommendationRequest extends SearchRequest {
   anonymousId?: string;
 
   /**
+   * Continue the scroll in a *new* session of the same chain, instead of
+   * reading another page of `sessionId`.
+   *
+   * Sent when a session has been exhausted (`hasMore: false`) and the viewer
+   * keeps scrolling. The server ranks a successor session over the posts the
+   * chain has not served yet, so the feed continues past one session's end
+   * without repeating it and without a session having to become the whole
+   * catalogue. Requires `sessionId`; ignored without one.
+   *
+   * Read from `obj`, not `value`: `main.ts` enables implicit conversion, so a
+   * boolean property is `Boolean(queryString)` by the time a `@Transform`
+   * sees `value` — and `Boolean('false')` is `true` (see rules/api.md).
+   */
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  @Transform(({ obj }) => obj?.rollover === true || obj?.rollover === 'true')
+  rollover?: boolean;
+
+  /**
    * Requests per-candidate score-breakdown debug info. Honored only outside
    * production (see the controller) — rules/instructions §19.
    */

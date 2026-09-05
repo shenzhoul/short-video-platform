@@ -12,6 +12,7 @@ jest.mock('@hooks/use-home-feed-infinite-scroll', () => ({
       hasMore: false,
       loading: false,
       loadMore: jest.fn(),
+      sessionForPost: () => null,
       error: null,
       updatePostInteraction: jest.fn()
     };

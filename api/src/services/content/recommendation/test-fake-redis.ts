@@ -11,6 +11,7 @@
 export function createFakeRedis() {
   const lists = new Map<string, string[]>();
   const hashes = new Map<string, Record<string, string>>();
+  const sets = new Map<string, Set<string>>();
   const ttls = new Map<string, number>();
 
   const client: any = {
@@ -32,6 +33,18 @@ export function createFakeRedis() {
       return list.slice(start, end);
     }),
     llen: jest.fn(async (key: string) => (lists.get(key) || []).length),
+    sadd: jest.fn(async (key: string, ...members: string[]) => {
+      const set = sets.get(key) || new Set<string>();
+      members.forEach((member) => set.add(member));
+      sets.set(key, set);
+      return members.length;
+    }),
+    smembers: jest.fn(async (key: string) => [...(sets.get(key) || [])]),
+    del: jest.fn(async (key: string) => {
+      const existed = lists.delete(key) || hashes.delete(key) || sets.delete(key);
+      ttls.delete(key);
+      return existed ? 1 : 0;
+    }),
     rpush: jest.fn(async (key: string, ...values: string[]) => {
       const list = lists.get(key) || [];
       list.push(...values);
@@ -48,6 +61,7 @@ export function createFakeRedis() {
         rpush: (key: string, ...values: string[]) => { ops.push(() => client.rpush(key, ...values)); return pipelineProxy; },
         hset: (key: string, ...args: any[]) => { ops.push(() => client.hset(key, ...args)); return pipelineProxy; },
         expire: (key: string, seconds: number) => { ops.push(() => client.expire(key, seconds)); return pipelineProxy; },
+        sadd: (key: string, ...members: string[]) => { ops.push(() => client.sadd(key, ...members)); return pipelineProxy; },
         exec: async () => {
           const results = [];
           // eslint-disable-next-line no-restricted-syntax
@@ -63,6 +77,6 @@ export function createFakeRedis() {
   };
 
   return {
-    client, lists, hashes, ttls
+    client, lists, hashes, sets, ttls
   };
 }

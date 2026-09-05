@@ -56,7 +56,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
   const [topicKey, setTopicKey] = useState('');
   const catalogue = usePostTopicsCatalogue();
   const {
-    posts, hasMore, loading, loadMore, refresh, sessionId, error, updatePostInteraction
+    posts, hasMore, loading, loadMore, refresh, sessionId, sessionForPost, error, updatePostInteraction
   } = useHomeFeedInfiniteScroll({
     initialData,
     enabled: true,
@@ -141,12 +141,11 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                     post={posts[0]}
                     featured
                     popupPipState={playback.popupPipState}
-                    popupPlaylist={playback.popupPlaylist}
                     compactHoverActive={Boolean(hoveredCompactPostId) || Boolean(playback.detailPost)}
                     featuredResumeTime={playback.featuredResumeTime}
                     onFeaturedTimeUpdate={playback.updateFeaturedPlaybackTime}
                     onOpenDetail={playback.openDetailPost}
-                    recommendationSessionId={sessionId}
+                    recommendationSessionId={sessionForPost(posts[0]._id) || sessionId}
                   />
                 </div>
               ) : null}
@@ -156,10 +155,9 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                   key={post._id}
                   post={post}
                   popupPipState={playback.popupPipState}
-                  popupPlaylist={playback.popupPlaylist}
                   onCompactHoverChange={setHoveredCompactPostId}
                   onOpenDetail={playback.openDetailPost}
-                  recommendationSessionId={sessionId}
+                  recommendationSessionId={sessionForPost(post._id) || sessionId}
                 />
               ))}
             </div>
@@ -209,7 +207,6 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
           source={playback.detailSource}
           recommendationSessionId={detailFeed.sessionId}
           hasMoreAhead={detailFeed.hasMoreAhead}
-          popupPlaylist={playback.popupPlaylist}
           initialTime={playback.detailInitialTime}
           initialDetailPanelTab={playback.detailInitialTab}
           targetCommentId={playback.detailTargetCommentId}

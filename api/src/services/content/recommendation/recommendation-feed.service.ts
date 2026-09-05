@@ -4,6 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ObjectId } from 'mongodb';
 import {
+  FEED_SESSION_POLICY,
   RECOMMENDATION_FEED_TYPES,
   RECOMMENDATION_SOURCES,
   RecommendationFeedType,
@@ -103,6 +104,11 @@ export class RecommendationFeedService {
      * produced `undefined` and a session nobody could page.
      */
     subjectId: string;
+    /**
+     * The chain this session continues. Absent on a first load; set on a
+     * rollover so the successor is ranked over what the chain has not shown.
+     */
+    chainId?: string | null;
   }): Promise<{ sessionId: string; ranked: ScoredCandidate[] }> {
     const { subjectId } = params;
     // Only a stable identity has history worth reading; an ephemeral guest
@@ -120,7 +126,27 @@ export class RecommendationFeedService {
     const excludedCreatorIds = params.subject.viewerId
       ? await this.userRelationshipService.getBlockedEitherDirectionIds(params.subject.viewerId)
       : [];
-    const excludedPostIds = (affinity?.recentlySeenPostIds || []).map((id: any) => id.toString());
+    const seenAcrossHistory = (affinity?.recentlySeenPostIds || []).map((id: any) => id.toString());
+    /*
+     * What this scroll has already shown, as opposed to what this subject has
+     * seen at some point in the past.
+     *
+     * `recentlySeenPostIds` is written from impression telemetry, which is
+     * best-effort and lands after the fact — good enough to stop a session
+     * repeating last week, useless for stopping the *next page* repeating the
+     * page still on screen. The chain set is written when the order is fixed,
+     * so a rollover is ranked over the genuinely unseen remainder.
+     */
+    let seenInChain = params.chainId ? await this.sessionService.getChainSeenIds(params.chainId) : [];
+    if (seenInChain.length >= FEED_SESSION_POLICY.maxChainSeenIds) {
+      // A scroll long enough to reach this has outlived any useful memory of
+      // itself, and the set must not grow further. Recycling here is the same
+      // decision the exhaustion branch below makes, taken on size instead.
+      this.logger.log(`Feed chain seen-set hit its ceiling (${seenInChain.length}); recycling`);
+      await this.sessionService.resetChainSeen(params.chainId as string);
+      seenInChain = [];
+    }
+    const excludedPostIds = Array.from(new Set([...seenAcrossHistory, ...seenInChain]));
 
     const followingCreatorIds = params.subject.viewerId
       ? await this.candidateService.getFollowingCreatorIds(params.subject.viewerId)
@@ -147,6 +173,36 @@ export class RecommendationFeedService {
     });
 
     let pool = await retrieveWith(excludedPostIds);
+
+    /*
+     * Recycle the chain before relaxing anything else.
+     *
+     * A chain that has served every eligible post is the *expected* end state
+     * of a long scroll, not a fault: on this catalogue it takes three Home
+     * sessions. When it happens the chain's memory is cleared and retrieval is
+     * repeated over the whole corpus, so the scroll continues with a fresh
+     * ranking instead of stopping — and the clear is persisted, so the next
+     * rollover starts a new cycle rather than re-running this branch on every
+     * page.
+     *
+     * Ordered before the blanket relaxation below on purpose: dropping only the
+     * chain keeps the older cross-session suppression in force, so the recycled
+     * sessions still prefer what the subject has not seen recently.
+     */
+    if (pool.all.length < RELAXED_SUPPRESSION_MIN_POOL && seenInChain.length) {
+      const recycled = await retrieveWith(seenAcrossHistory);
+      if (recycled.all.length > pool.all.length) {
+        this.logger.log(
+          `Recycled feed chain (${params.feedType}): ${seenInChain.length} posts served across the chain, `
+          + `${pool.all.length} candidates left, ${recycled.all.length} after recycling`
+        );
+        await this.sessionService.resetChainSeen(params.chainId as string);
+        pool = recycled;
+        // The chain restarts empty, so the successor session must not re-add
+        // the ids it just forgot.
+        seenInChain = [];
+      }
+    }
 
     /*
      * Seen-suppression must never be able to empty the feed.
@@ -247,21 +303,29 @@ export class RecommendationFeedService {
       await this.selectionService.rememberHero(params.feedType, subjectId, heroId);
     }
 
-    const sessionId = await this.sessionService.create({
+    const { sessionId } = await this.sessionService.create({
       subjectId,
       feedType: params.feedType,
       topicKey: params.topicKey,
       sessionSeed,
-      ranked
+      ranked,
+      chainId: params.chainId
     });
 
     return { sessionId, ranked };
   }
 
   /**
-   * Get a feed page. Pass `sessionId` + `cursor` to continue an existing
-   * session (stable pagination); omit `sessionId` to start a new one (reload
-   * semantics).
+   * Get a feed page.
+   *
+   * - `sessionId` + `cursor` continues an existing session (stable pagination).
+   * - No `sessionId` starts a brand-new session under a brand-new chain — the
+   *   reload/refresh semantics.
+   * - `sessionId` + `rollover` starts a *successor* session in the same chain:
+   *   a new ranking, a new mix, and the chain's already-served posts excluded.
+   *   This is what makes an infinite scroll continue past one session's end
+   *   without either repeating itself or turning the session into the whole
+   *   catalogue.
    */
   public async getFeed(params: {
     feedType: RecommendationFeedType;
@@ -271,6 +335,8 @@ export class RecommendationFeedService {
     cursor?: string | null;
     limit: number;
     debug?: boolean;
+    /** Continue the scroll in a new session of the same chain (see above). */
+    rollover?: boolean;
   }): Promise<RecommendationFeedResult> {
     /*
      * A guest who sends no `anonymousId` still gets a feed.
@@ -288,7 +354,19 @@ export class RecommendationFeedService {
      */
     const subjectId = this.subjectId(params.subject) || `ephemeral:${randomUUID()}`;
 
-    if (params.sessionId) {
+    /*
+     * A rollover inherits the chain and skips the page read entirely. Reading
+     * the exhausted session first would answer with its last page again, which
+     * is precisely the repeat this exists to avoid.
+     *
+     * The chain id is resolved through the session, and `getChainId` checks the
+     * subject — so a rollover cannot be pointed at somebody else's chain to
+     * learn what they were shown.
+     */
+    let chainId: string | null = null;
+    if (params.sessionId && params.rollover) {
+      chainId = await this.sessionService.getChainId(params.sessionId, subjectId);
+    } else if (params.sessionId) {
       const page = await this.sessionService.getPage(params.sessionId, subjectId, params.cursor || null, params.limit);
       if (page) {
         const data = await this.reorderByIds(page.items.map((item: FeedSessionItem) => item.postId));
@@ -300,7 +378,7 @@ export class RecommendationFeedService {
     }
 
     const { sessionId, ranked } = await this.createSession({
-      feedType: params.feedType, subject: params.subject, topicKey: params.topicKey, subjectId
+      feedType: params.feedType, subject: params.subject, topicKey: params.topicKey, subjectId, chainId
     });
     const page = await this.sessionService.getPage(sessionId, subjectId, null, params.limit);
     const data = await this.reorderByIds((page?.items || []).map((item) => item.postId));
@@ -348,7 +426,17 @@ export class RecommendationFeedService {
   public async detailNext(
     sessionId: string,
     subject: RecommendationSubject,
-    feedTypeForScoring: RecommendationFeedType = RECOMMENDATION_FEED_TYPES.HOME
+    feedTypeForScoring: RecommendationFeedType = RECOMMENDATION_FEED_TYPES.HOME,
+    /**
+     * Restrict candidates to posts that carry a video.
+     *
+     * Set by the picture-in-picture window, which has nothing to draw a photo
+     * post with — it is a `<video>` element and a transport bar. Filtering here
+     * rather than in the client is what keeps "next" one round trip: a client
+     * that discarded photo posts itself would have to ask again, and each ask
+     * appends the rejected post to the session for good.
+     */
+    videoOnly = false
   ): Promise<{ postId: string } | null> {
     const subjectId = this.subjectId(subject);
     if (!subjectId) return null;
@@ -384,6 +472,19 @@ export class RecommendationFeedService {
     const excludedPostIds = state.items.map((item) => item.postId);
 
     const match = buildEligibilityMatch({ viewerId: subject.viewerId, excludedCreatorIds, excludedPostIds });
+    if (videoOnly) {
+      /*
+       * Both fields are checked because they disagree in stored data: `type` is
+       * the post's declared kind and `mediaTypes` is what its attachments
+       * actually are. A post that carries a video is playable whichever field
+       * says so, and requiring both would silently exclude real videos.
+       *
+       * Appended to `$and` rather than assigned, because `buildEligibilityMatch`
+       * already owns that key — overwriting it would drop the blocked-creator
+       * and already-seen exclusions.
+       */
+      match.$and = [...(match.$and || []), { $or: [{ type: 'video' }, { mediaTypes: 'video' }] }];
+    }
     const candidates = await this.postModel
       .find(match)
       .select({

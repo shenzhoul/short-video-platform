@@ -75,6 +75,17 @@ export const REDIS_KEYS = {
   recoFeedSessionItems: (sessionId: string) => key('reco-feed', `${sessionId}:items`),
   /** Session metadata hash (subjectId, feedType, topicKey, sessionSeed, createdAt). */
   recoFeedSessionMeta: (sessionId: string) => key('reco-feed', `${sessionId}:meta`),
+  /**
+   * Every post id served by one *chain* of feed sessions.
+   *
+   * A chain is what a continuous scroll looks like on the server: the first
+   * session is the root and each rollover creates a successor that inherits the
+   * root's id. The set is the chain's seen-post exclusion, so a rollover starts
+   * from what the viewer has *not* been shown rather than re-ranking the same
+   * catalogue. Bounded by `FEED_SESSION_POLICY.maxChainSeenIds` and cleared
+   * when the eligible corpus is exhausted (`RecommendationSessionService`).
+   */
+  recoFeedChainSeen: (chainId: string) => key('reco-feed', `chain:${chainId}:seen`),
   /** Ordered post-id list for one Post Detail recommendation session (Home/notification/direct-link anchors). */
   recoDetailSessionItems: (sessionId: string) => key('reco-detail', `${sessionId}:items`),
   /** Detail session metadata hash (subjectId, anchorPostId, cursorIndex, sessionSeed). */

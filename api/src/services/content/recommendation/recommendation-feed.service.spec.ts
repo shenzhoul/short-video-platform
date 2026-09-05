@@ -20,6 +20,10 @@ function service(options: {
   poolWhenRelaxed?: any[];
   /** The viewer's `recentlySeenPostIds`. */
   seenPostIds?: string[];
+  /** The chain id `getChainId` resolves a rollover to. */
+  chainId?: string | null;
+  /** Post ids the chain has already served. */
+  chainSeenPostIds?: string[];
 } = {}) {
   const replayPostId = options.replayPostId || new ObjectId().toString();
 
@@ -68,10 +72,13 @@ function service(options: {
   };
   const sessionService: any = {
     newSessionSeed: jest.fn().mockReturnValue('deterministic-seed'),
-    create: jest.fn().mockResolvedValue('new-session-id'),
+    create: jest.fn().mockResolvedValue({ sessionId: 'new-session-id', chainId: 'new-session-id' }),
     getPage: jest.fn().mockResolvedValue({
       sessionId: 'new-session-id', items: [], hasMore: false, nextCursor: null
-    })
+    }),
+    getChainId: jest.fn().mockResolvedValue(options.chainId ?? null),
+    getChainSeenIds: jest.fn().mockResolvedValue(options.chainSeenPostIds || []),
+    resetChainSeen: jest.fn().mockResolvedValue(undefined)
   };
   const affinityService: any = {
     getRaw: jest.fn().mockResolvedValue(

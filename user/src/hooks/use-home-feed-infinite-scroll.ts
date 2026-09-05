@@ -29,6 +29,8 @@ interface UseHomeFeedInfiniteScrollReturn {
   /** Starts a brand-new recommendation session with a fresh mix/order — "Refresh recommendations". */
   refresh: () => Promise<void>;
   sessionId: string | null;
+  /** The session that ranked this post — not merely the newest one open. */
+  sessionForPost: (postId?: string | null) => string | null;
   total: number;
   error: string | null;
   updatePostInteraction: (postId: string, patch: PostInteractionPatch) => void;
@@ -45,6 +47,25 @@ interface UseHomeFeedInfiniteScrollReturn {
  * always starts a new session with a new mix; continuing an existing
  * `sessionId` always returns the same stable order, so `loadMore` can never
  * duplicate or skip a post within one session.
+ *
+ * ## Reaching the end of a session is not the end of the feed
+ *
+ * A session is a bounded ranked *sample* of the candidate pool — 70 items out
+ * of 160 on this catalogue — which is what stops a reload from being a re-sort
+ * of the same fixed set (see `SESSION_OUTPUT_POLICY`). It was also where Home
+ * stopped: `hasMore` went false at item 70 and nothing asked for more, so two
+ * thirds of the corpus were unreachable by scrolling.
+ *
+ * So an exhausted session rolls over into a *successor session in the same
+ * chain*: `sessionId` + `rollover`, which the server answers with a fresh
+ * ranking over the posts that chain has not served yet. The exclusion lives on
+ * the server (`REDIS_KEYS.recoFeedChainSeen`) rather than in a client-held id
+ * list, because the server is what has to rank around it — and it is written
+ * when the order is fixed, not when impression telemetry arrives, so a rollover
+ * cannot re-rank the page still on screen.
+ *
+ * Raising the session limit to the catalogue size was rejected: that removes
+ * the ranking instead of fixing the scroll.
  */
 export function useHomeFeedInfiniteScroll({
   initialData,
@@ -57,6 +78,26 @@ export function useHomeFeedInfiniteScroll({
   const [nextCursor, setNextCursor] = useState<string | null>(initialData?.nextCursor || null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * A rollover that added nothing means the catalogue, not just this session,
+   * is spent — so stop asking. Without this the rollover branch below would
+   * fire on every scroll to the bottom once every eligible post had been shown.
+   */
+  const [catalogueSpent, setCatalogueSpent] = useState(false);
+  /**
+   * Which session ranked each loaded post.
+   *
+   * A chain crosses several sessions while the earlier ones' cards are still on
+   * screen. Reporting their impressions and watch time under whichever session
+   * is newest would file that evidence against a ranking that never chose them.
+   */
+  const [sessionByPostId, setSessionByPostId] = useState<Record<string, string>>(
+    () => Object.fromEntries(
+      (initialData?.data || [])
+        .filter(() => Boolean(initialData?.sessionId))
+        .map((post) => [post._id, initialData!.sessionId as string])
+    )
+  );
   const updatePostInteraction = usePostInteractionUpdater(setPosts);
 
   /*
@@ -88,7 +129,11 @@ export function useHomeFeedInfiniteScroll({
   // is the case on mount when the server did not provide initial data.
   const loadedTopicRef = useRef<string | null>(initialData ? topicKey : null);
 
-  const fetchPage = useCallback(async (params: { sessionId: string | null; cursor: string | null }, reset: boolean) => {
+  const fetchPage = useCallback(async (
+    params: { sessionId: string | null; cursor: string | null },
+    mode: 'reset' | 'append' | 'rollover'
+  ) => {
+    const reset = mode === 'reset';
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     loadingRef.current = true;
@@ -110,7 +155,9 @@ export function useHomeFeedInfiniteScroll({
         ...(anonymousId ? { anonymousId } : {}),
         ...(topicKey ? { topicKey } : {}),
         ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-        ...(params.cursor ? { cursor: params.cursor } : {})
+        ...(params.cursor ? { cursor: params.cursor } : {}),
+        // Only ever sent alongside a sessionId; the server ignores it otherwise.
+        ...(mode === 'rollover' ? { rollover: 'true' } : {})
       };
 
       const response = await getPersonalizedHomePosts(query);
@@ -120,9 +167,37 @@ export function useHomeFeedInfiniteScroll({
       const page = response?.data || {};
       const incoming: IPost[] = page.data || [];
 
-      setPosts(current => (reset
-        ? incoming
-        : Array.from(new Map([...current, ...incoming].map(post => [post._id, post])).values())));
+      let added = 0;
+      setPosts(current => {
+        if (reset) {
+          added = incoming.length;
+          return incoming;
+        }
+        const known = new Set(current.map(post => post._id));
+        const fresh = incoming.filter(post => !known.has(post._id));
+        added = fresh.length;
+        // Still merged through a Map, so an id arriving twice inside one page
+        // cannot render twice — which is what this expression guarded before.
+        return fresh.length
+          ? Array.from(new Map([...current, ...fresh].map(post => [post._id, post])).values())
+          : current;
+      });
+
+      if (page.sessionId) {
+        const arrived = incoming.map(post => post._id);
+        setSessionByPostId(current => {
+          const next = reset ? {} : { ...current };
+          // The first session to serve a post owns its attribution: a recycled
+          // chain re-offering one must not relabel the exposure already logged.
+          arrived.forEach(id => {
+ if (!next[id]) next[id] = page.sessionId as string;
+});
+          return next;
+        });
+      }
+
+      if (mode === 'rollover' && added === 0) setCatalogueSpent(true);
+      if (reset) setCatalogueSpent(false);
       setHasMore(Boolean(page.hasMore));
       setSessionId(page.sessionId || null);
       setNextCursor(page.nextCursor || null);
@@ -152,13 +227,28 @@ export function useHomeFeedInfiniteScroll({
     setSessionId(null);
     setNextCursor(null);
     setHasMore(true);
-    void fetchPage({ sessionId: null, cursor: null }, true);
+    setCatalogueSpent(false);
+    setSessionByPostId({});
+    void fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [enabled, fetchPage, topicKey]);
 
   const loadMore = useCallback(() => {
-    if (!enabled || loadingRef.current || !hasMore || !sessionId || !nextCursor) return;
-    void fetchPage({ sessionId, cursor: nextCursor }, false);
-  }, [enabled, fetchPage, hasMore, nextCursor, sessionId]);
+    if (!enabled || loadingRef.current) return;
+
+    /*
+     * The end of a session is not the end of the feed. Roll over into a
+     * successor session of the same chain and keep appending; ids already on
+     * screen are filtered out above, so a rollover cannot repeat a post inside
+     * this mount, and one that yields nothing new stops the rollover for good.
+     */
+    if (!hasMore || !nextCursor) {
+      if (!sessionId || catalogueSpent) return;
+      void fetchPage({ sessionId, cursor: null }, 'rollover');
+      return;
+    }
+
+    void fetchPage({ sessionId, cursor: nextCursor }, 'append');
+  }, [catalogueSpent, enabled, fetchPage, hasMore, nextCursor, sessionId]);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
@@ -166,16 +256,28 @@ export function useHomeFeedInfiniteScroll({
     setSessionId(null);
     setNextCursor(null);
     setHasMore(true);
-    await fetchPage({ sessionId: null, cursor: null }, true);
+    setCatalogueSpent(false);
+    setSessionByPostId({});
+    // Deliberately unchained: "Refresh recommendations" asks for a new mix of
+    // the whole catalogue, not for the remainder of the scroll just abandoned.
+    await fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [enabled, fetchPage]);
+
+  /** The session that ranked this post — not merely the newest one open. */
+  const sessionForPost = useCallback(
+    (postId?: string | null) => (postId ? sessionByPostId[postId] || null : null),
+    [sessionByPostId]
+  );
 
   return {
     posts,
-    hasMore,
+    /** More posts can still arrive — this session, or the next one after a rollover. */
+    hasMore: hasMore || !catalogueSpent,
     loading,
     loadMore,
     refresh,
     sessionId,
+    sessionForPost,
     total: initialData?.total || posts.length,
     error,
     updatePostInteraction

@@ -20,7 +20,7 @@ describe('RecommendationSessionService', () => {
     const { client } = createFakeRedis();
     const svc = new RecommendationSessionService(client);
     const ranked = rankedList(25);
-    const sessionId = await svc.create({
+    const { sessionId } = await svc.create({
       subjectId: 'user-1', feedType: 'for-you', sessionSeed: 's1', ranked
     });
 
@@ -47,7 +47,7 @@ describe('RecommendationSessionService', () => {
     const { client } = createFakeRedis();
     const svc = new RecommendationSessionService(client);
     const ranked = rankedList(30);
-    const sessionId = await svc.create({ subjectId: 'user-1', feedType: 'home', sessionSeed: 's1', ranked });
+    const { sessionId } = await svc.create({ subjectId: 'user-1', feedType: 'home', sessionSeed: 's1', ranked });
 
     const first = await svc.getPage(sessionId, 'user-1', null, 10);
     const [pageA, pageB] = await Promise.all([
@@ -61,7 +61,7 @@ describe('RecommendationSessionService', () => {
   it('refuses to serve a session to a different subject', async () => {
     const { client } = createFakeRedis();
     const svc = new RecommendationSessionService(client);
-    const sessionId = await svc.create({ subjectId: 'user-1', feedType: 'for-you', sessionSeed: 's1', ranked: rankedList(5) });
+    const { sessionId } = await svc.create({ subjectId: 'user-1', feedType: 'for-you', sessionSeed: 's1', ranked: rankedList(5) });
     const page = await svc.getPage(sessionId, 'someone-else', null, 10);
     expect(page).toBeNull();
   });
@@ -84,7 +84,7 @@ describe('RecommendationSessionService', () => {
     const { client, lists } = createFakeRedis();
     const svc = new RecommendationSessionService(client);
     const ranked = rankedList(500);
-    const sessionId = await svc.create({ subjectId: 'user-1', feedType: 'for-you', sessionSeed: 's1', ranked });
+    const { sessionId } = await svc.create({ subjectId: 'user-1', feedType: 'for-you', sessionSeed: 's1', ranked });
     const itemsKey = [...lists.keys()].find((k) => k.includes(sessionId))!;
     expect(lists.get(itemsKey)!.length).toBeLessThanOrEqual(160);
   });

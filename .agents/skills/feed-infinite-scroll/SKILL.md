@@ -20,7 +20,10 @@ Trace the API query, service response, hook state, and rendering component toget
 - Include user identity and active filters in cache/query keys.
 - Reset pages when filters or the viewed creator change.
 - De-duplicate appended posts by ID.
-- Do not request another page when continuation is absent.
+- Do not request another page when continuation is absent — **except** on a ranked feed, where the
+  end of a session is not the end of the feed. Home and For You roll over into a successor session
+  and keep appending; see `.agents/skills/recommendation-engine/SKILL.md`. The stop condition there
+  is `catalogueSpent` (a rollover that added nothing), never `hasMore` alone.
 - Preserve the current order returned by the API.
 - Creator-scoped lists order `isPinned: true` first, then `pinnedAt` newest-first, then the normal
   `createdAt`/`_id` order. Their cursor must carry `isPinned` and `pinnedAt`; applying a plain
@@ -45,5 +48,7 @@ Trace the API query, service response, hook state, and rendering component toget
 
 ## Verification
 
-- Verify initial load, append, end-of-feed, empty feed, retry, filter reset, and creator switch.
+- Verify initial load, append, **session rollover**, end-of-corpus, empty feed, retry, filter reset,
+  and creator switch. Page a ranked feed to exhaustion and count distinct ids: a rollover that
+  silently repeats and a rollover that works look identical one page at a time.
 - Run targeted user tests, then `yarn lint` and `yarn build` in `user/`; run `yarn build` in `api/` when backend behavior changes.
