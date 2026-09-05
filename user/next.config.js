@@ -32,6 +32,20 @@ const isVercelBuild = !!process.env.VERCEL;
 
 const nextConfig = {
   compress: true,
+  /*
+    Ship a self-contained server for the container image.
+
+    `standalone` traces the modules the server actually imports and copies them
+    next to a generated `server.js`, so the runtime image carries ~200 MB
+    instead of the whole ~1.5 GB `node_modules`. That is not a nicety on the
+    target box: it is a 2 vCPU / 4 GB VM already running MongoDB, Redis, the API
+    and the file server, with roughly 600 MB of headroom.
+
+    Additive — `next start` and `next build` behave exactly as before, so local
+    development is untouched. `static/` and `public/` are deliberately NOT
+    traced by Next and must be copied alongside; see deploy/user.Dockerfile.
+  */
+  output: 'standalone',
   // react 18 about strict mode https://reactjs.org/blog/2022/03/29/react-v18.html#new-strict-mode-behaviors
   reactStrictMode: false,
   /*
@@ -111,7 +125,23 @@ const nextConfig = {
     NEXT_PUBLIC_API_ENDPOINT: process.env.NEXT_PUBLIC_API_ENDPOINT,
     NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
     SITE_URL: process.env.SITE_URL,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+    /*
+      NEXTAUTH_SECRET is deliberately NOT listed here.
+
+      This block is Next's build-time inlining: every `process.env.X` reference
+      is textually replaced with the value present when `next build` ran. For a
+      secret that is wrong twice over. It baked the signing key into the server
+      bundle — measured: 3 files in `dist/.next/server`, 6 in the standalone
+      output (0 client-side, so it never reached a browser, but it would ship
+      inside any image or artifact built from it). And because the reference is
+      replaced rather than resolved, the value could only ever be changed by
+      rebuilding: setting it in the container's environment had no effect.
+
+      Removed from the block, it stays a genuine runtime lookup, which is what
+      next-auth wants and what lets the container receive it as an ordinary env
+      var. Verified both ways: with it listed and unset at build time, no
+      `process.env.NEXTAUTH_SECRET` survived in executable JS at all.
+    */
     PROXY_API_TARGET: process.env.PROXY_API_TARGET
   },
 

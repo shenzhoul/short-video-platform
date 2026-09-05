@@ -35,6 +35,29 @@ const nextConfig = {
   // Custom build directory, except on Vercel (see `isVercelBuild` above).
   ...(isVercelBuild ? {} : { distDir: 'dist/.next' }),
 
+  /*
+    Ship a self-contained server for the container image — same reasoning as
+    the user app: the target VM is 2 vCPU / 4 GB already running MongoDB,
+    Redis, the API and the file server. Standalone traces only the modules the
+    server imports, so the image carries tens of megabytes rather than the
+    whole node_modules tree.
+
+    Additive: `next build` and `next start` are unchanged locally.
+  */
+  output: 'standalone',
+
+  /*
+    Pin the trace root to this app.
+
+    Next otherwise infers it by walking up for lockfiles, and `admin` sits
+    beside `user`, `api`, `file-server` and `shared/` — each with their own.
+    An inferred repo-level root would nest the standalone output under
+    `standalone/admin/`, silently changing the paths deploy/admin.Dockerfile
+    copies. Pinning it makes `server.js` land at the root of `standalone/`,
+    matching the user app.
+  */
+  outputFileTracingRoot: __dirname,
+
   // Security headers
   poweredByHeader: false,
 

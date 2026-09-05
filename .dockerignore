@@ -40,15 +40,22 @@ id_rsa*
 **/.turbo
 **/*.tsbuildinfo
 
-# ------------------------------------------------ apps this image never builds
-# The build context is the repository ROOT (both Dockerfiles need `shared/`,
-# which resolves outside their own directory), so Docker uploads everything not
-# excluded here — including the two Next.js apps, which neither backend image
-# copies. Measured with build artefacts present: user/ 3.4 GB, admin/ 1.5 GB.
-# They are Vercel projects and have no business in a backend image, nor in the
-# tarball sent to the daemon over the network.
-user
-admin
+# ------------------------------------------------------- the two Next.js apps
+# `user` and `admin` used to be excluded wholesale, because they were Vercel
+# projects and no image here built them. They are now deployed as containers on
+# the same VM (deploy/user.Dockerfile, deploy/admin.Dockerfile), so their
+# SOURCE has to reach the daemon.
+#
+# What made them expensive was never the source: it was the build artefacts.
+# The 3.4 GB / 1.5 GB figures measured for `user/` and `admin/` were almost
+# entirely `node_modules`, `dist` and `.next`, all of which the rules above
+# already exclude — so the backend images' context stays small even though
+# these directories are no longer excluded outright.
+#
+# `.vercel` is added here rather than above because it is specific to these two:
+# a prebuilt `.vercel/output` is hundreds of megabytes of duplicated function
+# bundles and must never enter an image.
+**/.vercel
 
 # --------------------------------------------------------- the 2.1 GB reason
 # Cached stock media for the demo dataset. The seeder runs from a developer

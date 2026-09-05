@@ -4,7 +4,9 @@
 # Target: douyin-prod-01, e2-medium (2 vCPU / 4 GB, ~3.8 GB usable),
 #         Ubuntu 24.04 LTS, 30 GB balanced PD, asia-southeast1-b.
 #
-# `user/` and `admin/` are NOT here — they are Vercel projects.
+# `user/` and `admin/` run HERE, as containers behind the host nginx. They were
+# Vercel projects until Vercel's deploy step proved unable to ingest the `.func`
+# directory symlinks its own builder emits — see docs/deployment/README.md.
 # Media is NOT served from here — Cloudflare R2 via the Worker in
 # `deploy/r2-worker/`. This box never sends a video byte.
 #
@@ -29,8 +31,17 @@
 #     redis        256M   (maxmemory 192M, below the container cap)
 #     api          768M   (measured ~170M idle)
 #     file-server  1.2G   (measured ~134M idle + up to ~400M for one FFmpeg)
+#     user         384M   (Next standalone server, idles near 100M)
+#     admin        384M   (same)
 #     ----------------
-#     total       ~3.2G,  leaving ~600M for the host, nginx and dockerd
+#     total       ~4.0G,  against ~3.8G usable — deliberately oversubscribed
+#
+# That sum exceeding RAM is intentional and safe only because a `mem_limit` is a
+# CAP, not a reservation: nothing is reserved, and the measured idle total is
+# closer to 700M. The caps exist to bound a runaway, and the peaks they bound
+# (an FFmpeg transcode, a WiredTiger fill, an SSR burst) do not coincide. Verify
+# with `docker stats --no-stream` after any change; if the real total approaches
+# 3.5G the answer is a bigger machine, not a smaller cap on mongod.
 #
 # Swap (2 GB, created by deploy/gce/bootstrap.sh) is a safety margin for a burst,
 # NOT capacity. If these limits are routinely hit the answer is a bigger machine,
@@ -215,6 +226,82 @@ services:
     depends_on:
       mongodb: { condition: service_healthy }
       redis: { condition: service_healthy }
+    networks: [internal]
+
+  # --------------------------------------------------------------- front ends
+  # Both Next apps run here rather than on Vercel. Vercel's deploy step rejects
+  # the `.func` directory symlinks its own builder emits to keep a Next app
+  # under the Hobby 12-function limit; with the symlinks materialised the app
+  # is 46 functions and the limit rejects it instead. Fully documented in
+  # docs/deployment/README.md — it is a platform defect, not a config mistake.
+  #
+  # These serve HTML and the client bundle ONLY. Browser traffic for the API
+  # and Socket.IO goes straight to api.<vm>.sslip.io (NEXT_PUBLIC_API_ENDPOINT
+  # is set, which `api-request.ts` and `socket-context.tsx` both prefer over the
+  # same-origin rewrite), so a real WebSocket upgrade reaches nginx and these
+  # containers are never in the realtime path.
+  #
+  # MEMORY. Adding these takes the sum of all `mem_limit` values past the ~3.8 GB
+  # the box has. That is deliberate and safe only because a limit is a CAP, not
+  # a reservation: measured idle is ~170M (api) and ~134M (file-server) against
+  # caps of 768M and 1200M, and a Next standalone server idles near 100M. The
+  # 2 GB swap absorbs a burst. Verify with `docker stats` after deploying, and
+  # if the real total approaches 3.5 GB the answer is a bigger machine, not a
+  # smaller cap on mongod.
+  user:
+    build:
+      context: ..
+      dockerfile: deploy/user.Dockerfile
+      args:
+        # Compiled into the bundle — see the Dockerfile. Changing any of these
+        # needs a rebuild, not a restart.
+        NEXT_PUBLIC_API_ENDPOINT: ${BASE_URL:?BASE_URL is required}
+        NEXT_PUBLIC_SITE_URL: ${USER_APP_URL:?USER_APP_URL is required}
+        API_SERVER_ENDPOINT: ${BASE_URL}
+        SITE_URL: ${USER_APP_URL}
+        PROXY_API_TARGET: ${BASE_URL}
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-user
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PORT: 8081
+      HOSTNAME: 0.0.0.0
+      # Runtime only. NEXTAUTH_SECRET was removed from next.config.js's `env:`
+      # block so it is a genuine runtime lookup: it is NOT in the image, and
+      # rotating it is a restart rather than a rebuild.
+      NEXTAUTH_URL: ${USER_APP_URL}
+      NEXTAUTH_URL_INTERNAL: ${USER_APP_URL}
+      NEXTAUTH_SECRET: ${USER_NEXTAUTH_SECRET:?USER_NEXTAUTH_SECRET is required}
+    ports:
+      # Loopback only, exactly like api and file-server. Host nginx is the sole
+      # public entrypoint; the GCE firewall opens 80/443 and nothing else.
+      - "127.0.0.1:${USER_HOST_PORT:-8081}:8081"
+    mem_limit: 384m
+    networks: [internal]
+
+  admin:
+    build:
+      context: ..
+      dockerfile: deploy/admin.Dockerfile
+      args:
+        NEXT_PUBLIC_API_ENDPOINT: ${BASE_URL:?BASE_URL is required}
+        API_SERVER_ENDPOINT: ${BASE_URL}
+        PROXY_API_TARGET: ${BASE_URL}
+    container_name: ${COMPOSE_PROJECT_NAME:-douyin-clone}-admin
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      NODE_ENV: production
+      PORT: 8082
+      HOSTNAME: 0.0.0.0
+      NEXTAUTH_URL: ${ADMIN_APP_URL:?ADMIN_APP_URL is required}
+      # A DIFFERENT value from the user app's. One secret across both origins
+      # would let a session minted for one be presented to the other.
+      NEXTAUTH_SECRET: ${ADMIN_NEXTAUTH_SECRET:?ADMIN_NEXTAUTH_SECRET is required}
+    ports:
+      - "127.0.0.1:${ADMIN_HOST_PORT:-8082}:8082"
+    mem_limit: 384m
     networks: [internal]
 
 networks:
