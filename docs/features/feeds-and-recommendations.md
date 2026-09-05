@@ -4,8 +4,8 @@ description: Public/home feeds, recommended videos, profile posts, and post deta
 audience: [guest, user, developer-agent]
 domain: content
 status: active
-updated: 2026-09-03
-tags: [feed, recommendation, pagination, recommendation-engine]
+updated: 2026-09-06
+tags: [feed, recommendation, pagination, recommendation-engine, picture-in-picture]
 ---
 
 # Feeds and Recommendations
@@ -142,14 +142,17 @@ source bucket and score components; production responses never include it.
 
 - `GET /posts/home-posts` — Home/Topic, ranked by the recommendation engine. Accepts `topicKey`
   (category tab — every candidate source is scoped to it), `sessionId` + `cursor` (continue a
-  session), `anonymousId` (guest session learning), `debug` (non-production only).
+  session), `sessionId` + `rollover=true` (continue the *chain* in a new session — see
+  "Scrolling past one session" below), `anonymousId` (guest session learning), `debug`
+  (non-production only).
 - `GET /posts/recommended` — For You, same session/cursor/anonymousId/debug contract as above,
   scoped to the For You candidate quota and weights instead of Home's.
 - `POST /posts/recommendation-events` — batched impression/watch/quick-skip/photo-dwell/detail-open/
   like/comment/share/follow_after_view telemetry that trains the engine.
 - `POST /posts/:id/detail-session`, `GET /posts/detail-session/:sessionId/next|previous` — Post
-  Detail recommendation sessions for Home/notification/message/direct-link anchors (backend only —
-  see Known limitations below).
+  Detail recommendation sessions for Home/notification/message/direct-link anchors. `next` accepts
+  `videoOnly=true`, used by the picture-in-picture window, which can only draw a post that carries a
+  video.
 - `GET /posts/creator-posts` — **one creator's posts**, pinned first, in the creator's own order.
   Requires `userId`; a request without one is refused rather than answered with a feed. Used by the
   creator profile grid (its server-rendered first page *and* every page after it) and the Post Detail
@@ -173,6 +176,60 @@ through a `sessionId` + opaque `cursor`, never a `createdAt`/offset scheme. `use
 owns the authenticated following feed and is untouched by the recommendation engine. Creator profile
 loading uses `use-creator-post-search.ts` and `use-creator-videos.ts`; there is no `/posts/infinite`
 or bookmark feed.
+
+## Scrolling past one session (since 2026-09-06)
+
+A ranked session is a bounded **sample** of the candidate pool, not the catalogue: Home shows 70 of
+the 160 eligible posts, For You 40. That bound is deliberate — it is what makes a reload a genuinely
+new selection instead of a re-sort of one fixed set.
+
+It used to also be where Home stopped. Reaching the end of the session set `hasMore: false` and
+nothing asked for more, so a visitor could scroll to about 70 posts and no further, with two thirds
+of the demo corpus unreachable.
+
+Home now behaves the way For You already did, with an added guarantee. When a session is spent the
+app asks for a **successor session in the same chain**, and the server ranks that successor over the
+posts the chain has not served yet:
+
+- Ranking, diversity and the category scope are unchanged — each session in a chain is a full,
+  independently ranked, diversity-re-ranked selection.
+- Posts already served in this scroll are excluded at retrieval, not filtered out afterwards, so a
+  rollover does not quietly return a page the viewer has just read.
+- The exclusion is recorded server-side when the order is fixed, so it does not depend on impression
+  telemetry arriving in time.
+- When the eligible corpus is genuinely exhausted the chain recycles — its memory is cleared and
+  ranking starts over across the whole catalogue — rather than showing an empty feed or a dead stop.
+- When a rollover returns nothing new at all, the app stops asking. There is no infinite request loop
+  at the end of the catalogue.
+- "Refresh recommendations" is deliberately *not* chained: it asks for a fresh mix of everything.
+
+For a viewer this means Home scrolls continuously through substantially more of the corpus, with no
+visible boundary where one session ends and the next begins.
+
+**Note for operators:** the chain's memory lives in Redis under `reco-feed:chain:<id>:seen`, with the
+same TTL as a feed session (45 minutes, refreshed while the scroll is active), and is capped so a
+single long scroll cannot grow it without bound.
+
+## Picture-in-picture next/previous (revised 2026-09-06)
+
+Popping a video out into the floating player gives it its own next/previous controls. They used to
+step through the Home grid **in the order the page happened to have rendered it** — so "next" was
+whichever card sat below the one playing, and scrolling the page underneath changed what "next"
+meant.
+
+They now behave like the post-detail viewer, without leaving the PiP window and without opening a
+tab or a Videos page:
+
+- **Next** asks the same anchor-based Post Detail recommendation session the detail viewer uses,
+  restricted to video posts. It never returns the post that is playing, and never one this PiP
+  session has already shown.
+- **Previous** walks back through what this PiP window actually played, replaying it exactly — never
+  a fresh recommendation.
+- Stepping back and then forward again replays the same post rather than recomputing one.
+- When the recommendation session runs out, next wraps deterministically to the first video this
+  window played, so the sequence repeats in a predictable order rather than picking at random from
+  posts just rejected.
+- The mute/unmute choice carries across a track change. It used to reset on every "next".
 
 ## Post Detail (since 2026-09-03)
 

@@ -15,7 +15,8 @@ tags: [index, documentation]
 | [README.md](./README.md) | Scope and entry points |
 | [highlights.md](./highlights.md) | Verified product and technical highlights |
 | [architecture.md](./architecture.md) | System architecture and runtime dependencies |
-| [deployment/README.md](./deployment/README.md) | **Production deployment**: GCE VM + Vercel + Cloudflare R2/Worker — architecture, env matrix, runbook, cost and rollback |
+| [deployment/README.md](./deployment/README.md) | **Production setup**: one GCE VM + Cloudflare R2/Worker — architecture, env matrix, first-time runbook, cost and backup |
+| [deployment/routine-deploys.md](./deployment/routine-deploys.md) | **Shipping a commit**: which image to rebuild, which service to recreate, verification, rollback, cheat sheet |
 | [deployment/free-tier-feasibility.md](./deployment/free-tier-feasibility.md) | Historical: the Render Free study whose measurements set the current memory limits |
 | [by-pages/README.md](./by-pages/README.md) | Implemented user/admin routes |
 | [features/README.md](./features/README.md) | Implemented feature index |

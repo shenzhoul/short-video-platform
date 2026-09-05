@@ -224,9 +224,15 @@ export class UserPostController {
   async detailSessionNext(
     @Param('sessionId') sessionId: string,
     @Query('anonymousId') anonymousId: string | undefined,
+    // Not a payload class: this handler takes no ValidationPipe, so the raw
+    // string is compared explicitly rather than relying on a coercion that
+    // would turn 'false' into true (see rules/api.md).
+    @Query('videoOnly') videoOnly: string | undefined,
     @CurrentUser() user?: AuthUserDto
   ): Promise<DataResponse<{ postId: string } | null>> {
-    const result = await this.contentService.stepPostDetailRecommendationNext(sessionId, user, anonymousId);
+    const result = await this.contentService.stepPostDetailRecommendationNext(
+      sessionId, user, anonymousId, videoOnly === 'true'
+    );
     return DataResponse.ok(result);
   }
 

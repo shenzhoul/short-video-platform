@@ -1,12 +1,11 @@
 'use client';
 
-import { getPopupVideo, getPostIdFromPopupVideoId } from '@components/content/post/home-feed-media';
 import type { PostVideoDetailTab } from '@components/content/post/post-video-detail-panel';
 import { toast } from '@douyin-clone/shared-toast';
 import { IPost } from '@interfaces/post';
+import { getPostIdFromPopupVideoId } from '@lib/popup-pip';
 import {
   PopupPipState,
-  PopupPipVideo,
   readPopupPipState,
   subscribePopupPipDetailRequest,
   subscribePopupPipState
@@ -14,7 +13,7 @@ import {
 import { applyPostInteractionPatch } from '@lib/post-interactions';
 import { findOne } from '@services/post.service';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { SHARED_POST_MODAL_SOURCE } from './use-open-shared-post';
 import { PostDetailSource } from './use-post-detail-sequence';
@@ -84,10 +83,6 @@ export function useHomeFeedPlayback(
     rememberPlaybackTime,
     resumePlayback
   } = useVideoPlaybackContinuity(posts[0]?._id);
-
-  const popupPlaylist = useMemo(() => posts
-    .map(getPopupVideo)
-    .filter((video): video is PopupPipVideo => Boolean(video)), [posts]);
 
   const openDetailPost = useCallback((
     post: IPost,
@@ -235,7 +230,6 @@ export function useHomeFeedPlayback(
 
   return {
     popupPipState,
-    popupPlaylist,
     detailPost,
     detailSource,
     detailInitialTime,

@@ -3,14 +3,13 @@
 import { getPopupVideo, getPostDuration, getPostMedia, getPostVideo, isVideoPost } from '@components/content/post/home-feed-media';
 import { VideoPlayerRef } from '@components/ui/video-player';
 import { IPost } from '@interfaces/post';
-import { openPopupPip, PopupPipState, PopupPipVideo } from '@lib/popup-pip';
+import { openPopupPip, PopupPipState } from '@lib/popup-pip';
 import { ChangeEvent, MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 interface UsePostVideoHoverPlaybackOptions {
   post: IPost;
   featured?: boolean;
   popupPipState: PopupPipState | null;
-  popupPlaylist: PopupPipVideo[];
   onCompactHoverChange?: (postId: string | null) => void;
   onFeaturedTimeUpdate?: (currentTime: number) => void;
   onOpenDetail?: (post: IPost, currentTime: number) => void;
@@ -20,7 +19,6 @@ export function usePostVideoHoverPlayback({
   post,
   featured = false,
   popupPipState,
-  popupPlaylist,
   onCompactHoverChange,
   onFeaturedTimeUpdate,
   onOpenDetail
@@ -135,7 +133,7 @@ export function usePostVideoHoverPlayback({
   const openPip = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (!popupPayload) return;
-    openPopupPip(popupPayload, popupPlaylist, { videoElement: videoRef.current?.getVideoElement() });
+    openPopupPip(popupPayload, { videoElement: videoRef.current?.getVideoElement() });
   };
 
   const seek = (event: ChangeEvent<HTMLInputElement>) => {
@@ -179,7 +177,7 @@ export function usePostVideoHoverPlayback({
 
   const handleOpenDetail = () => {
     if (isPopupActive && popupPayload) {
-      openPopupPip(popupPayload, popupPlaylist, { videoElement: videoRef.current?.getVideoElement() });
+      openPopupPip(popupPayload, { videoElement: videoRef.current?.getVideoElement() });
       return;
     }
     if (hasVideo) {

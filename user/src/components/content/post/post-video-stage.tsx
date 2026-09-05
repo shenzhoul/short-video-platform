@@ -7,11 +7,11 @@ import VideoPlayer, { VideoPlayerRef } from '@components/ui/video-player';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { IComment } from '@interfaces/comment';
 import { IPost } from '@interfaces/post';
+import { resolveAvatarUrl } from '@lib/avatar';
 import {
   closePopupPip,
   closePopupPipWindow,
   PopupPipState,
-  PopupPipVideo,
   readPopupPipState,
   subscribePopupPipState
 } from '@lib/popup-pip';
@@ -187,7 +187,7 @@ export function PostVideoActionRail({
           aria-label={`Open ${post.user.name || post.user.username}'s details`}
         >
           <img
-            src={post.user.avatar || '/no_avatar.jpeg'}
+            src={resolveAvatarUrl(post.user.avatar)}
             alt={post.user.name}
             className="h-12 w-12 rounded-full object-cover ring-2 ring-white/80"
           />
@@ -282,7 +282,6 @@ export function PostVideoActionRail({
 interface PostVideoStageProps {
   post: IPost;
   playerId: string;
-  popupPlaylist: PopupPipVideo[];
   playerRef?: Ref<VideoPlayerRef>;
   initialTime?: number;
   isActiveSlide?: boolean;
@@ -321,7 +320,6 @@ interface PostVideoStageProps {
 export default function PostVideoStage({
   post,
   playerId,
-  popupPlaylist,
   playerRef,
   initialTime = 0,
   isActiveSlide = true,
@@ -498,7 +496,6 @@ export default function PostVideoStage({
               forceBackgroundBlur
               objectFit="auto"
               pictureInPicturePayload={popupPayload || undefined}
-              pictureInPicturePlaylist={popupPlaylist}
               onPictureInPictureOpen={onPictureInPictureOpen}
               onTimeUpdate={onTimeUpdate}
               onPause={onPause}

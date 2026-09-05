@@ -65,9 +65,19 @@ export class PostService extends APIRequest {
     {}
   ) as Promise<{ data: { sessionId: string; postId: string } }>;
 
-  /** Advances a Post Detail recommendation session to the next post. */
-  stepPostDetailRecommendationNext = (sessionId: string, anonymousId?: string) => this.get(
-    this.buildUrl(`/posts/detail-session/${sessionId}/next`, anonymousId ? { anonymousId } : undefined)
+  /**
+   * Advances a Post Detail recommendation session to the next post.
+   *
+   * `videoOnly` is set by the picture-in-picture window, which can only draw a
+   * post that carries a video. Filtering server-side keeps "next" one round
+   * trip: discarding a photo post here would mean asking again, and each ask
+   * appends the rejected post to the session permanently.
+   */
+  stepPostDetailRecommendationNext = (sessionId: string, anonymousId?: string, videoOnly?: boolean) => this.get(
+    this.buildUrl(`/posts/detail-session/${sessionId}/next`, {
+      ...(anonymousId ? { anonymousId } : {}),
+      ...(videoOnly ? { videoOnly: 'true' } : {})
+    })
   ) as Promise<{ data: { postId: string } | null }>;
 
   /** Steps a Post Detail recommendation session back to the previous post. */

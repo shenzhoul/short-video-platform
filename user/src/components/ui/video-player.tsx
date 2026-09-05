@@ -53,7 +53,6 @@ interface VideoPlayerProps {
   // External control callbacks
   onPlayingStateChange?: (isPlaying: boolean, videoId: string) => void;
   pictureInPicturePayload?: PopupPipVideo;
-  pictureInPicturePlaylist?: PopupPipVideo[];
   showFullscreenControl?: boolean;
   showVolumeSlider?: boolean;
   forceBackgroundBlur?: boolean;
@@ -101,7 +100,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   onPictureInPictureOpen,
   onPlayingStateChange,
   pictureInPicturePayload,
-  pictureInPicturePlaylist,
   showFullscreenControl = true,
   showVolumeSlider = false,
   forceBackgroundBlur = false,
@@ -521,17 +519,19 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     keepControlsVisible();
     const payload = pictureInPicturePayload || {
       videoId: id,
+      // The fallback payload names no post: this branch is only reached by a
+      // player mounted outside a feed, and the PiP window treats an empty
+      // postId as "no sequence to continue" rather than guessing one.
+      postId: '',
       src,
       poster,
       title: '',
       description: ''
     };
-    openPopupPip(payload, pictureInPicturePlaylist || [payload], {
-      videoElement: videoElementRef.current
-    });
+    openPopupPip(payload, { videoElement: videoElementRef.current });
     videoElementRef.current?.pause();
     onPictureInPictureOpen?.();
-  }, [id, keepControlsVisible, onPictureInPictureOpen, pictureInPicturePayload, pictureInPicturePlaylist, poster, src]);
+  }, [id, keepControlsVisible, onPictureInPictureOpen, pictureInPicturePayload, poster, src]);
 
   const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   // Expose video control methods

@@ -1,14 +1,25 @@
 'use client';
 
-import { getPopupVideo, getPostIdFromPopupVideoId } from '@components/content/post/home-feed-media';
+import { getPopupVideo } from '@components/content/post/home-feed-media';
 import { IPost } from '@interfaces/post';
-import { PopupPipState, readPopupPipState, subscribePopupPipState, writePopupPipState } from '@lib/popup-pip';
+import {
+  getPostIdFromPopupVideoId,
+  PopupPipState,
+  pushPopupPipVideo,
+  readPopupPipState,
+  subscribePopupPipState
+} from '@lib/popup-pip';
 import { useEffect, useRef, useState } from 'react';
 
 /**
  * Keeps a single-post feed (for-you / following) in sync with the popup PiP player, both ways:
- * - navigating next/previous inside the PiP window moves the main feed to the same post.
+ * - a PiP video that the feed also holds moves the feed to that post.
  * - navigating next/previous on the main feed pushes that post into the PiP window.
+ *
+ * The first direction is now a *best-effort* match rather than a contract. PiP
+ * navigates its own recommendation session, so its next video is usually not in
+ * this feed at all — `findIndex` returns -1 and the feed simply stays where it
+ * is, which is correct: the feed is not the PiP window's playlist.
  *
  * Each direction reacts only to a genuine change on its own side, tracked by the refs below. That
  * matters because after either side moves there is a render where the two disagree: without these
@@ -52,7 +63,10 @@ export function usePipFeedSync(posts: IPost[], activePost: IPost | undefined, on
     if (!currentPipState?.active || currentPipState.video.videoId === payload.videoId) return;
 
     lastPipVideoIdRef.current = payload.videoId;
-    writePopupPipState({ ...currentPipState, active: true, video: payload });
+    // Appends to the PiP window's own history and drops its recommendation
+    // session: the anchor that session was built around is no longer what is
+    // playing, so the next "next" opens a fresh one from here.
+    pushPopupPipVideo(currentPipState, payload);
   }, [activePost]);
 
   return popupPipState;

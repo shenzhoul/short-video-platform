@@ -17,7 +17,6 @@ import { useRecommendationDetailTracking } from '@hooks/use-recommendation-detai
 import { useRecommendationPhotoDwell } from '@hooks/use-recommendation-photo-dwell';
 import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-tracking';
 import { IPost } from '@interfaces/post';
-import { PopupPipVideo } from '@lib/popup-pip';
 import { GRAPHIC_SLIDE_DURATION_MS } from '@lib/post-graphic';
 import { useMessageWorkspace } from '@providers/message-workspace.provider';
 import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,7 +41,6 @@ interface PostDetailModalProps {
    * behaviour, which is right for the feeds.
    */
   source?: PostDetailSource;
-  popupPlaylist?: PopupPipVideo[];
   initialTime?: number;
   onPlaybackTimeChange?: (currentTime: number) => void;
   onClose: () => void;
@@ -442,7 +440,6 @@ function VideoPostDetail({
   post,
   posts,
   source,
-  popupPlaylist = [],
   initialTime = 0,
   onPlaybackTimeChange = () => undefined,
   onClose,
@@ -580,7 +577,6 @@ function VideoPostDetail({
         key={post._id}
         post={post}
         playerId={`post-detail-${post._id}`}
-        popupPlaylist={popupPlaylist}
         playerRef={videoRef}
         initialTime={initialTime}
         onPictureInPictureOpen={closeDetail}

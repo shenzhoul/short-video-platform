@@ -8,7 +8,7 @@ import { useRecommendationImpression } from '@hooks/use-recommendation-impressio
 import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-tracking';
 import { IPost } from '@interfaces/post';
 import { videoDuration } from '@lib/duration';
-import { PopupPipState, PopupPipVideo } from '@lib/popup-pip';
+import { PopupPipState } from '@lib/popup-pip';
 import { memo } from 'react';
 import { AddToWatchLaterIcon, HeartOutlineIcon, MuteIcon, PauseIcon, PiPIcon, PlayIcon, PlayOutlinedIcon, VolumeIcon } from 'src/icons';
 
@@ -25,7 +25,6 @@ interface HomeFeedCardProps {
   featured?: boolean;
   variant?: 'default' | 'profile';
   popupPipState: PopupPipState | null;
-  popupPlaylist: PopupPipVideo[];
   compactHoverActive?: boolean;
   featuredResumeTime?: number;
   onCompactHoverChange?: (postId: string | null) => void;
@@ -59,7 +58,6 @@ function HomeFeedCard({
   featured = false,
   variant = 'default',
   popupPipState,
-  popupPlaylist,
   compactHoverActive = false,
   featuredResumeTime = 0,
   onCompactHoverChange,
@@ -80,7 +78,6 @@ function HomeFeedCard({
     post,
     featured,
     popupPipState,
-    popupPlaylist,
     onCompactHoverChange,
     onFeaturedTimeUpdate,
     onOpenDetail
@@ -168,7 +165,6 @@ function HomeFeedCard({
               forceBackgroundBlur={featured || isProfileVariant}
               objectFit={isProfileVariant ? 'portrait-cover' : 'auto'}
               pictureInPicturePayload={playback.popupPayload || undefined}
-              pictureInPicturePlaylist={popupPlaylist}
               onReady={playback.handleReady}
               onPlay={playback.handlePlay}
               onPause={() => {

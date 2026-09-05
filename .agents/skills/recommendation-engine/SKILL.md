@@ -1,6 +1,6 @@
 ---
 name: recommendation-engine
-description: Heuristic recommendation engine for Home/Topic and For You (candidate retrieval, scoring, diversity re-ranking, Redis feed sessions, and impression/watch event tracking) and the Post Detail recommendation sessions built on it. Use when changing Home/For You ranking, candidate sources, scoring weights, session pagination, recommendation event ingestion, or Post Detail next/previous for non-creator-scoped sources.
+description: Heuristic recommendation engine for Home/Topic and For You (candidate retrieval, scoring, diversity re-ranking, Redis feed sessions and session chains, and impression/watch event tracking) and the Post Detail recommendation sessions built on it — including picture-in-picture next/previous. Use when changing Home/For You ranking, candidate sources, scoring weights, session pagination or rollover, recommendation event ingestion, or Post Detail / PiP next/previous for non-creator-scoped sources.
 ---
 
 # Recommendation Engine
@@ -251,6 +251,77 @@ system.
   so an unfollow-then-refollow cycle cannot re-earn the signal.
 - A stat/priors/candidate query must always be batched (`$in`), never issued per-post in a loop.
 
+## Feed session chains
+
+A session is a bounded ranked **sample** of the candidate pool — 70 items of 160 on this catalogue
+(`SESSION_OUTPUT_POLICY.homeSessionItemLimit`). That bound is what stops a reload being a re-sort of
+one fixed set. It was also, for a while, where Home stopped: `hasMore` went false at item 70 and
+nothing asked for more, so two thirds of the corpus were unreachable by scrolling.
+
+The fix is a **chain**: the first session is the chain root, and an exhausted session rolls over into
+a successor that inherits the root's id.
+
+- `POST`-less: the client sends `sessionId` + `rollover=true` with **no cursor**. `getFeed` then skips
+  `getPage` entirely — reading the exhausted session first would answer with its last page again,
+  which is exactly the repeat the rollover exists to avoid.
+- `REDIS_KEYS.recoFeedChainSeen(chainId)` is a Redis SET of every post id the chain has served,
+  written by `RecommendationSessionService.create` **at the moment the order is fixed**. It is
+  deliberately *not* driven by impression telemetry: that arrives late and best-effort, so a rollover
+  racing it would re-rank the page still on screen.
+- `createSession` excludes `union(affinity.recentlySeenPostIds, chainSeen)`. Two relaxation stages,
+  in order: drop the **chain** exclusion first (and `resetChainSeen`, so the recycle is recorded
+  rather than re-run on every page), and only then the blanket `retrieveWith([])` fallback that
+  already existed for seen-starvation. Recycling the chain first keeps the older cross-session
+  suppression in force.
+- `FEED_SESSION_POLICY.maxChainSeenIds` caps the set. The natural bound is the eligible corpus, since
+  exhaustion recycles; the cap is the guard for a catalogue that keeps growing. Hitting it recycles
+  exactly as exhaustion does.
+- `getChainId(sessionId, subjectId)` checks the subject, so a rollover quoting somebody else's
+  session gets a brand-new chain rather than theirs — a guessed session id cannot reveal what another
+  viewer was shown.
+- **`refresh()` is deliberately unchained.** "Refresh recommendations" asks for a new mix of the whole
+  catalogue, not for the remainder of the scroll just abandoned.
+
+Do **not** "fix" a short feed by raising `homeSessionItemLimit` toward `candidatePoolLimit`. That
+removes the ranking instead of continuing the scroll, and it reinstates the defect
+`SESSION_OUTPUT_POLICY`'s own comment documents: a 160-item session in score order meant reloading
+could only re-sort one fixed set, and the same post led all ten measured reloads.
+
+Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`,
+`user/src/hooks/use-home-feed-infinite-scroll.spec.tsx`.
+
+## Picture-in-picture navigates a detail session, never the DOM
+
+`PopupPipState` used to carry a `playlist`: the Home grid's video posts **in rendered order**. "Next"
+was therefore whichever card happened to sit below the one playing, and scrolling or closing the grid
+changed what "next" meant.
+
+It now walks the same anchor-based Post Detail session the detail viewer uses. There is no second
+random algorithm, and there must not be one.
+
+- `openPopupPip(video, options)` takes **no playlist**. Handing the window the surrounding grid would
+  only give it a second, contradictory idea of "next".
+- `PopupPipVideo.postId` exists so the PiP document can call the API. Do not go back to parsing an id
+  out of `videoId` at call sites — `getPostIdFromPopupVideoId` survives only for reading state written
+  before the field existed.
+- `detailNext(..., videoOnly)` adds `{ $or: [{ type: 'video' }, { mediaTypes: 'video' }] }` to the
+  eligibility match. **Append it to `$and`, never assign** — `buildEligibilityMatch` already owns that
+  key, and overwriting it drops the already-seen and blocked-creator exclusions. Both fields are
+  checked because stored data disagrees: `type` is the declared kind, `mediaTypes` is what the
+  attachments are.
+- "Previous" is PiP history only. It replays exactly what was shown and never calls the server, so the
+  server cursor stays at the head and `stepForwardIfExists` correctly always computes a new candidate.
+- Recycling is deterministic: when the server has nothing unseen left, "next" wraps to
+  `history[0]`. Never a random pick from posts the viewer has just been through.
+- One detail session per PiP browse. Opening a second resets the exclusions and starts recommending
+  posts already in the history; `appendPopupPipVideo` carries the session id in the same write as the
+  video for exactly that reason.
+- The feed→PiP direction (`usePipFeedSync`) uses `pushPopupPipVideo`, which **drops** the session: the
+  anchor it was built around is no longer what is playing.
+
+Cover: `user/src/components/ui/popup-pip-navigation.spec.tsx`,
+`api/src/services/content/recommendation/detail-next-video-only.spec.ts`.
+
 ## API workflow
 
 1. `RecommendationFeedService.getFeed` is the single orchestrator for both Home and For You
@@ -287,14 +358,23 @@ system.
    `createdAt`/offset-based pagination scheme for either.
 2. A Home category tab change must start a brand-new session scoped to that category — it is not a
    client-side filter over the existing session's posts.
-3. `refresh()` on either hook is what "Refresh recommendations" (shown once a session is exhausted)
-   calls. `FEED_SESSION_POLICY.maxItems` remains the benchmarked-safe *rendering* ceiling for Home —
-   see rules/user.md's Feed Rendering section, and do not reopen virtualization to raise it — but it
-   is no longer what a session holds: `SESSION_OUTPUT_POLICY` decides that, and it is deliberately
-   well below the ceiling. For You's session is a *segment*: when it is spent, `useRecommendedVideos`
-   opens a fresh session and appends, deduping by id, and latches `catalogueSpent` when a rollover
-   adds nothing so the effect cannot loop. Do not gate For You's prefetch on `hasMore` — that stops
-   the feed dead at the end of the first segment.
+3. `refresh()` on either hook is what "Refresh recommendations" calls. `FEED_SESSION_POLICY.maxItems`
+   remains the benchmarked-safe *rendering* ceiling for Home — see rules/user.md's Feed Rendering
+   section, and do not reopen virtualization to raise it — but it is no longer what a session holds:
+   `SESSION_OUTPUT_POLICY` decides that, and it is deliberately well below the ceiling.
+   **Both** hooks treat a session as a *segment*: when it is spent they roll over
+   (`mode: 'rollover'`), append, dedupe by id, and latch `catalogueSpent` when a rollover adds
+   nothing so the effect cannot loop. `hasMore` is reported as `hasMore || !catalogueSpent`, so the
+   scroller keeps asking across a session boundary. Do not gate For You's prefetch on `hasMore` —
+   that stops the feed dead at the end of the first segment.
+   Home additionally sends `rollover=true` so the server continues the **chain** (see above); For
+   You's rollover is currently unchained and relies on client-side dedupe plus impression-driven
+   suppression.
+3b. **Attribution follows the post, not the newest session.** Both hooks keep a `sessionByPostId` map
+   and expose `sessionForPost(postId)`. A chain crosses several sessions while the earlier ones'
+   cards are still on screen; reporting their impressions and watch time under whichever session is
+   newest files that evidence against a ranking that never chose them. The first session to serve a
+   post owns its attribution — a recycled chain re-offering one must not relabel it.
 4. **Which media the For You stage draws is decided by the post, not by the surface.** `PostVideoStage`
    mounts the player only when `getPostVideo(post)` is non-empty and draws `PostGraphicStageMedia`
    otherwise. Rendering a `<video>` for a photo post was a real defect — React refuses `src=""`, so the

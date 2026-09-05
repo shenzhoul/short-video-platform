@@ -97,6 +97,7 @@ export function getPopupVideo(post: IPost): PopupPipVideo | null {
 
   return {
     videoId: `home-feed-${post._id}`,
+    postId: post._id,
     src,
     poster: getPostMedia(post),
     description: post.text || post.tagline,
@@ -104,9 +105,4 @@ export function getPopupVideo(post: IPost): PopupPipVideo | null {
     date: timeText,
     duration: getPostDuration(post)
   };
-}
-
-export function getPostIdFromPopupVideoId(videoId: string) {
-  const prefix = 'home-feed-';
-  return videoId.startsWith(prefix) ? videoId.slice(prefix.length) : videoId;
 }

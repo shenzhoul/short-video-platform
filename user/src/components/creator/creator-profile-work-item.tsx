@@ -11,7 +11,7 @@ import VideoPlayer from '@components/ui/video-player';
 import { usePostVideoHoverPlayback } from '@hooks/use-post-video-hover-playback';
 import { IPost } from '@interfaces/post';
 import { videoDuration } from '@lib/duration';
-import { PopupPipState, PopupPipVideo } from '@lib/popup-pip';
+import { PopupPipState } from '@lib/popup-pip';
 import { memo } from 'react';
 import { FiCheck } from 'react-icons/fi';
 import { CopyIcon, HeartOutlineIcon, MuteIcon, PauseIcon, PlayIcon, PlayOutlinedIcon, VolumeIcon } from 'src/icons';
@@ -20,7 +20,6 @@ interface CreatorProfileWorkItemProps {
   post: IPost;
   metricVariant: 'views' | 'likes';
   popupPipState: PopupPipState | null;
-  popupPlaylist: PopupPipVideo[];
   onCompactHoverChange: (postId: string | null) => void;
   onOpenDetail: (post: IPost, currentTime?: number) => void;
   batchMode: boolean;
@@ -45,7 +44,6 @@ function CreatorProfileWorkItem({
   post,
   metricVariant,
   popupPipState,
-  popupPlaylist,
   onCompactHoverChange,
   onOpenDetail,
   batchMode,
@@ -57,7 +55,6 @@ function CreatorProfileWorkItem({
   const playback = usePostVideoHoverPlayback({
     post,
     popupPipState,
-    popupPlaylist,
     onCompactHoverChange,
     onOpenDetail
   });
@@ -103,7 +100,6 @@ function CreatorProfileWorkItem({
                   forceBackgroundBlur
                   objectFit="portrait-cover"
                   pictureInPicturePayload={playback.popupPayload || undefined}
-                  pictureInPicturePlaylist={popupPlaylist}
                   onReady={playback.handleReady}
                   onPlay={playback.handlePlay}
                   onPause={playback.handlePause}

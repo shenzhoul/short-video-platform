@@ -19,7 +19,7 @@ import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { CopyIcon, PauseIcon, PlayIcon } from 'src/icons';
 
 import HomeFeedCoverImage from '../content/post/home-feed-cover-image';
-import { getPopupVideo, getPostImages, isGraphicPost } from '../content/post/home-feed-media';
+import { getPostImages, isGraphicPost } from '../content/post/home-feed-media';
 import PostDetailModal from '../content/post/post-detail-modal';
 import PostNavigationControls from '../content/post/post-navigation-controls';
 import { PostVideoDetailTab } from '../content/post/post-video-detail-panel';
@@ -68,7 +68,6 @@ export default function FollowingFeed({
   const graphicPost = activePost ? isGraphicPost(activePost) : false;
   const images = useMemo(() => activePost ? getPostImages(activePost) : [], [activePost]);
   const graphicSlideshowPlaying = images.length > 1 && graphicPlaying;
-  const popupPlaylist = useMemo(() => posts.map(getPopupVideo).filter(Boolean) as NonNullable<ReturnType<typeof getPopupVideo>>[], [posts]);
   const creators = useMemo(() => {
     const creatorMap = new Map(initialCreators.map(creator => [creator._id, creator]));
     posts.forEach(post => {
@@ -266,7 +265,6 @@ export default function FollowingFeed({
             key={activePost._id}
             post={activePost}
             playerId={`following-${activePost._id}`}
-            popupPlaylist={popupPlaylist}
             popupPipState={popupPipState}
             playerRef={playerRef}
             initialTime={resumeTime}
@@ -304,7 +302,6 @@ export default function FollowingFeed({
         <PostDetailModal
           post={detailModalPost}
           posts={posts}
-          popupPlaylist={popupPlaylist}
           initialTime={detailModalInitialTime}
           onPlaybackTimeChange={(currentTime) => {
             rememberPlaybackTime(detailModalPost._id, currentTime);

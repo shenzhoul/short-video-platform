@@ -1,48 +1,61 @@
 # Deployment
 
-**Last updated: 2026-09-04**
+**Last updated: 2026-09-06**
 
-Target: **Google Compute Engine VM + Vercel + Cloudflare R2.**
+Target: **one Google Compute Engine VM + Cloudflare R2.** All four applications
+— `api`, `file-server`, `user`, `admin` — run as containers on
+`douyin-prod-01`, behind host nginx.
 
-> **Status: cloud resources exist; nothing is deployed yet.** The VM, both R2
-> buckets and both R2 API tokens have been created. No code has been shipped to
-> them, no secret has been filled in, and no browser acceptance has run. See
-> [§9 What you must do](#9-what-you-must-do).
+> **Status: deployed and serving.** The stack is live on
+> `app./admin./api./files.<IP>.sslip.io`, the R2 Worker is deployed, and the
+> demo corpus (160 posts) is seeded.
 >
-> Superseded plans, kept only as history: the generic VPS + custom-domain
-> version of this document (rewritten below) and
-> [`free-tier-feasibility.md`](./free-tier-feasibility.md), the Render Free
-> study. **Render is retired** — its 0.1 CPU / 512 MB could not run FFmpeg. The
-> e2-medium resolves every blocker that study measured.
+> **This document is first-time setup.** For shipping an ordinary commit — which
+> service to rebuild, which to recreate, how to verify, how to roll back — use
+> **[`routine-deploys.md`](./routine-deploys.md)**, which has a cheat sheet.
+>
+> Superseded plans, kept only as history:
+>
+> - **Vercel is retired.** Both Next.js apps were going to be Vercel projects.
+>   Vercel's build pipeline could not ingest the `.func` directory symlinks that
+>   Next 16 emits — reproduced on Windows and Linux, through the CLI and the git
+>   integration, on several CLI versions — so they were moved onto the VM as
+>   containers. Sections that still describe Vercel are marked; the live
+>   configuration is `deploy/docker-compose.yml`.
+> - **Render is retired** — its 0.1 CPU / 512 MB could not run FFmpeg. The
+>   e2-medium resolves every blocker that
+>   [`free-tier-feasibility.md`](./free-tier-feasibility.md) measured.
+> - The generic VPS + custom-domain version of this document (rewritten below).
 
 ---
 
 ## 1. Architecture
 
 ```
-                     ┌──────────────────── Vercel (Hobby) ──────┐
-  <user>.vercel.app  │  user   (Next.js, SSR + proxy.ts)        │
-  <admin>.vercel.app │  admin  (Next.js)                        │
-                     └──────────────────────────────────────────┘
-                              │ https                    ▲
-                              ▼                          │ media
-   api.<IP>.sslip.io  ┌─── GCE douyin-prod-01 ────────┐  │
- files.<IP>.sslip.io  │  nginx + certbot  :80 :443    │  │
-                      │  ── the only public entry ──  │  │
-                      │  docker compose (bridge net)  │  │
-                      │    api          127.0.0.1:8080│  │
-                      │    file-server  127.0.0.1:8000│  │
-                      │    mongodb      no host port  │  │
-                      │    redis        no host port  │  │
-                      └───────────────────────────────┘  │
-                                                         │
-   <worker>.workers.dev  ┌─ Cloudflare Worker ─────────┐ │
-                         │  R2 binding, read-only      │─┘
+                                                            ▲ media (read)
+   app.<IP>.sslip.io  ┌─── GCE douyin-prod-01 ────────┐     │
+ admin.<IP>.sslip.io  │  nginx + certbot  :80 :443    │     │
+   api.<IP>.sslip.io  │  ── the only public entry ──  │     │
+ files.<IP>.sslip.io  │  docker compose (bridge net)  │     │
+                      │    user         127.0.0.1:8081│     │
+                      │    admin        127.0.0.1:8082│     │
+                      │    api          127.0.0.1:8080│     │
+                      │    file-server  127.0.0.1:8000│     │
+                      │    mongodb      no host port  │     │
+                      │    redis        no host port  │     │
+                      └───────────────────────────────┘     │
+                                                            │
+   <worker>.workers.dev  ┌─ Cloudflare Worker ─────────┐    │
+                         │  R2 binding, read-only      │────┘
                          │  Range/206, ETag, CORS      │
                          └──────────┬──────────────────┘
                                     ▼
                          douyin-media-production (private bucket)
 ```
+
+Every container publishes on **loopback only**. Host nginx is the sole public
+entrypoint and the GCE firewall opens 80/443 and nothing else, so `user` and
+`admin` are reachable exactly the way `api` and `file-server` are.
 
 **Two things are worth stating precisely, because the previous version of this
 document overstated one of them.**
@@ -84,31 +97,36 @@ No values here. Everything is filled in by you, in the place named.
 | `MONGO_ROOT_USERNAME` / `MONGO_ROOT_PASSWORD` | S | yes | Compose builds the in-network URI from these. Mongo publishes no host port. |
 | `REDIS_PASSWORD` | S | yes | Second factor; Redis is unreachable from outside regardless. |
 | `MONGO_DATABASE` | P | yes | `douyin-clone`. Separate DB name per environment. |
-| `USER_APP_URL` | P | yes | The user app's canonical https origin. **Every emailed link is built from this alone.** API refuses to start if it is not https. Known only after Vercel exists. |
+| `USER_APP_URL` | P | yes | `https://app.<IP>.sslip.io`. **Every emailed link is built from this alone.** API refuses to start if it is not https. Also a **build arg** for the `user` image (§2.2) — changing it is a rebuild. |
 | `BASE_URL` | P | yes | `https://api.<IP>.sslip.io`. |
-| `CORS_ORIGIN` | P | yes | Exact Vercel origins, comma-separated. **Both services refuse to start without it.** |
+| `CORS_ORIGIN` | P | yes | Exact front-end origins, comma-separated (`https://app.<IP>.sslip.io,https://admin.<IP>.sslip.io`). **Both services refuse to start without it.** |
 | `TRUST_PROXY_HEADERS` | P | yes | `true` behind nginx, or every rate limit keys on the proxy. |
 | `FILE_SERVER_API_KEY`, `FILE_SERVER_JWT_SECRET`, `INTERNAL_API_KEY` | S | yes | Shared api↔file-server. **Values must match on both sides.** |
 | `JWT_SECRET`, `API_SECRET_KEY` | S | yes | file-server signing and internal auth. `JWT_SECRET` has no fallback — signing fails closed. |
 | `STORAGE_DRIVER` | P | yes | `r2`. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT` | S* | yes | Endpoint is `https://<account id>.r2.cloudflarestorage.com`. Not secret in itself, but identifies the account — keep it out of the browser. |
 | `R2_BUCKET_NAME` | P | yes | `douyin-media-production`. |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | **S** | yes | **The production token, and this file is the only place it goes.** Never in the Worker (binding), never in Vercel, never `NEXT_PUBLIC_*`. |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | **S** | yes | **The production token, and this file is the only place it goes.** Never in the Worker (binding), never in a front-end image, never `NEXT_PUBLIC_*`. |
 | `R2_PUBLIC_BASE_URL` | P | yes | The Worker origin, `https://<worker>.<subdomain>.workers.dev`. Not `r2.dev`, not the S3 endpoint. |
 | `VIDEO_PROBE_CONCURRENCY`, `IMAGE_VALIDATION_CONCURRENCY` | P | yes | `1` on this box. Also set in compose. |
 | `MAIL_PROVIDER`, `SMTP_*`, `MAIL_FROM_*` | S | yes | `smtp`; the API refuses `log` in production. |
+| `ADMIN_APP_URL` | P | yes | `https://admin.<IP>.sslip.io`. Runtime `NEXTAUTH_URL` for the admin container. |
+| `USER_NEXTAUTH_SECRET`, `ADMIN_NEXTAUTH_SECRET` | **S** | yes | **Two different values.** Runtime, not build-time — rotating either is a recreate. |
+| `USER_HOST_PORT`, `ADMIN_HOST_PORT` | P | no | Loopback binds, default 8081/8082. |
 | `ALLOW_PRODUCTION_DEMO_SEED` / `_CLEAN` | P | no | Leave `false`; type on the command line for one invocation. |
 
-### 2.2 Vercel — `user` project (root directory `user`)
+### 2.2 `user` container — build args and runtime env
 
-| Variable | S/P | Notes |
-|---|:--:|---|
-| `API_SERVER_ENDPOINT` | P | `https://api.<IP>.sslip.io`. Server-side; Vercel reaches the VM over the internet. |
-| `NEXT_PUBLIC_API_ENDPOINT` | P | Same origin, compiled into the browser bundle. Redeploy to change. |
-| `PROXY_API_TARGET` | P | Same origin. Keeps the browser same-origin with the API. |
-| `SITE_URL` / `NEXT_PUBLIC_SITE_URL` | P | This project's own `*.vercel.app` origin. |
-| `NEXTAUTH_URL` | P | Must equal this project's production origin exactly, or the session cookie is issued for the wrong domain and silently never persists. |
-| `NEXTAUTH_SECRET` | **S** | Distinct from admin's. |
+Set in `deploy/.env` and consumed by `deploy/docker-compose.yml`. **Retired:**
+this used to be a Vercel project; the variable names are the same, where they
+are set is not.
+
+| Variable | S/P | When it applies | Notes |
+|---|:--:|---|---|
+| `BASE_URL` | P | **build** | `https://api.<IP>.sslip.io`. Becomes `NEXT_PUBLIC_API_ENDPOINT`, `API_SERVER_ENDPOINT` and `PROXY_API_TARGET`. Compiled into the bundle — changing it is a rebuild, never a restart. |
+| `USER_APP_URL` | P | **build** + runtime | `https://app.<IP>.sslip.io`. Becomes `SITE_URL` / `NEXT_PUBLIC_SITE_URL` at build time and `NEXTAUTH_URL` at runtime. |
+| `USER_NEXTAUTH_SECRET` | **S** | runtime | Distinct from admin's. Rotating it is a recreate, not a rebuild — it was deliberately removed from `next.config.js`'s `env:` block so it is a genuine runtime lookup. |
+| `USER_HOST_PORT` | P | runtime | Loopback bind, default 8081. |
 
 No R2 or media variable exists here, by design: media URLs arrive from the API
 already absolute. If images 404 in production, `R2_PUBLIC_BASE_URL` on the VM is
@@ -117,22 +135,23 @@ what is wrong.
 `next/image` needs no Worker entry today (`images.unoptimized: true`), and there
 is no CSP to extend. Both were checked — see §6 for the trap if that changes.
 
-### 2.3 Vercel — `admin` project (root directory `admin`)
+### 2.3 `admin` container — build args and runtime env
 
-| Variable | S/P | Notes |
-|---|:--:|---|
-| `API_SERVER_ENDPOINT`, `NEXT_PUBLIC_API_ENDPOINT`, `PROXY_API_TARGET` | P | Same API origin. |
-| `NEXTAUTH_URL` | P | This project's own origin. |
-| `NEXTAUTH_SECRET` | **S** | **Different** from the user app's. |
+| Variable | S/P | When it applies | Notes |
+|---|:--:|---|---|
+| `BASE_URL` | P | **build** | Same API origin as the user app. |
+| `ADMIN_APP_URL` | P | runtime | `https://admin.<IP>.sslip.io`, used as `NEXTAUTH_URL`. |
+| `ADMIN_NEXTAUTH_SECRET` | **S** | runtime | **Different** from the user app's. One secret across both origins would let a session minted for one be presented to the other. |
+| `ADMIN_HOST_PORT` | P | runtime | Loopback bind, default 8082. |
 
-The admin origin must also be in the VM's `CORS_ORIGIN`.
+Both front-end origins must also be in the VM's `CORS_ORIGIN`.
 
 ### 2.4 Cloudflare Worker — `deploy/r2-worker/wrangler.toml`
 
 | Setting | S/P | Notes |
 |---|:--:|---|
 | `r2_buckets` binding `MEDIA_BUCKET` | P | Bucket name only. **No key** — this is why no R2 secret reaches the edge. |
-| `ALLOWED_ORIGINS` | P | Exact Vercel origins. Empty does not block media (it is public); it only stops cross-origin script reading the bytes. |
+| `ALLOWED_ORIGINS` | P | Exact front-end origins (`https://app.<IP>.sslip.io`, `https://admin.<IP>.sslip.io`). Empty does not block media (it is public); it only stops cross-origin script reading the bytes. |
 | `CACHE_CONTROL` | P | Immutable default; keys are content-addressed and never rewritten. |
 
 ### 2.5 Local machine — staging verification only
@@ -251,12 +270,23 @@ produces records pointing at objects R2 has never held.
 ### I. Seed again — must create 0 entities.
 ### J. `yarn demo:verify`.
 
-### K. Vercel — only once the backend is stable on HTTPS
+### K. Front ends — only once the backend is stable on HTTPS
 
-Two projects, root directories `user` and `admin`. Set §2.2/§2.3, deploy, then
-go back and update the VM's `CORS_ORIGIN` and `USER_APP_URL` with the real
-`*.vercel.app` origins and restart the stack. Update the Worker's
-`ALLOWED_ORIGINS` and redeploy it too.
+Both are containers in the same compose file. Fill in §2.2/§2.3, add the two
+`app.`/`admin.` vhosts to nginx, extend the certificate to cover them, then:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env build user
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env build admin
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --no-deps user admin
+```
+
+Build them **one at a time**: two concurrent Next builds do not fit in this
+VM's memory. Then put both origins in the VM's `CORS_ORIGIN` and in the
+Worker's `ALLOWED_ORIGINS`, and redeploy the Worker.
+
+From here on, ordinary commits ship through
+**[`routine-deploys.md`](./routine-deploys.md)** — not through this section.
 
 ### L. Browser acceptance
 
@@ -310,7 +340,7 @@ are deleted**.
 | Cloudflare R2 storage | 10 GB free | Demo dataset fits |
 | **R2 egress** | **always free** | The reason media delivery is off the VM |
 | Workers | 100k req/day free | Each media fetch is one request |
-| Vercel Hobby | free | Non-commercial only |
+| Front-end hosting | none | `user` and `admin` are containers on the VM already paid for above |
 
 **Consequences to plan for:** back MongoDB up **off the VM** (§7), and note that
 R2 lives in Cloudflare and survives the VM's deletion — media persists even if
@@ -360,13 +390,19 @@ Do this before any migration that mutates data, and before the trial expires.
 
 ### Application rollback
 
+Roll back only the services that moved, against the previous deploy tag — see
+[`routine-deploys.md` §3.I](./routine-deploys.md#i-rollback) for the full
+procedure, including reusing the previous image with no rebuild at all.
+
 ```bash
-git checkout <previous commit>
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+git fetch origin --tags && git checkout <previous-deploy-tag>
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env build <service>
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --no-deps <service>
 ```
 
 **Rolling back the application never deletes R2 objects.** Media outlives
-deployments; an older image reads the same bucket.
+deployments; an older image reads the same bucket. It never touches Mongo or
+Redis either, because `--no-deps` leaves them alone and no volume is removed.
 
 ### Migrations
 
@@ -399,7 +435,12 @@ deployed. The web apps have no media variable to get wrong.
 Check `Content-Range` with the `curl` in step G.
 
 **Images blocked in the browser console, cross-origin** — the Worker's
-`ALLOWED_ORIGINS` does not list the Vercel origin.
+`ALLOWED_ORIGINS` does not list the front-end origin.
+
+**A front-end change did not appear after a deploy** — `NEXT_PUBLIC_*`,
+`SITE_URL` and `PROXY_API_TARGET` are **build args**, compiled into the bundle.
+Recreating the container re-runs the old image. Rebuild it: see
+[`routine-deploys.md` §2](./routine-deploys.md#2-what-invalidates-which-image).
 
 **Uploads fail, viewing works** — uploads are the only path through the VM.
 Check `CORS_ORIGIN`, then `docker compose logs file-server`, then
@@ -420,17 +461,22 @@ swapfile.
 
 ## 9. What you must do
 
-Nothing below can be done from this repository.
+Steps 1-6 are the first-time setup and are **done**; they are kept because they
+are what a rebuild from scratch would need.
 
-1. **Nothing yet on the VM** — bootstrap it (step D) when ready.
+1. ~~Bootstrap the VM (step D).~~
 2. **Fill `deploy/.env` on the VM** (§2.1). The **production** R2 token goes
-   here and nowhere else.
+   here and nowhere else. `chmod 600`, git-ignored, and it exists in no backup
+   but the one you make yourself.
 3. **Keep the staging token local** for `yarn verify:r2` only.
-4. **Deploy the Worker** (step G) and copy its `workers.dev` URL into
-   `R2_PUBLIC_BASE_URL`.
-5. **Create the two Vercel projects** (step K), then return and update
-   `CORS_ORIGIN`, `USER_APP_URL` and the Worker's `ALLOWED_ORIGINS`.
+4. ~~Deploy the Worker (step G) and copy its `workers.dev` URL into
+   `R2_PUBLIC_BASE_URL`.~~
+5. ~~Build and start the two front-end containers (step K), then update
+   `CORS_ORIGIN`, `USER_APP_URL`, `ADMIN_APP_URL` and the Worker's
+   `ALLOWED_ORIGINS`.~~
 6. **Gmail App Password** for SMTP.
+
+Ongoing, for every commit after that: **[`routine-deploys.md`](./routine-deploys.md)**.
 
 I will not create accounts, provision resources, change billing, or ask for a
 secret in chat. Fill them in the files and dashboards named above.

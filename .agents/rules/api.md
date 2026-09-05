@@ -224,6 +224,51 @@ noticed, because every test of the new route passed no `userId` at all.
   it is opened rather than after it is in memory. See
   `.agents/skills/file-service-integration/SKILL.md`.
 
+## A Ranked Session Is A Sample; Continuing It Is A Chain
+
+`RecommendationSessionService` stores one session's ranked order in Redis and
+pages it with an offset cursor. A session is deliberately **smaller than the
+candidate pool** (`SESSION_OUTPUT_POLICY.homeSessionItemLimit` is 70 against a
+160-item pool), because a session equal to the catalogue makes every reload a
+re-sort of one fixed set.
+
+So an exhausted session is continued, not enlarged. `getFeed` accepts
+`sessionId` + `rollover` and creates a **successor session in the same chain**.
+
+- **A rollover skips `getPage` entirely.** Reading the exhausted session first
+  answers with its last page again — the exact repeat the rollover exists to
+  avoid.
+- **The chain's seen-set is written when the order is fixed**, inside
+  `RecommendationSessionService.create`, not from impression telemetry. Telemetry
+  is best-effort and lands late; a rollover racing it re-ranks the page still on
+  screen.
+- **Relax in stages.** Drop the chain exclusion first — and persist the reset, or
+  the branch re-runs on every page — and only then fall back to the blanket
+  "ignore everything seen" retrieval that already existed for seen-starvation.
+- **Bound the set.** `FEED_SESSION_POLICY.maxChainSeenIds` recycles the chain on
+  size the same way exhaustion recycles it on emptiness, so one long scroll
+  cannot allocate an unbounded Redis set.
+- **Resolve a chain through the session, and check the subject.**
+  `getChainId(sessionId, subjectId)` returns null for somebody else's session, so
+  a guessed id cannot reveal what another viewer was shown.
+- Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`.
+
+## Never Overwrite `$and` On A Shared Eligibility Match
+
+`buildEligibilityMatch` owns `match.$and`: it is where the blocked-creator and
+already-seen exclusions live. A caller adding its own constraint must **append**:
+
+```ts
+// WRONG — drops every exclusion the shared builder just added
+match.$and = [{ $or: [{ type: 'video' }, { mediaTypes: 'video' }] }];
+
+// RIGHT
+match.$and = [...(match.$and || []), { $or: [{ type: 'video' }, { mediaTypes: 'video' }] }];
+```
+
+The failure mode is silent and inverted: "never repeat a post" becomes "repeat
+constantly", with no error and a perfectly valid query.
+
 ## Boolean Query Parameters
 
 `main.ts` installs the global pipe with

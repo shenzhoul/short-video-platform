@@ -2,6 +2,15 @@
 
 export interface PopupPipVideo {
   videoId: string;
+  /**
+   * The post this video belongs to.
+   *
+   * The picture-in-picture window asks the server for its own next video, so it
+   * needs a post id it can send — `videoId` is a prefixed display key, and
+   * parsing an id back out of it is exactly the kind of inference that breaks
+   * the first time the prefix changes.
+   */
+  postId: string;
   src: string;
   poster?: string;
   description?: string;
@@ -12,11 +21,45 @@ export interface PopupPipVideo {
   isPlaying?: boolean;
 }
 
+/**
+ * Everything the picture-in-picture window needs to keep navigating on its own.
+ *
+ * It used to carry a `playlist`: the Home grid's video posts, in rendered
+ * order. "Next" was therefore whichever card happened to sit below the one
+ * playing, which is not a recommendation — it is the DOM. The window now walks
+ * a **Post Detail recommendation session**, the same anchor-based sequence the
+ * detail viewer uses (`useRecommendationDetailFeed`), so both surfaces share
+ * one selection pipeline rather than two unrelated ones.
+ */
 export interface PopupPipState {
   active: boolean;
   video: PopupPipVideo;
-  playlist: PopupPipVideo[];
+  /**
+   * What this PiP session has actually played, oldest first. "Previous" walks
+   * back through it and never recomputes — the viewer must be able to return
+   * to what they just saw, not to a fresh guess.
+   */
+  history: PopupPipVideo[];
+  /** Index of `video` within `history`. */
+  historyIndex: number;
+  /**
+   * The Post Detail recommendation session backing "next". Null until the first
+   * "next" opens one, and reset whenever the anchor changes from outside (the
+   * main feed pushing a different post in).
+   */
+  sessionId?: string | null;
+  /** Set once the server reports no unseen eligible video left for this session. */
+  exhausted?: boolean;
 }
+
+/**
+ * Ceiling on the remembered history.
+ *
+ * The server's detail session caps itself at `DETAIL_SESSION_POLICY.maxItems`,
+ * so this is not the thing that bounds navigation — it bounds what is written
+ * into `localStorage`, which every write serialises in full.
+ */
+export const MAX_PIP_HISTORY = 60;
 
 export interface PopupPipDetailRequest {
   videoId: string;
@@ -49,11 +92,49 @@ function getChannel() {
   return new BroadcastChannel(CHANNEL_NAME);
 }
 
+export function getPostIdFromPopupVideoId(videoId: string) {
+  const prefix = 'home-feed-';
+  return videoId.startsWith(prefix) ? videoId.slice(prefix.length) : videoId;
+}
+
+/**
+ * Fill in anything a stored state is missing.
+ *
+ * A PiP window can be open across a deploy, so the shape read back may predate
+ * the fields below — an older one carries `playlist` and no history at all.
+ * Rebuilding from the current video is right rather than merely safe: whatever
+ * that older list held, the viewer has only actually watched what is playing.
+ */
+function normalizePopupPipState(raw: any): PopupPipState | null {
+  if (!raw || typeof raw !== 'object' || !raw.video) return null;
+
+  const video: PopupPipVideo = {
+    ...raw.video,
+    postId: raw.video.postId || getPostIdFromPopupVideoId(raw.video.videoId || '')
+  };
+  const history: PopupPipVideo[] = Array.isArray(raw.history) && raw.history.length
+    ? raw.history.map((item: any) => ({
+      ...item,
+      postId: item.postId || getPostIdFromPopupVideoId(item.videoId || '')
+    }))
+    : [video];
+  const foundIndex = history.findIndex((item) => item.videoId === video.videoId);
+
+  return {
+    active: Boolean(raw.active),
+    video,
+    history,
+    historyIndex: foundIndex >= 0 ? foundIndex : history.length - 1,
+    sessionId: raw.sessionId ?? null,
+    exhausted: Boolean(raw.exhausted)
+  };
+}
+
 export function readPopupPipState(): PopupPipState | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) as PopupPipState : null;
+    return raw ? normalizePopupPipState(JSON.parse(raw)) : null;
   } catch {
     return null;
   }
@@ -112,6 +193,57 @@ export function subscribePopupPipState(callback: (state: PopupPipState | null) =
     channel?.removeEventListener('message', handleChannel);
     channel?.close();
   };
+}
+
+/**
+ * Move to a video already in this session's history — the "previous" direction,
+ * and "next" when the viewer has stepped back and is coming forward again.
+ * Replays exactly what was shown; never recomputes.
+ */
+export function playPopupPipHistoryIndex(state: PopupPipState, index: number) {
+  const clamped = Math.min(Math.max(0, index), state.history.length - 1);
+  writePopupPipState({ ...state, active: true, video: state.history[clamped], historyIndex: clamped });
+}
+
+/**
+ * Append a freshly recommended video and play it.
+ *
+ * `sessionId` travels with it because the first "next" is what opens the detail
+ * session — storing it separately would let a reload lose the session while
+ * keeping the video it produced, and the replacement session would then start
+ * recommending posts already in this history.
+ */
+export function appendPopupPipVideo(state: PopupPipState, video: PopupPipVideo, sessionId: string | null) {
+  const history = [...state.history.slice(0, state.historyIndex + 1), video].slice(-MAX_PIP_HISTORY);
+  writePopupPipState({
+    ...state,
+    active: true,
+    video,
+    history,
+    historyIndex: history.length - 1,
+    sessionId,
+    exhausted: false
+  });
+}
+
+/**
+ * Push a video in from outside the PiP window — the main feed moving to a
+ * different post while PiP is open.
+ *
+ * The recommendation session is dropped, because the anchor it was built around
+ * is no longer what is playing; the next "next" opens a new one anchored here.
+ */
+export function pushPopupPipVideo(state: PopupPipState, video: PopupPipVideo) {
+  const history = [...state.history, video].slice(-MAX_PIP_HISTORY);
+  writePopupPipState({
+    ...state,
+    active: true,
+    video,
+    history,
+    historyIndex: history.length - 1,
+    sessionId: null,
+    exhausted: false
+  });
 }
 
 export function requestPopupPipDetail(videoId: string, currentTime = 0) {
@@ -225,9 +357,15 @@ function writeClosedPipState(currentTime?: number, isPlaying = true) {
   });
 }
 
+/**
+ * Open (or re-focus) the picture-in-picture window on one video.
+ *
+ * It takes no playlist. The window asks the server for its own next video, so
+ * handing it the surrounding grid would only give it a second, contradictory
+ * idea of what "next" means — which is the behaviour this replaced.
+ */
 export function openPopupPip(
   video: PopupPipVideo,
-  playlist: PopupPipVideo[] = [video],
   options: OpenPopupPipOptions = {}
 ) {
   if (typeof window === 'undefined') return;
@@ -239,10 +377,18 @@ export function openPopupPip(
     isPlaying: options.videoElement ? !options.videoElement.paused : true
   };
 
+  const existing = readPopupPipState();
+  // Re-opening on the video already playing keeps the session and the history:
+  // clicking the PiP button again is not a new browsing session.
+  const isSameVideo = existing?.video.videoId === nextVideo.videoId;
+
   writePopupPipState({
     active: true,
     video: nextVideo,
-    playlist: playlist.length ? playlist : [video]
+    history: isSameVideo && existing ? existing.history : [nextVideo],
+    historyIndex: isSameVideo && existing ? existing.historyIndex : 0,
+    sessionId: isSameVideo && existing ? existing.sessionId ?? null : null,
+    exhausted: false
   });
 
   const width = 476;

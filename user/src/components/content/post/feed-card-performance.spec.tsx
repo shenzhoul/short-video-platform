@@ -106,7 +106,6 @@ describe('video elements are mounted sparingly', () => {
   const baseOptions = {
     post: videoPost,
     popupPipState: null,
-    popupPlaylist: []
   };
 
   it('mounts no video for a compact card at rest', () => {

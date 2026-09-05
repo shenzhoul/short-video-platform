@@ -1,23 +1,36 @@
 'use client';
 
+import { getPopupVideo } from '@components/content/post/home-feed-media';
 import { videoDuration } from '@lib/duration';
 import {
+  appendPopupPipVideo,
   closePopupPip,
+  playPopupPipHistoryIndex,
   PopupPipState,
-  PopupPipVideo,
   readPopupPipState,
   requestPopupPipDetail,
   subscribePopupPipState,
   writePopupPipState
 } from '@lib/popup-pip';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getRecommendationAnonymousId } from '@lib/recommendation-anonymous-id';
+import {
+  findOne,
+  openPostDetailRecommendationSession,
+  stepPostDetailRecommendationNext
+} from '@services/post.service';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FaChevronDown, FaChevronUp } from 'react-icons/fa';
 import { DetailPlayerIcon, FullscreenIcon, MuteIcon, PauseIcon, PlayIcon, VolumeIcon } from 'src/icons';
 
-function getVideoIndex(state: PopupPipState | null) {
-  if (!state) return -1;
-  return state.playlist.findIndex((item) => item.videoId === state.video.videoId);
-}
+/**
+ * How many times "next" may ask the server before giving up on this press.
+ *
+ * The server already filters to video posts, so a rejection here means the post
+ * it named could not be fetched or has no playable URL — rare, and worth one or
+ * two retries rather than reporting the end of the feed. It is bounded because
+ * every ask appends that post to the detail session permanently.
+ */
+const MAX_NEXT_ATTEMPTS = 4;
 
 export default function PopupPipPlayer() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -29,6 +42,19 @@ export default function PopupPipPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [showChrome, setShowChrome] = useState(true);
+  /** True while "next" is waiting on the server, so a double-press cannot skip two. */
+  const [advancing, setAdvancing] = useState(false);
+  /**
+   * The viewer's own mute choice, kept across track changes.
+   *
+   * Every video used to start muted because the load effect assigned
+   * `video.muted = true` unconditionally — so unmuting was undone by the next
+   * press of "next". It starts true because autoplay requires it; once the
+   * viewer has decided, that decision follows them through the session.
+   */
+  const preferredMutedRef = useRef(true);
+  /** The videoId the load effect last applied, so bookkeeping-only state writes do not restart playback. */
+  const appliedVideoIdRef = useRef<string | null>(null);
 
   const scheduleChromeHide = () => {
     if (chromeTimerRef.current) {
@@ -43,23 +69,29 @@ export default function PopupPipPlayer() {
     setState(readPopupPipState());
     return subscribePopupPipState((nextState) => {
       setState(nextState);
-      setCurrentTime(0);
-      setIsPlaying(false);
+      // Only a genuine track change resets the transport. A write that merely
+      // records the session id or the history cursor must not send the video
+      // the viewer is watching back to 0:00.
+      if (nextState?.video.videoId !== appliedVideoIdRef.current) {
+        setCurrentTime(0);
+        setIsPlaying(false);
+      }
     });
   }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !state) return;
+    appliedVideoIdRef.current = state.video.videoId;
     const initialTime = Math.max(0, state.video.currentTime || 0);
-    video.muted = true;
+    video.muted = preferredMutedRef.current;
     try {
       video.currentTime = initialTime;
     } catch {
       // Seek again when metadata is ready.
     }
     setCurrentTime(initialTime);
-    setIsMuted(true);
+    setIsMuted(preferredMutedRef.current);
     if (state.video.isPlaying === false) {
       video.pause();
       setIsPlaying(false);
@@ -101,29 +133,97 @@ export default function PopupPipPlayer() {
     };
   }, []);
 
-  const activeIndex = useMemo(() => getVideoIndex(state), [state]);
-  const canPrevious = Boolean(state && activeIndex > 0);
-  const canNext = Boolean(state && activeIndex >= 0 && activeIndex < state.playlist.length - 1);
+  const historyIndex = state?.historyIndex ?? -1;
+  const historyLength = state?.history.length ?? 0;
+  /** "Previous" is history only — it replays what was shown, never a fresh pick. */
+  const canPrevious = Boolean(state && historyIndex > 0);
+  /*
+   * "Next" is available unless there is nowhere at all to go: nothing further
+   * forward in history, the server out of candidates, and no history to wrap
+   * around to. Disabling it merely because the array ends here would make a
+   * one-round-trip wait indistinguishable from the end of the feed.
+   */
+  const canNext = Boolean(state) && !advancing
+    && (historyIndex < historyLength - 1 || !state?.exhausted || historyLength > 1);
   const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
-
-  const playVideo = useCallback((video: PopupPipVideo) => {
-    if (!state) return;
-    writePopupPipState({
-      ...state,
-      active: true,
-      video
-    });
-  }, [state]);
 
   const goPrevious = () => {
     if (!state || !canPrevious) return;
-    playVideo(state.playlist[activeIndex - 1]);
+    playPopupPipHistoryIndex(state, historyIndex - 1);
   };
 
-  const goNext = () => {
-    if (!state || !canNext) return;
-    playVideo(state.playlist[activeIndex + 1]);
-  };
+  /**
+   * Advance to another recommended video.
+   *
+   * The candidate comes from the **Post Detail recommendation session** — the
+   * same anchor-based sequence `useRecommendationDetailFeed` walks — rather than
+   * from the Home grid's rendered order, which is what this used to follow. That
+   * session excludes everything it has already handed out, so "next" cannot
+   * return the post that is playing and cannot repeat one it has already shown;
+   * `videoOnly` keeps it to posts this window can actually draw.
+   *
+   * Three outcomes, in order:
+   *  1. The viewer stepped back earlier — replay the video ahead of them.
+   *  2. The server names an unseen video — append it and play it.
+   *  3. The server has none left — wrap to the start of this window's history.
+   *     Deterministic on purpose: after exhaustion "next" walks the same
+   *     sequence again in the same order, rather than picking at random from
+   *     posts the viewer has just rejected.
+   */
+  const goNext = useCallback(async () => {
+    if (!state || advancing) return;
+
+    if (historyIndex < historyLength - 1) {
+      playPopupPipHistoryIndex(state, historyIndex + 1);
+      return;
+    }
+
+    const anonymousId = getRecommendationAnonymousId() || undefined;
+    const anchorPostId = state.video.postId;
+    setAdvancing(true);
+    try {
+      let sessionId = state.sessionId || null;
+      if (!sessionId && anchorPostId) {
+        const opened = await openPostDetailRecommendationSession(anchorPostId, anonymousId);
+        sessionId = opened?.data?.sessionId || null;
+      }
+
+      if (sessionId) {
+        const knownPostIds = new Set(state.history.map((item) => item.postId));
+        for (let attempt = 0; attempt < MAX_NEXT_ATTEMPTS; attempt += 1) {
+
+          const step = await stepPostDetailRecommendationNext(sessionId, anonymousId, true);
+          const nextPostId = step?.data?.postId;
+          if (!nextPostId) break; // The session has nothing unseen left.
+          if (knownPostIds.has(nextPostId)) continue;
+
+          const response = await findOne(nextPostId).catch(() => null);
+          const payload = response?.data ? getPopupVideo(response.data) : null;
+          // No payload means the post lost its video between being ranked and
+          // being fetched. Ask again rather than reporting the end of the feed.
+          if (!payload) continue;
+
+          appendPopupPipVideo(state, payload, sessionId);
+          return;
+        }
+      }
+
+      // Exhausted (or no anchor to open a session from): recycle through this
+      // window's own history, which is the one sequence guaranteed playable.
+      if (historyLength > 1) {
+        writePopupPipState({
+          ...state, active: true, video: state.history[0], historyIndex: 0, sessionId, exhausted: true
+        });
+        return;
+      }
+      writePopupPipState({ ...state, sessionId, exhausted: true });
+    } catch {
+      // A failed round trip is not the end of the sequence; leave the state
+      // alone so the next press tries again.
+    } finally {
+      setAdvancing(false);
+    }
+  }, [advancing, historyIndex, historyLength, state]);
 
   const togglePlay = async () => {
     const video = videoRef.current;
@@ -141,6 +241,8 @@ export default function PopupPipPlayer() {
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
+    // Remembered, so moving to the next video does not silently re-mute.
+    preferredMutedRef.current = video.muted;
     setIsMuted(video.muted);
   };
 
@@ -210,6 +312,9 @@ export default function PopupPipPlayer() {
             event.currentTarget.currentTime = Math.min(initialTime, maxTime);
             setCurrentTime(event.currentTarget.currentTime);
             setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
+            // The element is created muted (autoplay), so read the remembered
+            // choice rather than the element's own starting value.
+            event.currentTarget.muted = preferredMutedRef.current;
             setIsMuted(event.currentTarget.muted);
           }}
           onCanPlay={(event) => {
@@ -267,7 +372,9 @@ export default function PopupPipPlayer() {
           <button
             type="button"
             disabled={!canNext}
-            onClick={goNext}
+            onClick={() => {
+ void goNext();
+}}
             className="flex h-10 w-10 cursor-pointer items-center justify-center text-white transition hover:bg-white/15 disabled:cursor-default disabled:opacity-30"
             aria-label="Next video"
           >

@@ -11,11 +11,10 @@ import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-
 import { RecommendedVideoPage, useRecommendedVideos } from '@hooks/use-recommended-videos';
 import { useVideoPlaybackContinuity } from '@hooks/use-video-playback-continuity';
 import { IPost } from '@interfaces/post';
-import { PopupPipVideo } from '@lib/popup-pip';
 import { enqueueRecommendationEvent } from '@lib/recommendation-event-queue';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { getPopupVideo, isVideoPost, supportsPostDetail } from './home-feed-media';
+import { isVideoPost, supportsPostDetail } from './home-feed-media';
 import PostDetailModal from './post-detail-modal';
 import PostNavigationControls from './post-navigation-controls';
 import { PostVideoDetailTab } from './post-video-detail-panel';
@@ -102,9 +101,6 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
   const feedNavigationEnabled = !detailPanelTab;
   const canPrevious = feedNavigationEnabled && currentIndex > 0;
   const canNext = feedNavigationEnabled && currentIndex < posts.length - 1;
-  const popupPlaylist = useMemo(() => posts
-    .map(getPopupVideo)
-    .filter((video): video is PopupPipVideo => Boolean(video)), [posts]);
   const activeInteraction = usePostInteractionState(activePost, updatePostInteraction);
 
   useRecommendationImpression({
@@ -271,7 +267,6 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
           key={activePost._id}
           post={activePost}
           playerId={`for-you-${activePost._id}`}
-          popupPlaylist={popupPlaylist}
           popupPipState={popupPipState}
           playerRef={playerRef}
           initialTime={resumeTime}
@@ -326,7 +321,6 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
           posts={posts}
           source="for-you"
           recommendationSessionId={sessionForPost(detailModalPost._id) || sessionId}
-          popupPlaylist={popupPlaylist}
           initialTime={detailModalInitialTime}
           onPlaybackTimeChange={(currentTime) => {
             rememberPlaybackTime(detailModalPost._id, currentTime);
