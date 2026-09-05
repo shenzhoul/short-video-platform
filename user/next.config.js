@@ -12,6 +12,24 @@ try {
   withBundleAnalyzer = (config) => config;
 }
 
+/**
+ * Vercel collects the built app from Next's DEFAULT output directory.
+ *
+ * Its Next.js builder looks for `<rootDirectory>/.next` after the build, and a
+ * custom `distDir` is not what it reads — the deployment failed at finalization
+ * with "could not find /vercel/path0/user/.next" while the build itself had
+ * succeeded into `dist/.next`. Setting Vercel's own "Output Directory" to
+ * `dist/.next` does not help either: for a Next project that field does not
+ * redirect where the framework's output is collected from.
+ *
+ * So on Vercel the key is left unset entirely and Next uses `.next`. Everywhere
+ * else the dev/build split below is preserved exactly.
+ *
+ * `VERCEL` is set to "1" by Vercel for every build and every runtime, which is
+ * why it is the detector rather than a hardcoded path or a branch name.
+ */
+const isVercelBuild = !!process.env.VERCEL;
+
 const nextConfig = {
   compress: true,
   // react 18 about strict mode https://reactjs.org/blog/2022/03/29/react-v18.html#new-strict-mode-behaviors
@@ -26,10 +44,16 @@ const nextConfig = {
     fetch then fails with CLIENT_FETCH_ERROR ("Unexpected token '<'") on every
     page. It also churns `next-env.d.ts` between the two type paths.
 
-    The production path is unchanged, so `next start`, deployment and CI see
-    exactly the same output as before.
+    The production path is unchanged, so `next start` and CI see exactly the
+    same output as before.
+
+    On Vercel the key is omitted (see `isVercelBuild` above) — the platform
+    collects from the default `.next`, and there is no dev server there to
+    protect.
   */
-  distDir: process.env.NODE_ENV === 'development' ? 'dist/.next-dev' : 'dist/.next',
+  ...(isVercelBuild ? {} : {
+    distDir: process.env.NODE_ENV === 'development' ? 'dist/.next-dev' : 'dist/.next'
+  }),
   typescript: {
     // !! WARN !!
     // Dangerously allow production builds to successfully complete even if

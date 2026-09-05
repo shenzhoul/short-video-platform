@@ -289,6 +289,7 @@ Load the relevant repo skills when the task matches them:
 - Run targeted `yarn test` commands for changed behavior, then `yarn lint` and `yarn build`.
 - Add or update focused tests when component logic or rendering behavior is important.
 - Dev and production write to separate output directories on purpose: `next dev` uses `dist/.next-dev`, `next build` uses `dist/.next`. They used to share one, and a build run while a dev server was up rewrote that server's routing state in place — the dev server kept answering, but every `/api/*` route resolved to the not-found page, so next-auth's session fetch failed with `CLIENT_FETCH_ERROR` ("Unexpected token '<'") on every page, and the generated `routes.d.ts` was left corrupted so the next build failed too. Do not point them back at the same directory.
+- **On Vercel, `distDir` is not set at all** — the platform collects the built app from Next's default `.next`, so a custom output directory makes the deploy fail at finalization with "could not find `/vercel/path0/user/.next`" *after* a build that succeeded. Vercel's own "Output Directory" field does not redirect this for a Next project. Both `next.config.js` files therefore omit the key when `process.env.VERCEL` is set (`isVercelBuild`) and keep the local split otherwise. There is no dev server on Vercel, so nothing is lost. Verify a change to this by running `VERCEL=1 yarn build` and checking for `.next/BUILD_ID`, then `yarn build` and checking `dist/.next/BUILD_ID`.
 
 ## The Proxy Matcher Is A Whitelist Of Asset Extensions, Never `\.[\w]+$`
 

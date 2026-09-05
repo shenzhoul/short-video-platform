@@ -79,6 +79,8 @@
     "dist/.next/types/**/*.ts",
     "dist/.next-dev/dev/types/**/*.ts",
     "dist/.next/dev/types/**/*.ts",
-    "dist/.next-dev/types/**/*.ts"
+    "dist/.next-dev/types/**/*.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ]
 }

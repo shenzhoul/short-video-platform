@@ -1,4 +1,23 @@
 /**
+ * Vercel collects the built app from Next's DEFAULT output directory.
+ *
+ * Its Next.js builder looks for `<rootDirectory>/.next` after the build, and a
+ * custom `distDir` is not what it reads — the user app's deployment failed at
+ * finalization with "could not find /vercel/path0/user/.next" while the build
+ * itself had succeeded into `dist/.next`. Setting Vercel's own "Output
+ * Directory" to `dist/.next` does not help either: for a Next project that
+ * field does not redirect where the framework's output is collected from.
+ *
+ * So on Vercel the key is left unset entirely and Next uses `.next`. Locally
+ * `dist/.next` is preserved, which keeps this app's build output beside the
+ * user app's and out of the repository root.
+ *
+ * `VERCEL` is set to "1" by Vercel for every build and every runtime, which is
+ * why it is the detector rather than a hardcoded path or a branch name.
+ */
+const isVercelBuild = !!process.env.VERCEL;
+
+/**
  * @type {import('next').NextConfig}
  */
 const nextConfig = {
@@ -13,8 +32,8 @@ const nextConfig = {
   // prebuilt dependency.
   transpilePackages: ['@douyin-clone/shared-toast'],
 
-  // Custom build directory
-  distDir: 'dist/.next',
+  // Custom build directory, except on Vercel (see `isVercelBuild` above).
+  ...(isVercelBuild ? {} : { distDir: 'dist/.next' }),
 
   // Security headers
   poweredByHeader: false,
