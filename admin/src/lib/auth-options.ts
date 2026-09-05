@@ -1,4 +1,4 @@
-import { traceAuth } from '@lib/auth-trace';
+import { CALLBACK_URL_COOKIE_NAME, CSRF_TOKEN_COOKIE_NAME, SESSION_TOKEN_COOKIE_NAME } from '@lib/auth-cookies';
 import { getResponseError } from '@lib/utils';
 import axios from 'axios';
 import { cookies } from 'next/headers';
@@ -17,30 +17,6 @@ declare module 'next-auth' {
     user: IUser;
   }
 }
-
-/**
- * TEMPORARY — presence-only diagnostics for the production session failure.
- *
- * `/api/auth/session` answers `{}` immediately after a sign-in that returned no
- * credential error, so the fault is inside next-auth rather than in the
- * middleware that acts on its result. These lines say which callbacks ran and
- * which fields were populated, and nothing else.
- *
- * Booleans only. Never a token, an id, an email or a secret: this runs in a
- * container whose stdout the Docker logging driver writes to disk, so anything
- * printed here outlives the request.
- *
- * Off unless ADMIN_AUTH_DIAGNOSTICS=1, so it can be enabled with a restart and
- * disabled the same way. Remove once the root cause is fixed.
- */
-const authDiagnostic = (stage: string, fields: Record<string, boolean | string>): void => {
-  if (process.env.ADMIN_AUTH_DIAGNOSTICS !== '1') return;
-  // console.warn, not console.info: next.config.js strips info/log in
-  // production builds (removeConsole, exclude error+warn).
-  const summary = Object.entries(fields).map(([key, value]) => `${key}=${value}`).join(' ');
-  // eslint-disable-next-line no-console
-  console.warn(`[auth-diag] ${stage}: ${summary}`);
-};
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -103,19 +79,6 @@ export const authOptions: NextAuthOptions = {
             throw new Error('Access denied. Admin role required.');
           }
 
-          traceAuth('SERVER.authorize', {
-            loginHttpOk: true,
-            isAdmin: profile.isAdmin === true,
-            loginTokenFp: token
-          });
-
-          authDiagnostic('authorize', {
-            user: true,
-            id: Boolean(profile._id),
-            isAdmin: profile.isAdmin === true,
-            accessToken: Boolean(token)
-          });
-
           // Any object returned will be saved in `user` property of the JWT
           return {
             email: profile.email,
@@ -146,7 +109,7 @@ export const authOptions: NextAuthOptions = {
   },
   cookies: {
     sessionToken: {
-      name: `next-auth.session-token`,
+      name: SESSION_TOKEN_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -155,7 +118,7 @@ export const authOptions: NextAuthOptions = {
       }
     },
     callbackUrl: {
-      name: `next-auth.callback-url`,
+      name: CALLBACK_URL_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -164,7 +127,7 @@ export const authOptions: NextAuthOptions = {
       }
     },
     csrfToken: {
-      name: `next-auth.csrf-token`,
+      name: CSRF_TOKEN_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -178,38 +141,16 @@ export const authOptions: NextAuthOptions = {
       if (user) return true;
       return false;
     },
-    jwt({ token, user, trigger }) {
+    jwt({ token, user }) {
       if (user) {
         token.accessToken = user.token;
         token.user = user;
       }
-      traceAuth(user ? 'SERVER.jwt-signin' : 'SERVER.jwt-subsequent', {
-        hasUser: Boolean(user),
-        userTokenFp: (user as any)?.token,
-        accessTokenFp: token.accessToken
-      });
-
-      authDiagnostic('jwt', {
-        trigger: trigger || 'none',
-        user: Boolean(user),
-        tokenUser: Boolean(token.user),
-        tokenId: Boolean((token.user as any)?._id),
-        admin: (token.user as any)?.isAdmin === true,
-        accessToken: Boolean(token.accessToken),
-        sub: Boolean(token.sub)
-      });
       return token;
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
       session.user = token.user as any;
-      authDiagnostic('session', {
-        tokenUser: Boolean(token.user),
-        tokenId: Boolean((token.user as any)?._id),
-        admin: (token.user as any)?.isAdmin === true,
-        accessToken: Boolean(token.accessToken),
-        sessionUser: Boolean(session.user)
-      });
       return session;
     }
   },

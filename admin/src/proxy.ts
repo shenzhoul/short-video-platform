@@ -2,6 +2,8 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
+import { SESSION_TOKEN_COOKIE_NAME } from '@lib/auth-cookies';
+
 export const config = {
   matcher: [
     /*
@@ -20,84 +22,36 @@ export async function proxy(request: NextRequest) {
 
   const baseApiUrl = process.env.API_ENDPOINT || process.env.API_SERVER_ENDPOINT || process.env.NEXT_PUBLIC_API_ENDPOINT || origin;
 
-  /*
-    TEMPORARY — which endpoint the middleware actually resolved, and what it got.
-
-    `console.warn`, never `console.info`: next.config.js strips info/log in
-    production builds (`removeConsole`, excluding error and warn), which
-    silently deleted three earlier rounds of diagnostics in this investigation.
-
-    Booleans for the candidates and the resolved URL only — no token, no secret.
-    The two-path probe already showed that this same token succeeds against the
-    API on loopback, through nginx, and with an Origin header, but that the
-    ADMIN origin answers `200 text/html` with no `data.isAdmin` — so if the
-    fallback to `origin` is being taken, that is the whole failure.
-  */
-  // eslint-disable-next-line no-console
-  console.warn('[auth-diag] middleware.env: '
-    + `API_ENDPOINT=${Boolean(process.env.API_ENDPOINT)} `
-    + `API_SERVER_ENDPOINT=${Boolean(process.env.API_SERVER_ENDPOINT)} `
-    + `NEXT_PUBLIC_API_ENDPOINT=${Boolean(process.env.NEXT_PUBLIC_API_ENDPOINT)} `
-    + `resolvedBaseApiUrl=${baseApiUrl} `
-    + `fellBackToOrigin=${baseApiUrl === origin}`);
-
   const isRealAdminUser = async (accessToken: string) => {
     try {
-      const res = await fetch(`${baseApiUrl}/users/me`, {
+      const user = await fetch(`${baseApiUrl}/users/me`, {
         method: 'GET',
         headers: {
           'Authorization': accessToken
         }
-      });
-      const contentType = res.headers.get('content-type') || '(none)';
-      const user = await res.json().catch(() => null);
-
-      // eslint-disable-next-line no-console
-      console.warn('[auth-diag] middleware.users-me: '
-        + `status=${res.status} `
-        + `contentType=${contentType.split(';')[0]} `
-        + `isAdmin=${user?.data?.isAdmin === true}`);
-
+      })
+        .then(res => res.json());
       return user?.data?.isAdmin === true;
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.warn(`[auth-diag] middleware.users-me: THREW ${(error as Error)?.name}`);
+    } catch {
       return false;
     }
   };
 
-  // Check for NextAuth session token
-  const session = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET }) as any;
-
   /*
-    TEMPORARY — every input to the branch decisions below.
+    Check for the NextAuth session token.
 
-    `middleware.env` was appearing without `middleware.users-me`, which proves
-    `isRealAdminUser` is never entered and the redirect comes from an earlier
-    branch. The cookie names are logged (NAMES ONLY, never values) because
-    next-auth's `getToken` picks which cookie to read from `NEXTAUTH_URL`:
-
-      secureCookie = NEXTAUTH_URL.startsWith("https://")
-      cookieName   = secureCookie ? "__Secure-next-auth.session-token"
-                                  : "next-auth.session-token"
-
-    while auth-options.ts overrides the name to the NON-prefixed form. If those
-    disagree, getToken reads a cookie that does not exist and returns null.
+    `cookieName` is explicit and is the SAME constant `authOptions` declares.
+    Without it, `getToken` derives the name from `NEXTAUTH_URL` — https means
+    `__Secure-next-auth.session-token` — while auth-options.ts names the cookie
+    without that prefix. The middleware then read a cookie that does not exist,
+    got `null`, and sent every freshly authenticated administrator to
+    `/auth/logout?redirect=login`. See lib/auth-cookies.ts.
   */
-  const cookieNames = request.cookies.getAll().map((c) => c.name);
-  // eslint-disable-next-line no-console
-  console.warn('[auth-diag] middleware.session: '
-    + `path=${pathname} `
-    + `nextauthUrlHttps=${Boolean(process.env.NEXTAUTH_URL?.startsWith('https://'))} `
-    + `getTokenLooksFor=${process.env.NEXTAUTH_URL?.startsWith('https://') ? '__Secure-next-auth.session-token' : 'next-auth.session-token'} `
-    + `cookiesPresent=[${cookieNames.join(',')}] `
-    + `decoded=${Boolean(session)} `
-    + `hasUser=${Boolean(session?.user)} `
-    + `hasUserId=${Boolean(session?.user?._id)} `
-    + `isAdminValue=${String(session?.user?.isAdmin)} `
-    + `isAdminType=${typeof session?.user?.isAdmin} `
-    + `hasAccessToken=${Boolean(session?.accessToken)} `
-    + `topLevelKeys=[${session ? Object.keys(session).join(',') : ''}]`);
+  const session = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+    cookieName: SESSION_TOKEN_COOKIE_NAME
+  }) as any;
 
   /**
    * `/auth/forgot` is retired.
@@ -126,44 +80,27 @@ export async function proxy(request: NextRequest) {
 
   // If accessing auth pages and already authenticated, redirect to dashboard
   if (isAuthPage && !isLogoutPage && session?.user?._id) {
-    // eslint-disable-next-line no-console
-    console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-HAS-SESSION entering=isRealAdminUser');
     // here is to verify server once again because token may expired, we need to double check and avoid redirect loop
     const isAdmin = await isRealAdminUser(session.accessToken);
     if (!isAdmin) {
-      // eslint-disable-next-line no-console
-      console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-NOT-ADMIN -> /auth/logout?redirect=login');
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
-    // eslint-disable-next-line no-console
-    console.warn('[auth-diag] middleware.branch: taken=AUTHPAGE-OK -> /dashboard');
     return NextResponse.redirect(`${origin}/dashboard`);
   }
 
   // If not auth page, require authentication
   if (!isAuthPage) {
     if (!session?.user?._id || !session.user.isAdmin) {
-      const reason = !session ? 'getToken-returned-null'
-        : (!session.user ? 'no-user-in-payload'
-          : (!session.user._id ? 'no-user-id' : 'isAdmin-falsy'));
-      // eslint-disable-next-line no-console
-      console.warn(`[auth-diag] middleware.branch: taken=PROTECTED-NO-SESSION reason=${reason} -> /auth/logout?redirect=login`);
       // No valid session — clean up and redirect to login
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
-    // eslint-disable-next-line no-console
-    console.warn('[auth-diag] middleware.branch: taken=PROTECTED-HAS-SESSION entering=isRealAdminUser');
     // check real user and token validity
     const isAdmin = await isRealAdminUser(session.accessToken);
     if (!isAdmin) {
-      // eslint-disable-next-line no-console
-      console.warn('[auth-diag] middleware.branch: taken=PROTECTED-NOT-ADMIN -> /auth/logout?redirect=login');
       return NextResponse.redirect(`${origin}/auth/logout?redirect=login`);
     }
   }
 
-  // eslint-disable-next-line no-console
-  console.warn('[auth-diag] middleware.branch: taken=ALLOW -> next()');
   const response = NextResponse.next();
   return response;
 }

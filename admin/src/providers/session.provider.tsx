@@ -4,7 +4,6 @@ import cookie from 'js-cookie';
 import { SessionProvider as Session, SessionProviderProps, useSession } from 'next-auth/react';
 import { createElement, useEffect } from 'react';
 
-import { traceAuth } from '@lib/auth-trace';
 import { setApiAuthToken } from '@services/api-request';
 
 /**
@@ -41,15 +40,6 @@ function TokenSyncHandler() {
   } else if (status === 'unauthenticated') {
     setApiAuthToken(null);
   }
-
-  // TEMPORARY — the reference fingerprint. Everything downstream should match
-  // this exactly; the session's accessToken originates in authorize() and
-  // travels through the jwt callback untouched. Remove with the fix.
-  traceAuth('session.publish', {
-    status,
-    hasAccessToken: Boolean(session?.accessToken),
-    sessionFp: session?.accessToken
-  });
 
   useEffect(() => {
     if (status === 'authenticated' && session?.accessToken) {

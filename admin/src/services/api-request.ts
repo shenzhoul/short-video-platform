@@ -1,6 +1,5 @@
 import { isUrl } from '@lib/string';
 import { appMessage as message } from '@lib/antd-message';
-import { traceAuth } from '@lib/auth-trace';
 import axios from 'axios';
 import cookie from 'js-cookie';
 // import getConfig from 'next/config';
@@ -86,17 +85,6 @@ export abstract class APIRequest {
       ...headers || {}
     };
     const baseApiEndpoint = this.getBaseApiEndpoint();
-
-    // TEMPORARY — what is actually attached, per request. `source` says whether
-    // the in-memory copy or the cookie fallback supplied it, which is the
-    // distinction the render-time publication was supposed to make. Remove with
-    // the fix.
-    traceAuth('request', {
-      url: `${verb} ${url}`,
-      source: inMemoryToken ? 'memory' : (cookie.get(TOKEN) ? 'cookie' : 'none'),
-      attachedFp: updatedHeader.Authorization
-    });
-
     return axios({
       method: verb,
       url: isUrl(url) ? url : `${baseApiEndpoint}${url}`,
@@ -104,30 +92,12 @@ export abstract class APIRequest {
       headers: updatedHeader,
       proxy: typeof window === 'undefined' ? false : undefined
     })
-      .then((resp) => {
-        // TEMPORARY — the outcome of the traced request. Remove with the fix.
-        traceAuth('response', { url: `${verb} ${url}`, status: resp.status, ok: true });
-        return resp.data;
-      })
+      .then((resp) => resp.data)
       .catch((e) => {
         if (e.code === 'ECONNREFUSED') {
           throw new Error('ECONNREFUSED!');
         }
         const { response } = e;
-
-        /*
-          TEMPORARY — captured BEFORE the 401/403 branch below navigates away.
-          That navigation is what has been destroying the evidence: the console
-          survives it only with "Preserve log", and the response body never did.
-          `apiError` is the API's own machine-readable code, which distinguishes
-          an auth refusal from a CORS or proxy-level one. Remove with the fix.
-        */
-        traceAuth('response', {
-          url: `${verb} ${url}`,
-          status: response?.status ?? 'no-response',
-          apiError: response?.data?.error ?? '(none)',
-          apiMessage: response?.data?.message ?? '(none)'
-        });
         // allow 403 as well, because if user try to access resource that he is not allowed to access, we need to logout as well
         if (response && [401, 403].includes(response.status)) {
           const token = getApiAuthToken();
