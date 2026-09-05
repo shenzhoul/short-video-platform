@@ -19,6 +19,20 @@
  *
  * Logged unconditionally: gating on an environment variable is what hid the
  * last two attempts. Remove with the fix.
+ *
+ * ## Why `console.warn` and not `console.info`
+ *
+ * `next.config.js` sets `compiler.removeConsole` with `exclude: ['error','warn']`
+ * in production. Every `console.info`/`console.log` is therefore stripped at
+ * build time, from the client bundle AND from Next-compiled server code.
+ *
+ * That silently deleted three rounds of diagnostics in this investigation —
+ * `authDiagnostic`, the middleware's `[auth-diag]` lines, and the first version
+ * of this file — and each empty result was misread as "the code did not run".
+ * Verified: `console.info` appears in 0 client chunks of a production build,
+ * `console.warn` in 9.
+ *
+ * Anything added here for diagnosis must use `warn` or `error`.
  */
 
 export async function fingerprint(value: unknown): Promise<string> {
@@ -51,6 +65,6 @@ export function traceAuth(stage: string, fields: Record<string, unknown>): void 
       parts.push(`${key}=${key.endsWith('Fp') ? await fingerprint(value) : String(value)}`);
     }
     // eslint-disable-next-line no-console
-    console.info(`[auth-trace] ${stage}: ${parts.join(' ')}`);
+    console.warn(`[auth-trace] ${stage}: ${parts.join(' ')}`);
   })();
 }

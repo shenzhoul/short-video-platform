@@ -34,9 +34,11 @@ declare module 'next-auth' {
  */
 const authDiagnostic = (stage: string, fields: Record<string, boolean | string>): void => {
   if (process.env.ADMIN_AUTH_DIAGNOSTICS !== '1') return;
+  // console.warn, not console.info: next.config.js strips info/log in
+  // production builds (removeConsole, exclude error+warn).
   const summary = Object.entries(fields).map(([key, value]) => `${key}=${value}`).join(' ');
   // eslint-disable-next-line no-console
-  console.info(`[auth-diag] ${stage}: ${summary}`);
+  console.warn(`[auth-diag] ${stage}: ${summary}`);
 };
 
 export const authOptions: NextAuthOptions = {
