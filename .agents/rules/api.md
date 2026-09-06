@@ -266,24 +266,61 @@ production failures:
 
 So exclusion is **staged**, each stage a weaker preference:
 
-1. `chain ∪ recentlySeen ∪ tail` — used while it can still fill a session.
-2. `chain ∪ tail` — for a chained caller, whenever stage 1 falls short of
+1. `chain ∪ recentlySeen` — used while it can still fill a session.
+2. `chain` only — for a chained caller, whenever stage 1 falls short of
    `sessionLimit`. This is also what returns a genuinely short final batch
    instead of declaring the feed finished.
-3. **recycle** — only when the chain has served everything eligible: reset the
-   seen-set, increment `cycle`, and hold back `CHAIN_POLICY.recentTailSize` so
-   the new cycle cannot open on what the viewer just read.
+3. **`chainExhausted: true`** — when the chain has served everything eligible.
 
 `RELAXED_SUPPRESSION_MIN_POOL` survives for **unchained** callers only, where
 stage 2 would otherwise be the blanket relaxation.
 
+## A Chain Ends. It Does Not Recycle.
+
+`deploy-2026-09-06h` fixed the 89/11 failures by making an exhausted chain
+recycle: reset the seen-set, bump a `cycle`, hand the catalogue out again. The
+client gave each repeat a per-cycle render key so React would accept it — and
+therefore appended it as new. **Home reached 410 cards on a 160-post corpus**,
+visibly repeating itself, and never stopped.
+
+The lesson is not "tune the recycle". It is that *the server must not invent
+more feed than exists*:
+
+- A chain that has served every eligible post reports `chainExhausted: true`
+  with an empty page, and **leaves its seen-set intact**. Nothing is reset, so
+  nothing can be quietly served twice.
+- Starting again is the viewer's decision. "Refresh recommendations" and a
+  reload both mint a **new chain id**, which is the only thing that makes the
+  catalogue available again.
 - **A short session is a normal outcome, not a fault.** `rerank` never drops a
   candidate, so `ranked.length < sessionLimit` always means a small pool — which
   is exactly when the remaining unseen posts should be served.
-- **Return the cycle.** The client renders the same post twice across a recycle
-  and needs distinct React keys; `cycle` is echoed on every page, including
-  pages read from an existing session's meta.
+- Cover: `recommendation-chain.spec.ts` asserts *total served == distinct
+  served* over a full browse, which is the only assertion that catches a chain
+  that repeats itself while still reaching 160.
 
+## Every Listing Answers As The Viewer Who Asked
+
+`isLiked` is viewer-specific and is only set when
+`ContentService.populatePostData` receives a user (`setIsLiked`). `totalLike` is
+an aggregate on the document and is right either way.
+
+So a listing that forgets to thread the viewer through returns a post with the
+**correct total and a false `isLiked`** — which renders as a white heart on a
+post the viewer has liked, and looks like data rather than a bug.
+
+That shipped. `SearchService.searchAll` — the Summary tab, and the default when
+no `type` is given — called `this.searchPosts({ ...request, ... })` without its
+`user` argument, while the `type=post` branch passed it. One missing argument,
+no type error, no test.
+
+- When a service method takes an optional `user`, **every** call site that can
+  reach a DTO with viewer-specific fields must pass it.
+- Assert it: `search-viewer-state.spec.ts` checks the argument actually arrives,
+  for the Summary tab, the Videos tab and a signed-out visitor.
+- Never derive a viewer-specific field from an aggregate one.
+
+## Never Overwrite `$and` On A Shared Eligibility Match
 ## Never Overwrite `$and` On A Shared Eligibility Match
 ## Never Overwrite `$and` On A Shared Eligibility Match
 

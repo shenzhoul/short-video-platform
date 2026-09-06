@@ -203,20 +203,13 @@ export const CHAIN_POLICY = {
   /**
    * Ceiling on one chain's seen-post set.
    *
-   * The natural bound is the eligible corpus, because exhausting it recycles.
-   * This is the guard for a catalogue that keeps growing under a very long
-   * scroll: hitting it recycles exactly as exhaustion does, so a single browse
-   * can never allocate an unbounded Redis set.
+   * The natural bound is the eligible corpus, because a chain that has served
+   * every eligible post is finished. This is the guard for a catalogue that
+   * keeps growing under a very long scroll: hitting it ends the chain exactly
+   * as exhaustion does, so one browse can never allocate an unbounded Redis
+   * set.
    */
   maxSeenIds: 5000,
-  /**
-   * How many of the most recently served posts survive a recycle, so a new
-   * cycle cannot open on what the viewer just finished reading.
-   *
-   * One Home session's worth would be too many — it would leave the first
-   * session of a new cycle unable to fill. One screen's worth is the point.
-   */
-  recentTailSize: 24,
   /** Client-supplied ids become Redis key segments, so their shape is bounded. */
   minIdLength: 8,
   maxIdLength: 64

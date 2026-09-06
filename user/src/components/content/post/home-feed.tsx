@@ -146,21 +146,19 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                     featuredResumeTime={playback.featuredResumeTime}
                     onFeaturedTimeUpdate={playback.updateFeaturedPlaybackTime}
                     onOpenDetail={playback.openDetailPost}
-                    recommendationSessionId={sessionForPost(posts[0].feedKey) || sessionId}
+                    recommendationSessionId={sessionForPost(posts[0]._id) || sessionId}
                   />
                 </div>
               ) : null}
 
               {posts.slice(1).map((post) => (
                 <HomeFeedCard
-                  // Keyed per cycle: a recycled chain may legitimately show a
-                  // post again further down, and two children may not share a key.
-                  key={post.feedKey || post._id}
+                  key={post._id}
                   post={post}
                   popupPipState={playback.popupPipState}
                   onCompactHoverChange={setHoveredCompactPostId}
                   onOpenDetail={playback.openDetailPost}
-                  recommendationSessionId={sessionForPost(post.feedKey) || sessionId}
+                  recommendationSessionId={sessionForPost(post._id) || sessionId}
                 />
               ))}
             </div>
@@ -189,10 +187,10 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
           {/*
             Two different reasons the feed can stop, and they must not be
             described the same way. Reaching `MAX_RENDERED_FEED_POSTS` is a
-            rendering ceiling — the catalogue still has more — while the server
-            answering a rollover with nothing means there really is nothing
-            eligible left. Saying "recommendations are exhausted" for the first
-            is what made a feed that stopped at 89 of 160 posts look correct.
+            rendering ceiling — a DOM guard, unreachable on this catalogue —
+            while the server reporting the chain exhausted means this browse has
+            genuinely shown everything eligible. "Refresh recommendations"
+            starts a new browse and may show them again.
           */}
           {!hasMore && posts.length > 0 ? (
             <div className="py-8 text-center opacity-70">
@@ -201,7 +199,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
               <p className="mb-4 text-sm">
                 {posts.length >= MAX_RENDERED_FEED_POSTS
                   ? `That's ${posts.length} posts in one sitting. Refresh for a new mix.`
-                  : 'There is nothing new to show right now.'}
+                  : `You've seen all ${posts.length} posts we have for you right now.`}
               </p>
               <button
                 type="button"

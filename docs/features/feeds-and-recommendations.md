@@ -184,50 +184,78 @@ catalogue: Home shows 70 of the 160 eligible posts, For You 40. That bound is
 deliberate — it is what makes a reload a genuinely new selection instead of a
 re-sort of one fixed set.
 
-It used to also be where Home stopped, at about 70 posts. A first fix shipped on
-2026-09-06 and stopped in a different place: Home reached **89** posts and then
-reported "recommendations are exhausted", and a page reload after that served
-only **11**. Both had the same cause — the app was treating "posts this account
-has seen at some point recently" as a hard rule about what it may show *now*, so
-an engaged visitor gradually starved their own feed.
+It used to also be where Home stopped, at about 70 posts. Two attempts to fix
+that failed in opposite directions, and both are worth recording:
+
+- Home reached **89** posts and reported "recommendations are exhausted"; a
+  reload after that served only **11**. The app was treating "posts this account
+  saw at some point recently" as a hard rule about what it may show *now*, so an
+  engaged visitor gradually starved their own feed.
+- The next attempt let an exhausted browse start the catalogue over. It never
+  stopped: Home grew to **410 cards** of a 160-post corpus, openly repeating
+  itself.
 
 ### What happens now
 
 Home and For You both browse in a **chain**: several ranked sessions linked
-across one page load. When a session is spent the app asks for a successor, and
-the server ranks it over the posts the chain has not served yet.
+across one page load. When a session is spent the app asks for a successor,
+ranked over the posts the chain has not served yet.
 
 - Ranking, diversity, personalization and the category scope are unchanged.
   Each session in a chain is a full, independently ranked selection, and For You
   keeps its own personalized ranker.
-- Posts already served **in this browse** are excluded at retrieval, so a
-  rollover never re-serves the page just read.
+- **Every post appears at most once in a browse.** Roughly 160 unique posts on
+  the current catalogue — never the same post twice, and never a multiple of the
+  corpus.
 - Posts seen in *earlier* browsing are strongly preferred against, but never
-  allowed to empty the feed. That distinction is the fix.
+  allowed to empty the feed. That distinction is what fixes the 89/11 failures.
 - When the remaining unseen set is too small to fill a session, those posts are
   served anyway — a short batch, not a dead end.
-- When the browse has genuinely served every eligible post, it **recycles**
-  automatically and keeps going with a fresh ranking, holding back the couple of
-  dozen posts just read so the new pass cannot open on them.
-- The feed only stops when there is genuinely nothing eligible to show, or when
-  a single sitting reaches the rendering ceiling (400 cards), which the
-  end-of-feed message names as such rather than calling the catalogue exhausted.
+- When the browse has served everything eligible it **stops** and shows its end
+  state. It does not start over on its own.
 
-### A reload starts a fresh browse
+### Seeing the catalogue again is your decision
 
-Deliberately. The chain id is created by the page itself and kept nowhere else,
-so:
+Three things start a fresh browse, and only these three:
 
-- reloading gives a brand-new browse with the whole catalogue available again;
-- two tabs browse independently and never consume each other's posts;
-- switching Home category starts its own browse, so a small category is not
-  emptied by what "All" already showed;
-- "Refresh recommendations" starts a new browse as well.
+- **"Refresh recommendations"** at the end of the feed;
+- **reloading the page**;
+- **switching Home category**, which is its own browse — so a small category is
+  never emptied by what "All" already showed.
+
+Two tabs browse independently and never consume each other's posts.
 
 **For operators:** the chain's memory lives in Redis under
-`reco-chain:<feed>:<id>:{meta,seen,tail}`, expires two hours after the last
-activity, and is capped so one long scroll cannot grow it without bound. No new
+`reco-chain:<feed>:<id>:{meta,seen}`, expires two hours after the last activity,
+and is capped so one long scroll cannot grow it without bound. No new
 environment variable or configuration is needed.
+
+## Like counts and liked state stay in step (2026-09-06)
+
+The same post can be on screen in several places at once — the detail modal and
+the creator "Videos" list beside it, a search result behind them, a Home card
+underneath. Liking it in any one of them now updates all of them immediately,
+including the red heart and the total, and unliking does the same.
+
+Two things this fixes:
+
+- liking from the detail modal used to leave the same post's card in the Videos
+  tab showing the old total, visibly, side by side;
+- opening an already-liked post **from search** used to show the correct total
+  with a **white heart**, because the search summary answered without knowing
+  who was asking. Both the server (search now answers as the viewer) and the
+  modal (which confirms the viewer's own state once per open) were corrected, so
+  every way of opening a post now agrees.
+
+A realtime update from someone else liking the post is applied as an absolute
+value, so it can never double-count against your own click.
+
+## The creator Videos tab keeps its list (2026-09-06)
+
+Opening a creator's videos, closing the post, and opening that creator again
+used to leave a single video and "All videos loaded". The list is now cached per
+creator for as long as the page is open, so reopening restores the full list and
+its pagination, and each creator's list stays its own.
 
 ## Picture-in-picture next/previous (revised 2026-09-06)
 

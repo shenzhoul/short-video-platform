@@ -7,9 +7,8 @@ import { IPost } from '@interfaces/post';
  *
  * Home and For You keep their own rankers, their own candidate sources and
  * their own session sizes — none of that is here. What they share is the
- * *browsing chain* bookkeeping: which chain a request belongs to, which cycle
- * a post arrived in, and when a scroll has genuinely reached the end. That is
- * the only thing this module owns.
+ * *browsing chain* bookkeeping: which chain a request belongs to, and when a
+ * scroll has genuinely reached the end.
  */
 export interface FeedChainPage {
   data: IPost[];
@@ -18,8 +17,11 @@ export interface FeedChainPage {
   nextCursor?: string | null;
   /** The chain the server used. Echoed back on every subsequent request. */
   chainId?: string | null;
-  /** Which pass through the catalogue ranked this page. Increments on a recycle. */
-  cycle?: number;
+  /**
+   * This browse has served every eligible post. The server says so; the client
+   * never infers it.
+   */
+  chainExhausted?: boolean;
   total?: number;
 }
 
@@ -29,63 +31,75 @@ export type FeedFetchMode = 'reset' | 'append' | 'rollover';
 /**
  * Ceiling on how many cards one browse keeps mounted.
  *
- * Recycling makes the feed effectively endless, so something has to bound the
- * DOM. 400 is well above the point a visitor stops scrolling and comfortably
- * above one full pass of this catalogue, and it is a *rendering* bound — it
- * says nothing about the corpus, and the UI must not describe reaching it as
- * "you have seen everything".
+ * A pure DOM guard for a catalogue far larger than this one — a chain ends when
+ * it has served every eligible post, so on the current corpus it is unreachable.
+ * It is a *rendering* bound and says nothing about the catalogue, which is why
+ * the end-of-feed copy names the two cases differently.
  *
  * Chosen against the measurements in rules/user.md: 160 cards is 4,176 DOM
  * nodes and 0ms of long tasks with painting suppressed, and virtualising the
- * list was measured 3-8x *slower*. So the fix for a long feed is a ceiling,
+ * list was measured 3-8x *slower*. So the answer to a long feed is a ceiling,
  * not a window.
  */
 export const MAX_RENDERED_FEED_POSTS = 400;
 
 /**
- * Give a post its render key for this cycle.
- *
- * A chain that has served every eligible post recycles and starts a new cycle,
- * so the same post can legitimately appear again further down. Two React
- * children may not share a key, and `_id` alone would collide.
- */
-export function withFeedKey(post: IPost, cycle: number): IPost {
-  return { ...post, feedKey: cycle > 0 ? `${cycle}:${post._id}` : post._id };
-}
-
-/**
  * Merge an incoming page into the accumulated list.
  *
- * De-duplication is by `feedKey`, not `_id`: within one cycle a post appears
- * once, across cycles it may appear again. `reset` replaces; everything else
- * appends.
+ * **De-duplication is by real post id, across the whole chain.** A post already
+ * on screen is never appended again, whatever the server sends.
+ *
+ * The previous version keyed each entry by `<cycle>:<id>` so that a *recycled*
+ * chain could show the catalogue a second time. It worked exactly as designed
+ * and the design was wrong: with a 160-post corpus, Home grew to **410 cards**,
+ * openly repeating itself, because a recycled post looked like a new one to
+ * both this function and to React. Recycling is gone from the server, and this
+ * is the guard that makes a stray repeat impossible rather than merely unlikely.
  */
 export function mergeFeedPage(current: IPost[], incoming: IPost[], mode: FeedFetchMode): {
   posts: IPost[];
   added: number;
 } {
-  if (mode === 'reset') return { posts: incoming, added: incoming.length };
+  if (mode === 'reset') {
+    const deduped: IPost[] = [];
+    const seen = new Set<string>();
+    incoming.forEach((post) => {
+      if (seen.has(post._id)) return;
+      seen.add(post._id);
+      deduped.push(post);
+    });
+    return { posts: deduped, added: deduped.length };
+  }
 
-  const known = new Set(current.map((post) => post.feedKey || post._id));
-  const fresh = incoming.filter((post) => !known.has(post.feedKey || post._id));
+  const known = new Set(current.map((post) => post._id));
+  const fresh: IPost[] = [];
+  incoming.forEach((post) => {
+    if (known.has(post._id)) return;
+    known.add(post._id);
+    fresh.push(post);
+  });
   if (!fresh.length) return { posts: current, added: 0 };
 
   return { posts: [...current, ...fresh], added: fresh.length };
 }
 
 /**
- * Whether the scroll has genuinely finished.
+ * Whether the browse has genuinely finished.
  *
- * Read from the **server's** answer — a rollover that returned no post at all —
- * and never from "the client had nothing new to add". That distinction is what
- * broke in `deploy-2026-09-06g`: a rollover answering with posts the client
- * already held was reported as an exhausted catalogue, so Home stopped at 89 of
- * 160 with the message "This session's recommendations are exhausted".
+ * Read from the **server's** answer — `chainExhausted`, or a rollover that
+ * returned nothing — and never from "the client had nothing new to add". That
+ * distinction broke twice:
  *
- * With chain recycling in place the server only returns an empty page when
- * nothing at all is eligible for this subject, which is the one case where
- * stopping is honest.
+ * - `06g` inferred it from the client's own de-duplication, so a rollover
+ *   answering with posts already on screen ended Home at 89 of 160;
+ * - `06h` fixed that by recycling instead, which never ended at all and let the
+ *   same 160 posts render 410 times over.
+ *
+ * The server now reports exhaustion explicitly, and the browse stops there.
+ * Starting again is the viewer's decision — "Refresh recommendations" or a
+ * reload — and both mint a new chain.
  */
 export function isChainSpent(page: FeedChainPage, mode: FeedFetchMode): boolean {
+  if (page.chainExhausted) return true;
   return mode === 'rollover' && (page.data || []).length === 0;
 }

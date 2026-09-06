@@ -8,14 +8,6 @@ export interface BrowsingChainState {
   chainId: string;
   /** Every post this chain has served, across all its sessions. */
   seenPostIds: string[];
-  /**
-   * The tail of what was served most recently, kept across a recycle so the
-   * first session of a new cycle cannot open on the posts the viewer just
-   * finished reading.
-   */
-  recentTailPostIds: string[];
-  /** How many times this chain has been recycled. 0 is the first pass. */
-  cycle: number;
 }
 
 /**
@@ -38,6 +30,16 @@ export interface BrowsingChainState {
  * The client mints it (`crypto.randomUUID()`, once per page load per surface)
  * and sends it. A reload mints a new one, so a reload is a fresh browse. Two
  * tabs mint different ones, so they do not consume each other's catalogue.
+ *
+ * ## A chain ends; it does not loop
+ *
+ * Once a chain has served every eligible post it is **finished**. It does not
+ * recycle and start handing the same catalogue out again: the first attempt at
+ * that shipped in `deploy-2026-09-06h`, and because a recycled post was given a
+ * per-cycle render key the client treated it as new and appended it — Home grew
+ * to **410 cards** on a 160-post corpus, visibly repeating itself. Starting
+ * over is the viewer's decision ("Refresh recommendations", or a reload), and
+ * both of those mint a new chain id.
  *
  * ## Ranking is not in here
  *
@@ -76,8 +78,7 @@ export class RecommendationChainService {
   private keys(feedType: RecommendationFeedType, chainId: string) {
     return {
       meta: REDIS_KEYS.recoChainMeta(feedType, chainId),
-      seen: REDIS_KEYS.recoChainSeen(feedType, chainId),
-      tail: REDIS_KEYS.recoChainTail(feedType, chainId)
+      seen: REDIS_KEYS.recoChainSeen(feedType, chainId)
     };
   }
 
@@ -111,34 +112,25 @@ export class RecommendationChainService {
       if (!meta || !meta.subjectId) {
         await this.redisClient
           .multi()
-          .hset(keys.meta, { subjectId, cycle: '0', createdAt: new Date().toISOString() })
+          .hset(keys.meta, { subjectId, createdAt: new Date().toISOString() })
           .expire(keys.meta, CHAIN_POLICY.ttlSeconds)
           .exec();
       }
 
       /*
-       * The seen set and the tail are read whether or not the metadata was
-       * already there.
+       * The seen set is read whether or not the metadata was already there.
        *
        * Returning early on a missing hash would treat "this chain has no
-       * metadata yet" as "this chain has served nothing" — and the three keys
+       * metadata yet" as "this chain has served nothing" — and the two keys
        * have independent lifetimes, so losing the small one would silently
        * discard the browse's whole memory and replay the catalogue.
        */
-      const [seenPostIds, recentTailPostIds] = await Promise.all([
-        this.redisClient.smembers(keys.seen),
-        this.redisClient.lrange(keys.tail, 0, CHAIN_POLICY.recentTailSize - 1)
-      ]);
+      const seenPostIds = await this.redisClient.smembers(keys.seen);
 
       // Keep an active chain alive; an abandoned one still expires.
       await this.touch(feedType, id);
 
-      return {
-        chainId: id,
-        seenPostIds,
-        recentTailPostIds,
-        cycle: Number.parseInt(meta?.cycle, 10) || 0
-      };
+      return { chainId: id, seenPostIds };
     } catch (e: any) {
       this.logger.warn(`Chain read failed, continuing unchained: ${e.message}`);
       return null;
@@ -164,41 +156,10 @@ export class RecommendationChainService {
         .multi()
         .sadd(keys.seen, ...postIds)
         .expire(keys.seen, CHAIN_POLICY.ttlSeconds)
-        // LPUSH pushes each argument in turn, so the LAST id given ends up at
-        // index 0 — the tail reads most-recent-first, and the anti-repeat
-        // window after a recycle is the end of the previous cycle rather than
-        // its beginning.
-        .lpush(keys.tail, ...postIds)
-        .ltrim(keys.tail, 0, CHAIN_POLICY.recentTailSize - 1)
-        .expire(keys.tail, CHAIN_POLICY.ttlSeconds)
         .expire(keys.meta, CHAIN_POLICY.ttlSeconds)
         .exec();
     } catch (e: any) {
       this.logger.warn(`Chain write failed; this session will not be excluded later: ${e.message}`);
-    }
-  }
-
-  /**
-   * Start a new cycle: forget what has been served, keep the recent tail.
-   *
-   * Called when the chain has genuinely served every eligible post. The tail
-   * survives on purpose — recycling must not hand the viewer the same posts
-   * they were reading a moment ago.
-   */
-  public async recycle(feedType: RecommendationFeedType, chainId: string): Promise<number> {
-    const keys = this.keys(feedType, chainId);
-    try {
-      const cycle = await this.redisClient.hincrby(keys.meta, 'cycle', 1);
-      await this.redisClient
-        .multi()
-        .del(keys.seen)
-        .expire(keys.meta, CHAIN_POLICY.ttlSeconds)
-        .expire(keys.tail, CHAIN_POLICY.ttlSeconds)
-        .exec();
-      return cycle;
-    } catch (e: any) {
-      this.logger.warn(`Chain recycle failed: ${e.message}`);
-      return 0;
     }
   }
 
@@ -209,7 +170,6 @@ export class RecommendationChainService {
       .multi()
       .expire(keys.meta, CHAIN_POLICY.ttlSeconds)
       .expire(keys.seen, CHAIN_POLICY.ttlSeconds)
-      .expire(keys.tail, CHAIN_POLICY.ttlSeconds)
       .exec();
   }
 }

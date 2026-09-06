@@ -13,6 +13,7 @@ import { PostNavigationDirection } from '@hooks/use-post-navigation-wheel';
 import { usePostRoom } from '@hooks/use-post-room';
 import { usePostStatsSync } from '@hooks/use-post-stats-sync';
 import { usePostViewTracking } from '@hooks/use-post-view-tracking';
+import { usePostViewerStateHydration } from '@hooks/use-post-viewer-state';
 import { useRecommendationDetailTracking } from '@hooks/use-recommendation-detail-tracking';
 import { useRecommendationPhotoDwell } from '@hooks/use-recommendation-photo-dwell';
 import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-tracking';
@@ -189,6 +190,15 @@ function GraphicPostDetail({
   usePostRoom(post._id);
   // Shared counters reconcile to the server; `isLiked` stays this viewer's own.
   usePostStatsSync(post._id, interaction.applyStatsSnapshot);
+  /*
+   * The viewer's own state, asked for once per open.
+   *
+   * A listing that answers without the viewer returns `isLiked: false` beside a
+   * correct `totalLike` — Summary search did exactly that, so an already-liked
+   * post opened with a white heart. Correcting it here means every source
+   * agrees no matter which one opened the modal.
+   */
+  usePostViewerStateHydration(post._id);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const images = useMemo(() => getPostImages(post), [post]);
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
@@ -479,6 +489,15 @@ function VideoPostDetail({
   usePostRoom(post._id);
   // Shared counters reconcile to the server; `isLiked` stays this viewer's own.
   usePostStatsSync(post._id, interaction.applyStatsSnapshot);
+  /*
+   * The viewer's own state, asked for once per open.
+   *
+   * A listing that answers without the viewer returns `isLiked: false` beside a
+   * correct `totalLike` — Summary search did exactly that, so an already-liked
+   * post opened with a white heart. Correcting it here means every source
+   * agrees no matter which one opened the modal.
+   */
+  usePostViewerStateHydration(post._id);
   const description = post.text || post.tagline;
   const {
     creatorPosts: creatorVideos,

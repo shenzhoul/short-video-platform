@@ -317,33 +317,80 @@ The first page is server-rendered, so the SSR wrapper mints the id, sends it,
 and the hook adopts it (`adoptBrowsingChainId`) **during render** — a scroll can
 trigger `loadMore` before that commit's effects run.
 
+### Every post appears at most once per browse
+
+`mergeFeedPage` de-duplicates by **real post id** across the whole accumulated
+list. Not by a per-cycle key, not by anything derived: `deploy-2026-09-06h`
+keyed entries `<cycle>:<id>` so a recycled chain could show the catalogue again,
+and Home grew to **410 cards** of a 160-post corpus, openly repeating itself.
+Chains no longer recycle; this de-duplication is what makes a stray repeat
+impossible rather than merely unlikely.
+
 ### Rules that follow
 
 - **`!hasMore` means "this session is done", not "the feed is done".** Roll
   over: send the spent `sessionId` with `rollover: 'true'`, the same `chainId`,
   and no cursor.
-- **The stop condition is the server's answer, not the client's bookkeeping.**
-  `isChainSpent` is "the rollover returned nothing at all". The previous version
-  latched on "the client added nothing new", so a rollover re-offering visible
-  posts ended Home at 89 of 160 with "recommendations are exhausted". It also
-  read a value assigned inside a `setState` updater on the very next line, which
-  React only computes eagerly when the fiber has no pending update.
-- **De-duplicate by `feedKey`, never by `_id`.** An exhausted chain recycles, so
-  a later cycle may legitimately re-offer a post; `withFeedKey` namespaces it
-  (`<cycle>:<id>`) and `home-feed.tsx` keys on it. De-duplicating by `_id` would
-  silently discard a whole recycled cycle.
+- **The stop condition is the server's word.** `isChainSpent` is
+  `chainExhausted`, or a rollover that returned nothing at all. It is never
+  inferred from the client's own de-duplication — that inference ended Home at
+  89 of 160 — and never papered over by recycling, which ended it nowhere.
 - **Never raise the session limit toward the pool size to "fix" a short feed.**
   That deletes the ranking rather than continuing the scroll.
-- **Attribution follows the post's render key.** `sessionForPost(feedKey)` — a
-  chain crosses several sessions while earlier cards are on screen, and the same
-  post in a later cycle was served by a different session.
-- **Bound the DOM, and say so honestly.** `MAX_RENDERED_FEED_POSTS` stops an
-  endless feed growing forever; the end-of-feed message distinguishes it from a
-  genuinely spent catalogue.
+- **Bound the DOM, and say so honestly.** `MAX_RENDERED_FEED_POSTS` is a guard
+  for a catalogue far larger than this one; the end-of-feed copy distinguishes
+  it from a genuinely finished browse.
 - Cover: `use-home-feed-infinite-scroll.spec.tsx`, `browsing-chain.spec.ts`,
   `use-feed-chain-page.spec.ts`. See
   `.agents/skills/recommendation-engine/SKILL.md` for the server half.
 
+## One Post, Many Copies — Patch Them All By Id
+
+The app keeps **many independent copies of the same post**. Twelve hooks own an
+`IPost[]` of their own (Home, For You, Following, search, liked posts, creator
+grid, creator videos, the detail sequence, …) and `usePostInteractionState`
+keeps a thirteenth for whichever post is open. There is one `IPost` shape and
+one `PostDto` behind it, so the copies are compatible — what was missing was any
+way to update more than one.
+
+An update travelled exactly one edge: `usePostInteractionState` called the
+`onInteractionChange` prop it had been handed, which patched the single list
+that supplied it. Measured in production: liking a post in the detail modal's
+action rail updated the modal and left the *same post's* card in the creator
+"Videos" tab showing the old total, side by side on screen.
+
+- **Publish, do not thread.** `@lib/post-interaction-bus` fans a change out to
+  every mounted copy by post id. It is a fan-out, not a store: no post lives in
+  it, nothing is cached, each list keeps owning its own array.
+- **Every owner of an `IPost[]` subscribes.** `usePostInteractionUpdater` does
+  it for you; a hook with its own `setPosts` (`useCreatorVideos`) subscribes
+  explicitly. A list that does not subscribe is a stale copy waiting to be seen.
+- **Patches are absolute, never deltas.** `totalLike: 42`, not `+1`. That is
+  what makes receiving your own publish, or the same change from an optimistic
+  update *and* the websocket snapshot, idempotent rather than a double count.
+- **`isLiked` never comes from a shared snapshot.** B liking a post says nothing
+  about whether C does. It comes from this viewer's own action, or their own
+  fetch (`usePostViewerStateHydration`) — which is how a listing that answered
+  without the viewer gets corrected. Never derive it from `totalLike`.
+
+## A Cache And Its "Already Loaded" Mark Are One Piece Of State
+
+`useCreatorVideos` kept the creator's posts in `useState` and the "already
+loaded" mark in a `useRef`, and cleared **only the posts** when the modal
+closed. Reopening the same creator then took the "keep the loaded pages" branch
+over an array that had just been emptied: the grid showed exactly **one** video,
+and `hasMore`/`nextCursor` still held the end-of-list values from the first
+load, so it also announced "All videos loaded".
+
+- **Key the cache by what it describes.** It is a `Map<creatorId, entry>`, never
+  keyed by the open post or the modal.
+- **Closing hides; it does not destroy.** Reopening restores the entry, so
+  pagination stays valid across a close.
+- **Store the pages, the cursor, `hasMore` and `loaded` in one object**, so they
+  cannot be cleared apart from one another.
+- Cover: `post-state-sync.spec.tsx`.
+
+## Feed Rendering And Scroll Performance
 ## Feed Rendering And Scroll Performance
 ## Feed Rendering And Scroll Performance
 

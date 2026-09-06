@@ -18,14 +18,8 @@ export interface FeedSessionPage {
   hasMore: boolean;
   nextCursor: string | null;
   total: number;
-  /**
-   * The browsing chain this session belongs to, and which pass through the
-   * catalogue it was ranked in. Echoed on every page so the client can key its
-   * rendered list per cycle — the same post may legitimately be shown again in
-   * a later cycle, and two React children may not share a key.
-   */
+  /** The browsing chain this session belongs to, echoed on every page. */
   chainId: string | null;
-  cycle: number;
 }
 
 /**
@@ -57,9 +51,9 @@ export class RecommendationSessionService {
    * guessable, so one subject can never read another's session by swapping
    * the id even if they somehow learned it).
    *
-   * `chainId` and `cycle` are recorded but not interpreted here: this service
-   * owns one ranked batch; `RecommendationChainService` owns the browse that
-   * strings several of them together.
+   * `chainId` is recorded but not interpreted here: this service owns one
+   * ranked batch; `RecommendationChainService` owns the browse that strings
+   * several of them together.
    */
   public async create(params: {
     subjectId: string;
@@ -68,7 +62,6 @@ export class RecommendationSessionService {
     sessionSeed: string;
     ranked: ScoredCandidate[];
     chainId?: string | null;
-    cycle?: number;
   }): Promise<{ sessionId: string; postIds: string[] }> {
     const sessionId = randomUUID();
     const items = params.ranked.slice(0, FEED_SESSION_POLICY.maxItems);
@@ -90,7 +83,6 @@ export class RecommendationSessionService {
       topicKey: params.topicKey || '',
       sessionSeed: params.sessionSeed,
       chainId: params.chainId || '',
-      cycle: String(params.cycle ?? 0),
       createdAt: new Date().toISOString()
     });
     pipeline.expire(itemsKey, FEED_SESSION_POLICY.ttlSeconds);
@@ -140,8 +132,7 @@ export class RecommendationSessionService {
       hasMore,
       nextCursor: hasMore ? String(offset + limit) : null,
       total,
-      chainId: meta.chainId || null,
-      cycle: Number.parseInt(meta.cycle, 10) || 0
+      chainId: meta.chainId || null
     };
   }
 

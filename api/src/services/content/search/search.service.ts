@@ -276,10 +276,22 @@ export class SearchService {
     };
   }
 
-  /** Combined payload backing the Summary tab. */
+  /**
+   * Combined payload backing the Summary tab.
+   *
+   * `user` is threaded into the post search on purpose. Without it
+   * `populatePostData` runs with no viewer and never calls `setIsLiked`, so
+   * every post comes back with `isLiked: false` while `totalLike` — an
+   * aggregate on the document — stays correct. Measured in production: opening
+   * an already-liked post from Summary search showed the right total with a
+   * white heart, and the same post opened from the creator grid showed it red.
+   *
+   * The `type=post` branch below always passed it, which is why only the
+   * Summary tab was wrong.
+   */
   async searchAll(request: SearchRequestPayload, user?: AuthUserDto) {
     const [posts, users, tags] = await Promise.all([
-      this.searchPosts({ ...request, limit: SUMMARY_LIMITS.post, offset: 0 }),
+      this.searchPosts({ ...request, limit: SUMMARY_LIMITS.post, offset: 0 }, user),
       this.searchUsers({ ...request, limit: SUMMARY_LIMITS.user, offset: 0 }),
       this.searchTags({ ...request, limit: SUMMARY_LIMITS.tag, offset: 0 })
     ]);

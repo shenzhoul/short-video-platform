@@ -300,7 +300,7 @@ export class ContentService {
       // rendered list per cycle — the same post may legitimately reappear in a
       // later cycle and two React children may not share a key.
       chainId: result.chainId,
-      cycle: result.cycle,
+      chainExhausted: result.chainExhausted,
       paginationInfo: { cursorPaginationAvailable: true, strategy: `${feedType}-recommendation-v1` },
       ...(includeDebug ? { debug: result.debug } : {})
     };

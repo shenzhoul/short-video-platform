@@ -11,8 +11,7 @@ import {
   FeedFetchMode,
   isChainSpent,
   MAX_RENDERED_FEED_POSTS,
-  mergeFeedPage,
-  withFeedKey
+  mergeFeedPage
 } from './use-feed-chain-page';
 import { usePostInteractionUpdater } from './use-post-interactions';
 
@@ -31,13 +30,12 @@ export type RecommendedVideoPage = FeedChainPage;
  * bookkeeping rather than recommendation.
  *
  * The chain id is minted per page load (`@lib/browsing-chain`): a reload starts
- * a fresh browse, two tabs never consume each other's catalogue, and an
- * exhausted chain recycles server-side instead of dead-ending.
+ * a fresh browse and two tabs never consume each other's catalogue. Every post
+ * appears at most once per browse — `mergeFeedPage` de-duplicates by real post
+ * id — and the browse ends when the server says the chain is exhausted.
  */
 export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) {
-  const [posts, setPosts] = useState<IPost[]>(
-    () => (initialData?.data || []).map((post) => withFeedKey(post, initialData?.cycle || 0))
-  );
+  const [posts, setPosts] = useState<IPost[]>(() => initialData?.data || []);
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [sessionId, setSessionId] = useState<string | null>(initialData?.sessionId || null);
   const [nextCursor, setNextCursor] = useState<string | null>(initialData?.nextCursor || null);
@@ -58,11 +56,11 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
    * Attributing their impressions to whichever session happens to be newest
    * would file the evidence under a ranking that never chose them.
    */
-  const [sessionByFeedKey, setSessionByFeedKey] = useState<Record<string, string>>(
+  const [sessionByPostId, setSessionByPostId] = useState<Record<string, string>>(
     () => Object.fromEntries(
       (initialData?.data || [])
         .filter(() => Boolean(initialData?.sessionId))
-        .map((post) => [withFeedKey(post, initialData?.cycle || 0).feedKey as string, initialData!.sessionId as string])
+        .map((post) => [post._id, initialData!.sessionId as string])
     )
   );
   const updatePostInteraction = usePostInteractionUpdater(setPosts);
@@ -101,17 +99,15 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
         ...(mode === 'rollover' ? { rollover: 'true' } : {})
       });
       const page = response.data as RecommendedVideoPage;
-      const cycle = page.cycle || 0;
-      const incoming = (page.data || []).map((post) => withFeedKey(post, cycle));
+      const incoming = page.data || [];
 
       setPosts((current) => mergeFeedPage(current, incoming, mode).posts);
 
       if (page.sessionId) {
-        setSessionByFeedKey((current) => {
+        setSessionByPostId((current) => {
           const next = mode === 'reset' ? {} : { ...current };
           incoming.forEach((post) => {
-            const key = post.feedKey as string;
-            if (!next[key]) next[key] = page.sessionId as string;
+            if (!next[post._id]) next[post._id] = page.sessionId as string;
           });
           return next;
         });
@@ -145,8 +141,8 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
      * A ranked session is a bounded segment, not the whole catalogue, so
      * reaching its end is normal rather than the end of the feed. The rollover
      * continues the same chain, so the successor is ranked over what this
-     * browse has *not* served — and the server recycles the chain rather than
-     * dead-ending once it has served everything eligible.
+     * browse has *not* served; the browse ends when the server reports the
+     * chain exhausted.
      */
     if (!hasMore || !nextCursor) {
       if (catalogueSpent) return;
@@ -158,14 +154,14 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
 
   const refresh = useCallback(async () => {
     resetBrowsingChain('for-you');
-    setSessionByFeedKey({});
+    setSessionByPostId({});
     await fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [fetchPage]);
 
-  /** The session that ranked this post in this cycle — not merely the newest one open. */
+  /** The session that ranked this post — not merely the newest one open. */
   const sessionForPost = useCallback(
-    (feedKey?: string | null) => (feedKey ? sessionByFeedKey[feedKey] || null : null),
-    [sessionByFeedKey]
+    (postId?: string | null) => (postId ? sessionByPostId[postId] || null : null),
+    [sessionByPostId]
   );
 
   return {

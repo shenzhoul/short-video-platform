@@ -286,13 +286,24 @@ Home stopped at **89** of 160, and a reload then stopped at **11** — because
 
 `createSession` now stages it:
 
-1. `chain ∪ recentlySeen ∪ tail`, while it can fill a session;
-2. `chain ∪ tail` (chained callers only), which also returns a short final
-   batch rather than declaring the feed finished;
-3. **recycle** when the chain has served everything eligible — reset the
-   seen-set, `cycle += 1`, hold back `CHAIN_POLICY.recentTailSize`.
+1. `chain ∪ recentlySeen`, while it can fill a session;
+2. `chain` only (chained callers), which also returns a short final batch rather
+   than declaring the feed finished;
+3. `chainExhausted: true` when the chain has served everything eligible.
 
 `RELAXED_SUPPRESSION_MIN_POOL` remains, for unchained callers only.
+
+### A chain ends; it does not recycle
+
+`deploy-2026-09-06h` fixed the above by recycling an exhausted chain — reset the
+seen-set, bump a cycle, serve the catalogue again. The client keyed each repeat
+per cycle so React accepted it, and appended it as new: **Home reached 410 cards
+on a 160-post corpus** and never stopped.
+
+So an exhausted chain reports itself and stops, leaving its seen-set intact.
+Starting over is the viewer's decision — "Refresh recommendations" or a reload —
+and both mint a new chain id. There is no `cycle`, no recycle and no recent-tail
+window any more; do not reintroduce them.
 
 ### Invariants
 
@@ -304,11 +315,13 @@ Home stopped at **89** of 160, and a reload then stopped at **11** — because
 - **`resolve` checks the subject**, so a guessed chain id reveals nothing.
 - **Bound the set** (`CHAIN_POLICY.maxSeenIds`) and TTL every chain key
   (`CHAIN_POLICY.ttlSeconds`), refreshed on read and write.
-- **Return `cycle`** on every page, including pages read from an existing
-  session — the client needs it for React keys across a recycle.
-- Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`
-  (28 tests, driven against a 160-post corpus, asserting distinct served ids).
+- **Report `chainExhausted`**; never infer the end of a feed on the client, and
+  never invent more feed than exists.
+- Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`,
+  driven against a 160-post corpus. The assertion that matters is **total served
+  == distinct served**: a chain that repeats itself still reaches 160.
 
+## Picture-in-picture navigates a detail session, never the DOM
 ## Picture-in-picture navigates a detail session, never the DOM
 ## Picture-in-picture navigates a detail session, never the DOM
 
@@ -379,22 +392,22 @@ Cover: `user/src/components/ui/popup-pip-navigation.spec.tsx`,
 2. A Home category tab change must start a brand-new session scoped to that category — it is not a
    client-side filter over the existing session's posts.
 3. `refresh()` on either hook is what "Refresh recommendations" calls, and it
-   mints a **new chain** — a new mix of the whole catalogue, not the remainder
-   of the browse being abandoned. `FEED_SESSION_POLICY.maxItems` remains the
-   benchmarked-safe *rendering* ceiling (rules/user.md; do not reopen
-   virtualization to raise it) and is not what a session holds:
-   `SESSION_OUTPUT_POLICY` decides that, deliberately well below it.
+   mints a **new chain** — a new browse of the whole catalogue, which is the
+   only thing that makes already-served posts available again.
+   `FEED_SESSION_POLICY.maxItems` remains the benchmarked-safe *rendering*
+   ceiling (rules/user.md; do not reopen virtualization to raise it) and is not
+   what a session holds: `SESSION_OUTPUT_POLICY` decides that.
    **Both** hooks treat a session as a segment: when it is spent they roll over
-   with the same `chainId`, append, de-duplicate by `feedKey`, and latch
-   `catalogueSpent` only when the server answers a rollover with **nothing at
-   all**. `hasMore` is reported as `(hasMore || !catalogueSpent) && under the
-   render ceiling`. Do not gate For You's prefetch on `hasMore` — that stops the
-   feed dead at the end of the first segment.
-3b. **Attribution follows the post's render key.** Both hooks keep a
-   `sessionByFeedKey` map and expose `sessionForPost(feedKey)`. A chain crosses
-   several sessions while earlier cards are still on screen, and a recycled
-   cycle re-serves a post under a different session; keying on `_id` would file
-   that evidence against a ranking that never chose it.
+   with the same `chainId`, append, de-duplicate by **real post id**, and stop
+   when the server reports `chainExhausted`. `hasMore` is
+   `(hasMore || !catalogueSpent) && under the render ceiling`. Do not gate For
+   You's prefetch on `hasMore` — that stops the feed dead at the end of the
+   first segment.
+3b. **Attribution follows the post id.** Both hooks keep a `sessionByPostId` map
+   and expose `sessionForPost(postId)`. A chain crosses several sessions while
+   earlier cards are still on screen; reporting their impressions under
+   whichever session is newest files that evidence against a ranking that never
+   chose them.
 4. **Which media the For You stage draws is decided by the post, not by the surface.** `PostVideoStage`
    mounts the player only when `getPostVideo(post)` is non-empty and draws `PostGraphicStageMedia`
    otherwise. Rendering a `<video>` for a photo post was a real defect — React refuses `src=""`, so the

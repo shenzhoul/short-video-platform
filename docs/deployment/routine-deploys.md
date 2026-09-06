@@ -93,9 +93,11 @@ The rule that follows:
 (added 2026-09-06). Their policy — TTL, size ceiling, recent-tail length — is
 compile-time (`CHAIN_POLICY` in `api/src/common/constants/recommendation.ts`), so
 changing it is an `api` rebuild, not an env edit. They add three short-lived
-Redis keys per browse under `douyin-clone:reco-chain:*`, each expiring two hours
-after the last activity; nothing needs to be created, migrated or cleaned up,
-and rolling back to an earlier image simply leaves them to expire.
+Redis keys per browse under `douyin-clone:reco-chain:*` — since 2026-09-06 it is
+two keys, `:meta` and `:seen` — each expiring two hours after the last activity.
+Nothing needs to be created, migrated or cleaned up, and rolling back to an
+earlier image simply leaves them to expire. A `:tail` key from the short-lived
+recycling design expires on its own; do not go hunting for it.
 
 ### Build-time values are baked into the Next images
 

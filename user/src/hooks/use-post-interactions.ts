@@ -1,6 +1,7 @@
 'use client';
 
 import { IPost, PostInteractionPatch } from '@interfaces/post';
+import { publishPostInteraction, subscribePostInteraction } from '@lib/post-interaction-bus';
 import { applyPostInteractionPatchToPosts } from '@lib/post-interactions';
 import { Dispatch, SetStateAction, useCallback, useEffect, useState } from 'react';
 
@@ -59,8 +60,31 @@ export function usePostInteractionState(
         ? current
         : nextState;
     });
+    // The list this post came from, kept in step synchronously...
     onInteractionChange?.(postId, patch);
+    // ...and every *other* mounted copy of the same post. Without this the
+    // creator "Videos" card for the post being liked in the modal kept the old
+    // total, visibly, side by side with the one that had changed.
+    publishPostInteraction(postId, patch);
   }, [onInteractionChange, postId]);
+
+  /*
+   * Changes made somewhere else reach the open post too — a like from a grid
+   * card behind the modal, or a snapshot applied by another mounted list.
+   * Absolute values, so receiving our own publish back is a no-op.
+   */
+  useEffect(() => subscribePostInteraction((changedPostId, patch) => {
+    if (changedPostId !== postId) return;
+    setState((current) => {
+      const nextState = { ...current, ...patch };
+      return current.isLiked === nextState.isLiked
+        && current.totalLike === nextState.totalLike
+        && current.totalComment === nextState.totalComment
+        && current.totalShare === nextState.totalShare
+        ? current
+        : nextState;
+    });
+  }), [postId]);
 
   /**
    * Replace the shared counters with an authoritative server snapshot.
@@ -119,7 +143,23 @@ export function usePostInteractionState(
   };
 }
 
+/**
+ * Keep a list of posts in step with interaction changes made anywhere in the
+ * app — including in a different list, or in the detail modal.
+ *
+ * Every owner of an `IPost[]` should call this, whether or not it also hands
+ * an `onInteractionChange` down: the subscription is what makes the *other*
+ * copies of a post agree with the one that changed.
+ */
+export function usePostInteractionSubscription(setPosts: Dispatch<SetStateAction<IPost[]>>) {
+  useEffect(() => subscribePostInteraction((postId, patch) => {
+    setPosts((current) => applyPostInteractionPatchToPosts(current, postId, patch));
+  }), [setPosts]);
+}
+
 export function usePostInteractionUpdater(setPosts: Dispatch<SetStateAction<IPost[]>>) {
+  usePostInteractionSubscription(setPosts);
+
   return useCallback<PostInteractionChangeHandler>((postId, patch) => {
     setPosts((current) => applyPostInteractionPatchToPosts(current, postId, patch));
   }, [setPosts]);

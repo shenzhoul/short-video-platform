@@ -28,6 +28,14 @@ import { createFakeRedis } from './test-fake-redis';
  *
  * Every assertion below counts **distinct post ids actually served**, because
  * that is the only number that would have caught either failure.
+ *
+ * ## And the failure the first fix introduced
+ *
+ * `deploy-2026-09-06h` made an exhausted chain *recycle* and hand the catalogue
+ * out again under a new cycle number. It never ended: Home reached **410 cards**
+ * of a 160-post corpus, openly repeating itself. A chain now **ends** — it says
+ * `chainExhausted` and stops. Starting over is the viewer's decision, and both
+ * ways of taking it ("Refresh recommendations", a reload) mint a new chain id.
  */
 
 const CORPUS_SIZE = 160;
@@ -159,7 +167,6 @@ async function browse(
   const limit = options.limit ?? 20;
   const served: string[] = [];
   const sessionIds: string[] = [];
-  const cycles: number[] = [];
   let sessionId: string | undefined;
   let cursor: string | null = null;
   let hasMore = true;
@@ -181,16 +188,17 @@ async function browse(
 
     served.push(...result.data.map((post: any) => post._id.toString()));
     if (!sessionIds.includes(result.sessionId)) sessionIds.push(result.sessionId);
-    cycles.push(result.cycle);
 
-    if (rollover && result.data.length === 0) spent = true;
+    // Exactly what the client does: stop on the server's word, never on its own
+    // de-duplication.
+    if (result.chainExhausted || (rollover && result.data.length === 0)) spent = true;
     sessionId = result.sessionId;
     hasMore = result.hasMore;
     cursor = result.nextCursor;
   }
 
   return {
-    served, distinct: new Set(served), sessionIds, cycles, requests, spent
+    served, distinct: new Set(served), sessionIds, requests, spent
   };
 }
 
@@ -206,7 +214,7 @@ describe('Home browsing chain', () => {
 
     expect(first.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
     expect(first.data.length).toBeLessThan(CORPUS_SIZE);
-    expect(first.cycle).toBe(0);
+    expect(first.chainExhausted).toBe(false);
     expect(first.chainId).toBe('chain-first-session');
   });
 
@@ -223,12 +231,36 @@ describe('Home browsing chain', () => {
     expect(walk.sessionIds.length).toBeGreaterThan(1);
   });
 
-  it('serves no post twice inside one cycle', async () => {
+  /*
+   * The 410-card defect, measured the only way that catches it: total served
+   * against distinct served. A chain that recycles passes every "reaches 160"
+   * assertion and still repeats itself indefinitely.
+   */
+  it('serves every post exactly once and never more than the corpus', async () => {
     const { svc } = harness();
     const walk = await browse(svc, { feedType: HOME, subject, chainId: 'chain-no-repeat' });
 
-    const firstCycle = walk.served.slice(0, CORPUS_SIZE);
-    expect(new Set(firstCycle).size).toBe(firstCycle.length);
+    expect(walk.served.length).toBe(walk.distinct.size);
+    expect(walk.served.length).toBe(CORPUS_SIZE);
+    expect(walk.served.length).toBeLessThan(CORPUS_SIZE * 2);
+    expect(walk.spent).toBe(true);
+  });
+
+  it('reports the chain exhausted rather than recycling it', async () => {
+    const { svc, chainService, corpusIds } = harness();
+    const chainId = 'chain-reports-exhaustion';
+    await chainService.recordServed(HOME, chainId, corpusIds);
+
+    const result = await svc.getFeed({
+      feedType: HOME, subject, chainId, limit: 70
+    });
+
+    expect(result.chainExhausted).toBe(true);
+    expect(result.data.length).toBe(0);
+    // The seen set is left intact: nothing was reset, so nothing can be
+    // silently handed out a second time.
+    const stillSeen = await chainService.resolve(chainId, 'guest-home-chain', HOME);
+    expect(stillSeen?.seenPostIds.length).toBe(CORPUS_SIZE);
   });
 
   /** Acceptance 5 — nothing reports exhaustion while unseen posts remain. */
@@ -276,40 +308,26 @@ describe('Home browsing chain', () => {
 
     expect(result.data.length).toBe(9);
     expect(result.data.length).toBeLessThan(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
-    expect(result.cycle).toBe(0); // a short batch is not a recycle
+    // A short batch is the remaining unseen posts, not an exhausted chain.
+    expect(result.chainExhausted).toBe(false);
   });
 
-  /** Acceptance 7 and 8. */
-  it('recycles once every eligible post has been served, holding back the recent tail', async () => {
+  it('an explicit new chain may serve posts the spent chain already showed', async () => {
+    // "Refresh recommendations" and a reload both mint a new chain id. That is
+    // the only way to see the catalogue again, and it is the viewer's decision.
     const { svc, chainService, corpusIds } = harness();
-    const chainId = 'chain-recycle';
-    const lastServed = corpusIds.slice(CORPUS_SIZE - CHAIN_POLICY.recentTailSize);
+    await chainService.recordServed(HOME, 'chain-spent', corpusIds);
 
-    await chainService.recordServed(HOME, chainId, corpusIds.slice(0, CORPUS_SIZE - CHAIN_POLICY.recentTailSize));
-    await chainService.recordServed(HOME, chainId, lastServed);
+    const spent = await svc.getFeed({
+      feedType: HOME, subject, chainId: 'chain-spent', limit: 70
+    });
+    expect(spent.chainExhausted).toBe(true);
 
-    const recycled = await svc.getFeed({ feedType: HOME, subject, chainId, limit: 70 });
-
-    expect(recycled.cycle).toBe(1);
-    expect(recycled.data.length).toBeGreaterThan(0);
-
-    const returnedIds = recycled.data.map((post: any) => post._id.toString());
-    // The posts the viewer was reading a moment ago are held back.
-    expect(returnedIds.filter((id: string) => lastServed.includes(id))).toEqual([]);
-  });
-
-  it('a recycled chain forgets what it served, so the new cycle can use the corpus again', async () => {
-    const { svc, chainService, fake, corpusIds } = harness();
-    const chainId = 'chain-recycle-state';
-    await chainService.recordServed(HOME, chainId, corpusIds);
-    expect(await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, chainId))).toBe(CORPUS_SIZE);
-
-    await svc.getFeed({ feedType: HOME, subject, chainId, limit: 70 });
-
-    // Acceptance 21 — the reset is a real DEL, then the new session's own ids.
-    const seen = await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, chainId));
-    expect(seen).toBeGreaterThan(0);
-    expect(seen).toBeLessThan(CORPUS_SIZE);
+    const refreshed = await svc.getFeed({
+      feedType: HOME, subject, chainId: 'chain-after-refresh', limit: 70
+    });
+    expect(refreshed.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(refreshed.chainExhausted).toBe(false);
   });
 
   /** Acceptance 9 — the reload defect. */
@@ -326,6 +344,7 @@ describe('Home browsing chain', () => {
 
     expect(reloaded.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
     expect(reloaded.data.length).not.toBe(11);
+    expect(reloaded.chainExhausted).toBe(false);
   });
 
   it('still prefers unseen posts when the cross-session memory leaves enough of them', async () => {
@@ -358,7 +377,10 @@ describe('Home browsing chain', () => {
       feedType: HOME, subject, chainId: 'chain-after-page-reload', limit: 20
     });
     expect(afterReload.chainId).toBe('chain-after-page-reload');
-    expect(afterReload.cycle).toBe(0);
+    // A full page, drawn from the whole catalogue: the new chain inherits
+    // nothing from the one it replaced.
+    expect(afterReload.data.length).toBe(20);
+    expect(afterReload.chainExhausted).toBe(false);
   });
 
   it('works unchained, for a client that sends no chain id at all', async () => {
@@ -367,7 +389,7 @@ describe('Home browsing chain', () => {
 
     expect(result.data.length).toBeGreaterThan(0);
     expect(result.chainId).toBeNull();
-    expect(result.cycle).toBe(0);
+    expect(result.chainExhausted).toBe(false);
   });
 });
 
@@ -402,6 +424,8 @@ describe('For You browsing chain', () => {
 
     expect(walk.sessionIds.length).toBeGreaterThan(3);
     expect(walk.distinct.size).toBe(CORPUS_SIZE);
+    // Same guarantee as Home: one browse, one appearance per post.
+    expect(walk.served.length).toBe(walk.distinct.size);
   });
 
   it('keeps its own session size — a chain does not turn For You into the catalogue', async () => {
@@ -423,7 +447,7 @@ describe('For You browsing chain', () => {
       feedType: FOR_YOU, subject, chainId: 'chain-fy-reloaded', limit: 40
     });
     expect(afterReload.data.length).toBe(SESSION_OUTPUT_POLICY.forYouInitialSessionLimit);
-    expect(afterReload.cycle).toBe(0);
+    expect(afterReload.chainExhausted).toBe(false);
   });
 
   it('Home and For You chains never share a seen set', async () => {
@@ -506,7 +530,6 @@ describe('chain Redis state', () => {
 
     expect(await fake.client.ttl(REDIS_KEYS.recoChainMeta(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
     expect(await fake.client.ttl(REDIS_KEYS.recoChainSeen(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
-    expect(await fake.client.ttl(REDIS_KEYS.recoChainTail(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
   });
 
   /** Acceptance 19. */
@@ -518,16 +541,6 @@ describe('chain Redis state', () => {
     const size = await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, 'chain-bounded'));
     expect(size).toBeLessThanOrEqual(CHAIN_POLICY.maxSeenIds);
     expect(size).toBeLessThanOrEqual(CORPUS_SIZE);
-  });
-
-  it('keeps the recent tail trimmed to its policy length', async () => {
-    const { chainService, fake, corpusIds } = harness();
-    await chainService.recordServed(HOME, 'chain-tail-bound', corpusIds);
-
-    const tail = await fake.client.lrange(REDIS_KEYS.recoChainTail(HOME, 'chain-tail-bound'), 0, -1);
-    expect(tail.length).toBe(CHAIN_POLICY.recentTailSize);
-    // Most recent first, so the anti-repeat window is the END of the cycle.
-    expect(tail[0]).toBe(corpusIds[corpusIds.length - 1]);
   });
 
   it('refuses a malformed chain id rather than making it a Redis key', async () => {

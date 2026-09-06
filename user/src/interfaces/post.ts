@@ -20,17 +20,6 @@ export interface IPostFile {
 
 export interface IPost {
   _id: string;
-  /**
-   * Render key for a post inside a ranked feed, set client-side by the feed
-   * hooks — never by the API.
-   *
-   * A browsing chain recycles once it has served every eligible post, so a
-   * later cycle may legitimately show a post the viewer has already scrolled
-   * past. Two React children may not share a key, so the accumulated list is
-   * keyed by `<cycle>:<id>` rather than by `_id`. Absent outside a ranked feed;
-   * callers fall back to `_id`.
-   */
-  feedKey?: string;
   type: string;
   fromRef: string;
   refId: string;

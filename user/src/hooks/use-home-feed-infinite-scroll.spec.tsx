@@ -16,7 +16,12 @@ function Probe({ topicKey = '' }: { topicKey?: string }) {
 }
 
 function page(overrides: Partial<{
-  data: any[]; hasMore: boolean; sessionId: string; nextCursor: string | null; chainId: string; cycle: number;
+  data: any[];
+  hasMore: boolean;
+  sessionId: string;
+  nextCursor: string | null;
+  chainId: string;
+  chainExhausted: boolean;
 }> = {}) {
   return {
     data: overrides.data ?? [],
@@ -24,7 +29,7 @@ function page(overrides: Partial<{
     sessionId: overrides.sessionId ?? 'session-1',
     nextCursor: overrides.nextCursor ?? null,
     chainId: overrides.chainId ?? 'chain-under-test',
-    cycle: overrides.cycle ?? 0
+    chainExhausted: overrides.chainExhausted ?? false
   };
 }
 
@@ -134,35 +139,104 @@ describe('useHomeFeedInfiniteScroll', () => {
   });
 
   /*
-   * Scenario 3/5 — the stop condition is the SERVER's, not the client's.
+   * Scenario 3/5 — the stop condition is the SERVER's, and a post is never
+   * rendered twice in one browse.
    *
-   * In `deploy-2026-09-06g` this was "the rollover added nothing the client did
-   * not already hold", so a rollover re-offering posts already on screen ended
-   * the feed at 89 of 160 with "recommendations are exhausted". Now only an
-   * empty page stops it — and since an exhausted chain recycles server-side,
-   * an empty page means nothing at all is eligible.
+   * `06g` inferred exhaustion from the client's own de-duplication and ended
+   * Home at 89 of 160. `06h` replaced that with server-side recycling, which
+   * re-offered the catalogue under a per-cycle render key — Home grew to 410
+   * cards of a 160-post corpus, visibly repeating itself.
    */
-  it('keeps rolling over when the server re-offers a post already on screen', async () => {
+  it('never renders a post twice, even if the server re-offers it', async () => {
+    mockGetPersonalizedHomePosts.mockResolvedValueOnce({
+      data: page({ data: [{ _id: 'p1' }, { _id: 'p2' }], hasMore: false, sessionId: 'sess-1' })
+    });
+    render(<Probe />);
+    await waitFor(() => expect(latest.posts).toHaveLength(2));
+
+    mockGetPersonalizedHomePosts.mockResolvedValueOnce({
+      data: page({ data: [{ _id: 'p1' }, { _id: 'p3' }], hasMore: false, sessionId: 'sess-2' })
+    });
+    await act(async () => {
+      latest.loadMore();
+    });
+    await waitFor(() => expect(latest.posts).toHaveLength(3));
+
+    const ids = latest.posts.map((p) => p._id);
+    expect(ids).toEqual(['p1', 'p2', 'p3']);
+    expect(ids.length).toBe(new Set(ids).size);
+  });
+
+  it('stops when the server reports the chain exhausted', async () => {
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
       data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-1' })
     });
     render(<Probe />);
     await waitFor(() => expect(latest.posts).toHaveLength(1));
 
-    // A recycled cycle legitimately re-offers p1 — and, because it arrives in
-    // cycle 1, it is a distinct rendered entry rather than a discarded duplicate.
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
       data: page({
-        data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-2', cycle: 1
+        data: [], hasMore: false, sessionId: 'sess-2', chainExhausted: true
       })
     });
     await act(async () => {
       latest.loadMore();
     });
-    await waitFor(() => expect(latest.sessionId).toBe('sess-2'));
+    await waitFor(() => expect(latest.hasMore).toBe(false));
 
-    expect(latest.posts.map((p) => p.feedKey)).toEqual(['p1', '1:p1']);
-    expect(latest.hasMore).toBe(true);
+    mockGetPersonalizedHomePosts.mockClear();
+    await act(async () => {
+      latest.loadMore();
+    });
+    expect(mockGetPersonalizedHomePosts).not.toHaveBeenCalled();
+  });
+
+  it('accumulates every eligible post exactly once across a long chain', async () => {
+    // The production shape: 160 posts, 70 per session, paged 20 at a time.
+    const corpus = Array.from({ length: 160 }, (_, index) => ({ _id: 'p' + index }));
+    let served = 0;
+    mockGetPersonalizedHomePosts.mockImplementation((query) => {
+      if (served >= corpus.length) {
+        return Promise.resolve({
+          data: page({
+            data: [],
+            hasMore: false,
+            sessionId: 'sess-end',
+            chainExhausted: Boolean(query.rollover)
+          })
+        });
+      }
+      const slice = corpus.slice(served, served + 20);
+      served += slice.length;
+      const moreInSession = served % 70 !== 0 && served < corpus.length;
+      return Promise.resolve({
+        data: page({
+          data: slice,
+          hasMore: moreInSession,
+          sessionId: 'sess-' + Math.floor(served / 70),
+          nextCursor: moreInSession ? String(served) : null
+        })
+      });
+    });
+
+    render(<Probe />);
+    await waitFor(() => expect(latest.posts.length).toBeGreaterThan(0));
+
+    for (let step = 0; step < 30 && latest.hasMore; step += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => {
+        latest.loadMore();
+      });
+    }
+
+    const ids = latest.posts.map((p) => p._id);
+    expect(ids.length).toBeGreaterThan(70);
+    expect(ids.length).toBeGreaterThan(100);
+    expect(ids.length).toBeGreaterThan(140);
+    expect(ids.length).toBe(160);
+    // Rendered count == unique count, never a multiple of the corpus.
+    expect(ids.length).toBe(new Set(ids).size);
+    expect(latest.hasMore).toBe(false);
   });
 
   it('stops only when a rollover comes back empty', async () => {
@@ -222,9 +296,6 @@ describe('useHomeFeedInfiniteScroll', () => {
     expect(latest.sessionForPost('p1')).toBe('sess-1');
     expect(latest.sessionForPost('p2')).toBe('sess-2');
     expect(latest.sessionForPost(null)).toBeNull();
-    // Keyed by render key, so the same post served again in a later cycle is
-    // attributed to the session that actually served it that time.
-    expect(latest.posts.map((p) => p.feedKey)).toEqual(['p1', 'p2']);
   });
 
   it('refresh() abandons the current session and starts a brand-new one', async () => {
@@ -259,13 +330,18 @@ describe('useHomeFeedInfiniteScroll', () => {
     });
     await waitFor(() => expect(latest.hasMore).toBe(false));
 
+    // Explicitly starting a new browse: a fresh chain id goes out, and posts
+    // the spent chain already showed are allowed again.
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
-      data: page({ data: [{ _id: 'p7' }], hasMore: false, sessionId: 'sess-3' })
+      data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-3', chainId: 'chain-after-refresh' })
     });
     await act(async () => {
       await latest.refresh();
     });
 
     expect(latest.hasMore).toBe(true);
+    expect(latest.posts.map((p) => p._id)).toEqual(['p1']);
+    const chainIds = mockGetPersonalizedHomePosts.mock.calls.map(([q]) => q.chainId);
+    expect(chainIds[chainIds.length - 1]).not.toBe(chainIds[0]);
   });
 });

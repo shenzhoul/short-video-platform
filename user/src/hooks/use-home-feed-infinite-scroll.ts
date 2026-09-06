@@ -12,8 +12,7 @@ import {
   FeedFetchMode,
   isChainSpent,
   MAX_RENDERED_FEED_POSTS,
-  mergeFeedPage,
-  withFeedKey
+  mergeFeedPage
 } from './use-feed-chain-page';
 import { usePostInteractionUpdater } from './use-post-interactions';
 
@@ -33,7 +32,7 @@ interface UseHomeFeedInfiniteScrollReturn {
   refresh: () => Promise<void>;
   sessionId: string | null;
   /** The session that ranked this post — not merely the newest one open. */
-  sessionForPost: (feedKey?: string | null) => string | null;
+  sessionForPost: (postId?: string | null) => string | null;
   total: number;
   error: string | null;
   updatePostInteraction: (postId: string, patch: PostInteractionPatch) => void;
@@ -68,22 +67,24 @@ interface UseHomeFeedInfiniteScrollReturn {
  *
  * ## When the scroll actually stops
  *
- * Only when the server answers a rollover with no posts at all — which, since
- * an exhausted chain recycles server-side, means nothing is eligible for this
- * subject. It is *not* inferred from "the client had nothing new to add": that
- * inference is what reported an exhausted catalogue at 89 of 160 posts.
+ * When the server says the chain has served every eligible post
+ * (`chainExhausted`), or answers a rollover with nothing at all. Both are the
+ * server's statement; neither is inferred from the client's own book-keeping,
+ * which is what reported an exhausted catalogue at 89 of 160 posts.
  *
- * Recycling makes the feed effectively endless, so `MAX_RENDERED_FEED_POSTS`
- * bounds what stays mounted. That is a rendering ceiling and nothing more.
+ * **Every post appears at most once in a browse.** `mergeFeedPage` de-duplicates
+ * by real post id across the whole chain. The chain does not recycle: the
+ * version that did gave a repeated post a per-cycle render key, which the client
+ * then treated as new — Home grew to 410 cards on a 160-post corpus. Starting
+ * over is the viewer's decision ("Refresh recommendations", or a reload), and
+ * both mint a new chain.
  */
 export function useHomeFeedInfiniteScroll({
   initialData,
   enabled = true,
   topicKey = ''
 }: UseHomeFeedInfiniteScrollProps): UseHomeFeedInfiniteScrollReturn {
-  const [posts, setPosts] = useState<IPost[]>(
-    () => (initialData?.data || []).map((post) => withFeedKey(post, initialData?.cycle || 0))
-  );
+  const [posts, setPosts] = useState<IPost[]>(() => initialData?.data || []);
   const [hasMore, setHasMore] = useState<boolean>(initialData?.hasMore ?? true);
   const [sessionId, setSessionId] = useState<string | null>(initialData?.sessionId || null);
   const [nextCursor, setNextCursor] = useState<string | null>(initialData?.nextCursor || null);
@@ -103,11 +104,11 @@ export function useHomeFeedInfiniteScroll({
    * Keyed per cycle, so a post served again in a later cycle is attributed to
    * the session that actually served it that time.
    */
-  const [sessionByFeedKey, setSessionByFeedKey] = useState<Record<string, string>>(
+  const [sessionByPostId, setSessionByPostId] = useState<Record<string, string>>(
     () => Object.fromEntries(
       (initialData?.data || [])
         .filter(() => Boolean(initialData?.sessionId))
-        .map((post) => [withFeedKey(post, initialData?.cycle || 0).feedKey as string, initialData!.sessionId as string])
+        .map((post) => [post._id, initialData!.sessionId as string])
     )
   );
   const updatePostInteraction = usePostInteractionUpdater(setPosts);
@@ -192,31 +193,28 @@ export function useHomeFeedInfiniteScroll({
       if (requestId !== requestIdRef.current) return;
 
       const page = (response?.data || {}) as FeedChainPage;
-      const cycle = page.cycle || 0;
-      const incoming = (page.data || []).map((post) => withFeedKey(post, cycle));
+      const incoming = page.data || [];
 
       setPosts((current) => mergeFeedPage(current, incoming, mode).posts);
 
       if (page.sessionId) {
-        setSessionByFeedKey((current) => {
+        setSessionByPostId((current) => {
           const next = reset ? {} : { ...current };
-          // The first session to serve a post *in this cycle* owns its
-          // attribution; a later page re-offering it must not relabel the
-          // exposure already logged.
+          // The first session to serve a post owns its attribution; a later
+          // page re-offering it must not relabel the exposure already logged.
           incoming.forEach((post) => {
-            const key = post.feedKey as string;
-            if (!next[key]) next[key] = page.sessionId as string;
+            if (!next[post._id]) next[post._id] = page.sessionId as string;
           });
           return next;
         });
       }
 
       /*
-       * The stop condition is the server's, not the client's. `isChainSpent`
-       * asks "did the rollover return anything at all", which after chain
-       * recycling means "is anything eligible for this subject". Inferring it
-       * from "did the client add anything new" is what reported an exhausted
-       * catalogue at 89 of 160 posts.
+       * The stop condition is the server's, not the client's: `chainExhausted`,
+       * or a rollover that returned nothing. Inferring it from "did the client
+       * add anything new" reported an exhausted catalogue at 89 of 160 posts;
+       * papering over it by recycling instead grew the feed to 410 cards of a
+       * 160-post corpus.
        */
       if (isChainSpent(page, mode)) setCatalogueSpent(true);
       if (reset) setCatalogueSpent(false);
@@ -255,7 +253,7 @@ export function useHomeFeedInfiniteScroll({
     setNextCursor(null);
     setHasMore(true);
     setCatalogueSpent(false);
-    setSessionByFeedKey({});
+    setSessionByPostId({});
     void fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [enabled, fetchPage, topicKey]);
 
@@ -289,14 +287,14 @@ export function useHomeFeedInfiniteScroll({
     setNextCursor(null);
     setHasMore(true);
     setCatalogueSpent(false);
-    setSessionByFeedKey({});
+    setSessionByPostId({});
     await fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [enabled, fetchPage, topicKey]);
 
-  /** The session that ranked this post in this cycle — not merely the newest one open. */
+  /** The session that ranked this post — not merely the newest one open. */
   const sessionForPost = useCallback(
-    (feedKey?: string | null) => (feedKey ? sessionByFeedKey[feedKey] || null : null),
-    [sessionByFeedKey]
+    (postId?: string | null) => (postId ? sessionByPostId[postId] || null : null),
+    [sessionByPostId]
   );
 
   return {

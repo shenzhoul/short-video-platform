@@ -82,10 +82,8 @@ export const REDIS_KEYS = {
    * a client reused an id. See `RecommendationChainService`.
    */
   recoChainMeta: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:meta`),
-  /** Every post id this chain has served in the current cycle. */
+  /** Every post id this chain has served. A chain that has served them all is finished. */
   recoChainSeen: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:seen`),
-  /** The most recently served ids, kept across a recycle so a new cycle cannot repeat them immediately. */
-  recoChainTail: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:tail`),
   /** Ordered post-id list for one Post Detail recommendation session (Home/notification/direct-link anchors). */
   recoDetailSessionItems: (sessionId: string) => key('reco-detail', `${sessionId}:items`),
   /** Detail session metadata hash (subjectId, anchorPostId, cursorIndex, sessionSeed). */

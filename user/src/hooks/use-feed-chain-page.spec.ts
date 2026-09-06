@@ -1,58 +1,58 @@
 import { IPost } from '@interfaces/post';
 
 import {
-  isChainSpent, MAX_RENDERED_FEED_POSTS, mergeFeedPage, withFeedKey
+  isChainSpent, MAX_RENDERED_FEED_POSTS, mergeFeedPage
 } from './use-feed-chain-page';
 
 const post = (id: string) => ({ _id: id } as IPost);
 
-describe('withFeedKey', () => {
-  it('uses the plain id in the first cycle', () => {
-    expect(withFeedKey(post('p1'), 0).feedKey).toBe('p1');
-  });
-
-  it('namespaces later cycles, so a recycled post is a distinct rendered entry', () => {
-    // A chain that has served every eligible post recycles, so the same post
-    // legitimately appears again further down. Two React children may not share
-    // a key.
-    expect(withFeedKey(post('p1'), 1).feedKey).toBe('1:p1');
-    expect(withFeedKey(post('p1'), 2).feedKey).toBe('2:p1');
-  });
-
-  it('does not mutate the post it was given', () => {
-    const original = post('p1');
-    withFeedKey(original, 3);
-    expect(original.feedKey).toBeUndefined();
-  });
-});
-
 describe('mergeFeedPage', () => {
-  const cycle0 = (ids: string[]) => ids.map((id) => withFeedKey(post(id), 0));
-  const cycle1 = (ids: string[]) => ids.map((id) => withFeedKey(post(id), 1));
-
   it('replaces on reset', () => {
-    const result = mergeFeedPage(cycle0(['p1', 'p2']), cycle0(['p9']), 'reset');
+    const result = mergeFeedPage([post('p1'), post('p2')], [post('p9')], 'reset');
     expect(result.posts.map((p) => p._id)).toEqual(['p9']);
     expect(result.added).toBe(1);
   });
 
-  it('drops an id the same cycle already showed', () => {
-    const result = mergeFeedPage(cycle0(['p1', 'p2']), cycle0(['p2', 'p3']), 'append');
+  it('drops an id already on screen', () => {
+    const result = mergeFeedPage([post('p1'), post('p2')], [post('p2'), post('p3')], 'append');
     expect(result.posts.map((p) => p._id)).toEqual(['p1', 'p2', 'p3']);
     expect(result.added).toBe(1);
   });
 
-  it('keeps a post the NEXT cycle re-offers', () => {
-    // The recycle case. De-duplicating by `_id` here would silently discard a
-    // whole recycled cycle and make the feed look finished.
-    const result = mergeFeedPage(cycle0(['p1', 'p2']), cycle1(['p1']), 'rollover');
-    expect(result.posts.map((p) => p.feedKey)).toEqual(['p1', 'p2', '1:p1']);
-    expect(result.added).toBe(1);
+  /*
+   * The 410-card defect. `deploy-2026-09-06h` keyed each entry by
+   * `<cycle>:<id>` so a recycled chain could show the catalogue again; on a
+   * 160-post corpus Home grew to 410 cards, openly repeating itself, because a
+   * repeated post looked new to both this function and to React.
+   */
+  it('never appends a post that is already in the list, whatever the server sends', () => {
+    const current = [post('p1'), post('p2'), post('p3')];
+    const result = mergeFeedPage(current, [post('p1'), post('p2'), post('p3')], 'rollover');
+
+    expect(result.posts).toBe(current);
+    expect(result.added).toBe(0);
+  });
+
+  it('de-duplicates within a single page too', () => {
+    const result = mergeFeedPage([], [post('p1'), post('p1'), post('p2')], 'reset');
+    expect(result.posts.map((p) => p._id)).toEqual(['p1', 'p2']);
+  });
+
+  it('keeps the accumulated list free of duplicate ids across many pages', () => {
+    // What the Home acceptance measures: rendered count == unique count.
+    let posts: IPost[] = [];
+    for (let page = 0; page < 12; page += 1) {
+      const incoming = Array.from({ length: 20 }, (_, i) => post(`p${(page * 20 + i) % 160}`));
+      posts = mergeFeedPage(posts, incoming, page === 0 ? 'reset' : 'append').posts;
+    }
+    const ids = posts.map((p) => p._id);
+    expect(ids.length).toBe(new Set(ids).size);
+    expect(ids.length).toBe(160);
   });
 
   it('returns the same array reference when nothing was added', () => {
-    const current = cycle0(['p1']);
-    const result = mergeFeedPage(current, cycle0(['p1']), 'append');
+    const current = [post('p1')];
+    const result = mergeFeedPage(current, [post('p1')], 'append');
     expect(result.posts).toBe(current);
     expect(result.added).toBe(0);
   });
@@ -61,15 +61,21 @@ describe('mergeFeedPage', () => {
 describe('isChainSpent', () => {
   /*
    * The stop condition is the server's answer, never the client's bookkeeping.
-   * In `deploy-2026-09-06g` it was "the rollover added nothing the client did
-   * not already hold", so a rollover re-offering visible posts ended Home at
-   * 89 of 160 with "recommendations are exhausted".
+   * `06g` inferred it from client de-duplication and ended Home at 89 of 160;
+   * `06h` replaced that with recycling and never ended at all.
    */
-  it('is true only for a rollover that returned nothing at all', () => {
+  it('is true when the server reports the chain exhausted', () => {
+    expect(isChainSpent({ data: [post('p1')], hasMore: false, chainExhausted: true }, 'rollover')).toBe(true);
+    expect(isChainSpent({ data: [], hasMore: false, chainExhausted: true }, 'append')).toBe(true);
+  });
+
+  it('is true for a rollover that returned nothing at all', () => {
     expect(isChainSpent({ data: [], hasMore: false }, 'rollover')).toBe(true);
   });
 
-  it('is false for a rollover that returned posts, even familiar ones', () => {
+  it('is false for a rollover that returned posts the client happens to hold', () => {
+    // The client de-duplicates them away, but that is not the server saying the
+    // catalogue is finished — inferring it here is the 89-post defect.
     expect(isChainSpent({ data: [post('p1')], hasMore: false }, 'rollover')).toBe(false);
   });
 
@@ -80,10 +86,9 @@ describe('isChainSpent', () => {
 });
 
 describe('MAX_RENDERED_FEED_POSTS', () => {
-  it('is a rendering ceiling well above one pass of this catalogue', () => {
-    // 160 posts is the measured-safe render size (rules/user.md); the ceiling
-    // exists because recycling makes the feed endless, not because the
-    // catalogue ends.
+  it('is a DOM guard above one pass of this catalogue, not a feed limit', () => {
+    // 160 posts is the measured-safe render size (rules/user.md). A chain ends
+    // when it has served every eligible post, so this is unreachable here.
     expect(MAX_RENDERED_FEED_POSTS).toBeGreaterThan(160);
   });
 });

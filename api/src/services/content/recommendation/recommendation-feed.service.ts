@@ -41,11 +41,11 @@ export interface RecommendationFeedResult {
   /** The browsing chain this session belongs to, echoed so the client keeps sending it. */
   chainId: string | null;
   /**
-   * Which pass through the catalogue this session was ranked in. Increments
-   * when the chain recycles, and is what lets the client render the same post
-   * twice — in two different cycles — without duplicate React keys.
+   * This browse has served every eligible post. The client stops here and shows
+   * its end state; starting over is the viewer's decision, and both ways of
+   * doing it ("Refresh recommendations", a reload) mint a new chain.
    */
-  cycle: number;
+  chainExhausted: boolean;
   debug?: Array<{ postId: string; source: string; finalScore: number; breakdown: ScoredCandidate['breakdown'] }>;
 }
 
@@ -136,10 +136,11 @@ export class RecommendationFeedService {
    *    time ago*; it must never starve the browse happening now. This stage is
    *    also what returns a genuinely short final batch instead of declaring the
    *    feed finished.
-   * 3. **recycle** — only when the chain has served every eligible post does
-   *    the chain reset and a new cycle begin, still holding back the last
-   *    `CHAIN_POLICY.recentTailSize` so the new cycle cannot open on what the
-   *    viewer just read.
+   * 3. **exhausted** — when the chain has served every eligible post the browse
+   *    is finished, and says so. It does **not** recycle and hand the same
+   *    catalogue out again: that shipped in `deploy-2026-09-06h` and, because a
+   *    recycled post carried a per-cycle render key, the client appended it as
+   *    new — Home reached **410 cards** on a 160-post corpus.
    *
    * Without a chain (an older client, or Redis down) stage 1 falls back to the
    * pre-chain behaviour: prefer unseen, and relax completely rather than serve
@@ -158,7 +159,7 @@ export class RecommendationFeedService {
     subjectId: string;
     /** The browsing chain, already resolved and subject-checked. */
     chain: BrowsingChainState | null;
-  }): Promise<{ sessionId: string; ranked: ScoredCandidate[]; cycle: number }> {
+  }): Promise<{ sessionId: string; ranked: ScoredCandidate[]; chainExhausted: boolean }> {
     const { subjectId } = params;
     // Only a stable identity has history worth reading; an ephemeral guest
     // key names nobody, so the lookup is skipped rather than guaranteed to miss.
@@ -206,12 +207,10 @@ export class RecommendationFeedService {
 
     const seenAcrossHistory = (affinity?.recentlySeenPostIds || []).map((id: any) => id.toString());
     const chain = params.chain;
-    let seenInChain = chain ? chain.seenPostIds : [];
-    const recentTail = chain ? chain.recentTailPostIds : [];
-    let cycle = chain ? chain.cycle : 0;
+    const seenInChain = chain ? chain.seenPostIds : [];
 
     // Stage 1 — the strongest preference.
-    let pool = await retrieveWith(unique([...seenInChain, ...seenAcrossHistory, ...recentTail]));
+    let pool = await retrieveWith(unique([...seenInChain, ...seenAcrossHistory]));
 
     /*
      * Stage 2 — the cross-session memory is a preference, never a constraint on
@@ -226,27 +225,24 @@ export class RecommendationFeedService {
      * browse.
      */
     if (chain && pool.all.length < sessionLimit && seenAcrossHistory.length) {
-      const chainOnly = await retrieveWith(unique([...seenInChain, ...recentTail]));
+      const chainOnly = await retrieveWith(seenInChain);
       if (chainOnly.all.length > pool.all.length) pool = chainOnly;
     }
 
-    // Stage 3 — the chain has genuinely served everything eligible.
-    let recycled = false;
-    if (!pool.all.length && chain && seenInChain.length) {
-      cycle = await this.chainService.recycle(params.feedType, chain.chainId);
-      recycled = true;
-      seenInChain = [];
-      // The tail is held back on purpose: a new cycle must not open on the
-      // posts the viewer just finished reading.
-      pool = await retrieveWith(recentTail);
-      // A corpus smaller than the tail itself — hold nothing back rather than
-      // answer with an empty feed.
-      if (!pool.all.length) pool = await retrieveWith([]);
+    /*
+     * Stage 3 — the chain has served everything eligible, so this browse is
+     * over. Reported, not papered over: recycling here is what produced a Home
+     * feed of 410 cards on a 160-post corpus.
+     */
+    const chainExhausted = Boolean(chain) && !pool.all.length && seenInChain.length > 0;
+    if (chainExhausted) {
       this.logger.log(
-        `Recycled browsing chain (${params.feedType}, cycle ${cycle}): `
-        + `${pool.all.length} candidates in the new cycle`
+        `Browsing chain exhausted (${params.feedType}): ${seenInChain.length} posts served`
       );
     }
+    // A chain that has served more than the ceiling is treated the same way —
+    // bounding Redis, and by then the viewer has seen more than enough.
+    const chainAtCeiling = Boolean(chain) && seenInChain.length >= CHAIN_POLICY.maxSeenIds;
 
     /*
      * Seen-suppression must never be able to empty the feed.
@@ -337,8 +333,7 @@ export class RecommendationFeedService {
       topicKey: params.topicKey,
       sessionSeed,
       ranked,
-      chainId: chain?.chainId,
-      cycle
+      chainId: chain?.chainId
     });
 
     if (chain && postIds.length) {
@@ -346,15 +341,9 @@ export class RecommendationFeedService {
       // impression: telemetry is best-effort and lands late, and a rollover
       // racing it would re-rank the page still on screen.
       await this.chainService.recordServed(params.feedType, chain.chainId, postIds);
-      if (!recycled && seenInChain.length + postIds.length >= CHAIN_POLICY.maxSeenIds) {
-        // Bound on size, the same decision exhaustion makes on emptiness, so a
-        // very long scroll can never allocate an unbounded Redis set.
-        this.logger.log(`Chain seen-set reached its ceiling (${CHAIN_POLICY.maxSeenIds}); recycling`);
-        await this.chainService.recycle(params.feedType, chain.chainId);
-      }
     }
 
-    return { sessionId, ranked, cycle };
+    return { sessionId, ranked, chainExhausted: chainExhausted || chainAtCeiling };
   }
 
   /**
@@ -416,7 +405,7 @@ export class RecommendationFeedService {
           hasMore: page.hasMore,
           nextCursor: page.nextCursor,
           chainId: page.chainId,
-          cycle: page.cycle
+          chainExhausted: false
         };
       }
       // Session missing/expired/mismatched — degrade to a fresh session rather than erroring.
@@ -427,7 +416,7 @@ export class RecommendationFeedService {
     // what another viewer was shown.
     const chain = await this.chainService.resolve(params.chainId, subjectId, params.feedType);
 
-    const { sessionId, ranked, cycle } = await this.createSession({
+    const { sessionId, ranked, chainExhausted } = await this.createSession({
       feedType: params.feedType, subject: params.subject, topicKey: params.topicKey, subjectId, chain
     });
     const page = await this.sessionService.getPage(sessionId, subjectId, null, params.limit);
@@ -439,7 +428,7 @@ export class RecommendationFeedService {
       hasMore: Boolean(page?.hasMore),
       nextCursor: page?.nextCursor ?? null,
       chainId: chain?.chainId ?? null,
-      cycle
+      chainExhausted
     };
 
     if (params.debug) {
