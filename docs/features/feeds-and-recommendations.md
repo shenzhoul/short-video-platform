@@ -386,7 +386,11 @@ only a couple of impressions — so the "new post nobody has seen yet" path has 
 on. `yarn demo:verify` checks all of this, re-deriving the stored totals from the raw events rather
 than trusting them.
 
-Signing in: any seeded address (for example `maitran.eats@demo.invalid`) with password `demodemo`.
+Signing in **locally**: any seeded address (for example
+`maitran.eats@demo.invalid`) with the fixture password in `api/demo/demo.config.js`.
+That fixture is committed to a public repository and is a local convenience only
+— the deployed environment's demo accounts use a separate credential held in
+`deploy/.env` (`DEMO_ACCOUNT_PASSWORD`) and are not publicly signable.
 
 ## What a signed-out visitor sees (clarified 2026-09-03)
 

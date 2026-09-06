@@ -371,7 +371,10 @@ surface can be exercised by hand.
 ## Signing in
 
 Demo accounts are real accounts. Any seeded email signs in with the password in
-`demo.config.js` (`demodemo` by default). Emails use the `demo.invalid` domain,
+`demo.config.js` — a **local fixture** only: it is committed to a public
+repository, so a deployed environment rotates its seeded accounts to a separate
+credential with `api/scripts/rotate-demo-passwords.js`. Emails use the
+`demo.invalid` domain,
 reserved by RFC 2606, so no address can ever receive mail.
 
 ## Related

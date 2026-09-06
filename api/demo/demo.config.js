@@ -188,8 +188,20 @@ module.exports = {
 
     /**
      * Shared password for every demo account, so the dataset can be logged into.
-     * A local-development convenience with no bearing on production, which never
-     * runs this script.
+     *
+     * **This is a local fixture, and it is committed to a public repository — so
+     * it is a password in name only.** It stays because local seeding and
+     * `demo:verify` need a deterministic login.
+     *
+     * It is NOT the production credential, and the earlier claim here that
+     * production "never runs this script" was wrong: production *was* seeded
+     * from it. The seeded production accounts have since been rotated to a value
+     * held only in `deploy/.env` as `DEMO_ACCOUNT_PASSWORD`, by
+     * `api/scripts/rotate-demo-passwords.js`.
+     *
+     * Changing this constant does not affect any account that already exists —
+     * `seedAccounts` hashes it into the `auth` collection at seed time, so it
+     * only ever governs a future seed.
      */
     password: 'demodemo',
 

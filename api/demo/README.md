@@ -150,7 +150,10 @@ you like.
   recoverable.
 
 Demo accounts can sign in — any seeded email with the password in
-`config.seed.password` (`demodemo` by default). Emails use the `demo.invalid`
+`config.seed.password` — a **local fixture**, committed to a public repository
+and therefore never a production credential; a deployed environment rotates its
+seeded accounts with `api/scripts/rotate-demo-passwords.js` to a value held only
+in `deploy/.env`. Emails use the `demo.invalid`
 domain, which is reserved by RFC 2606 and can never receive mail.
 
 ## Notifications, conversations and messages
