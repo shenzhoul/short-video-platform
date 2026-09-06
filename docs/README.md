@@ -4,13 +4,18 @@ description: Canonical documentation for the features and architecture implement
 audience: [user, creator, admin, operator, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-05
+updated: 2026-09-06
 tags: [overview, index, documentation]
 ---
 
 # Douyin Clone Documentation
 
-This documentation describes the code that currently exists in `api/`, `user/`, `admin/`, and `file-server/`.
+This documentation describes the code that currently exists in `api/`, `user/`, `admin/`, and
+`file-server/`, and the production deployment in `deploy/`.
+
+The platform is **deployed and serving**: all four applications run as Docker containers on a single
+VM behind nginx with TLS, with MongoDB and Redis as private services and media in Cloudflare R2
+served through a Worker. See [deployment/README.md](./deployment/README.md).
 
 ## Start here
 
@@ -29,11 +34,19 @@ This documentation describes the code that currently exists in `api/`, `user/`, 
 
 The current product supports:
 
-- credentials-based authentication and logout;
+- credentials-based authentication, email verification, password reset, and logout;
 - public creator profiles and authenticated profile editing;
 - text, photo, and video posts;
-- public/home/recommended post feeds and post details;
-- comments, replies, like reactions, and one-way creator following;
+- a ranked Home discovery feed and a personalized For You feed, both paged through Redis-stored
+  recommendation sessions linked into per-page-load browsing chains;
+- recommendation event ingestion (impressions, watch quality, dwell, skips, interactions) feeding a
+  decayed per-subject affinity profile;
+- post detail with its own anchor-based recommendation sequence, and a picture-in-picture player
+  that navigates the same sequence;
+- comments, replies, like reactions, mentions, and one-way creator following;
+- private one-to-one messaging with follow-based send permission, request consent, and block/restrict;
+- interaction notifications with grouping, category filters, and realtime delivery;
+- search across posts, creators, and hashtags;
 - direct and resumable file uploads with image/video processing;
 - system identity and maintenance settings;
 - admin user management, role assignment, balance editing, settings, and log viewers;

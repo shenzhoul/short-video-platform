@@ -19,7 +19,65 @@ tags: [architecture, nestjs, nextjs, mongodb, redis]
 | `admin/` | Next.js 16, React 19, Ant Design 6, React Query, NextAuth | Users, admins, settings, and log viewers | `8082` |
 | `file-server/` | NestJS 10, MongoDB/Mongoose, BullMQ, TUS, Sharp, FFmpeg | Upload metadata, disk storage, resumable uploads, image/video processing | `3001` in its app config |
 
-There is no shared workspace package, Docker stack, nginx configuration, or checked-in deployment pipeline in the current repository.
+### Shared packages
+
+Two dependency-free packages under `shared/` are consumed by more than one app via `file:` links, so
+a rule cannot drift between the client that previews it and the server that enforces it:
+
+| Package | Consumed by | Why it is shared |
+|---|---|---|
+| `shared/upload-policy` | `api`, `file-server`, `user` | Per-upload-type size, pixel and format limits. The server stays the authority; the client's copy is early feedback. |
+| `shared/toast` | `user`, `admin` | One toast container and API, so a bare `react-toastify` call cannot render into a container that does not exist. |
+
+Yarn v1 **copies** `file:` dependencies rather than linking them, so editing a shared package does
+not reach a consuming app until that app reinstalls — and in production, until its image is rebuilt.
+
+### Deployment
+
+The repository contains a checked-in deployment stack under `deploy/`: a Docker Compose file for all
+six services, a Dockerfile per application, the host nginx vhost configuration, and the Cloudflare
+Worker that serves media from R2. See [deployment/README.md](./deployment/README.md) for the
+topology and [deployment/routine-deploys.md](./deployment/routine-deploys.md) for the procedure.
+
+## Production topology
+
+All four applications run as containers on a single VM. Host nginx terminates TLS and is the only
+public entrypoint; every container binds to loopback, and MongoDB and Redis publish no host port.
+Media **reads** bypass the VM entirely — the browser fetches from a Cloudflare Worker with an R2
+binding, which is what keeps a small instance viable for video.
+
+```mermaid
+flowchart TB
+  Browser["Browser"]
+  Worker["Cloudflare Worker<br/>Range / 206"]
+  R2[("R2 bucket, private")]
+  Nginx["nginx + TLS"]
+  UserApp["user"]
+  AdminApp["admin"]
+  Api["api"]
+  Files["file-server"]
+  Mongo[("MongoDB")]
+  Redis[("Redis")]
+
+  Browser --> Nginx
+  Browser --> Worker
+  Worker --> R2
+  Nginx --> UserApp
+  Nginx --> AdminApp
+  Nginx --> Api
+  Nginx --> Files
+  UserApp --> Api
+  AdminApp --> Api
+  UserApp --> Files
+  Api --> Mongo
+  Api --> Redis
+  Files --> Mongo
+  Files --> Redis
+  Files --> R2
+```
+
+Local development runs the same services directly on the host; the ports in the table above are the
+local ones.
 
 ## Runtime flow
 

@@ -4,11 +4,14 @@ description: Maintained map of the current Douyin Clone documentation.
 audience: [developer-agent]
 domain: cross
 status: active
-updated: 2026-09-04
+updated: 2026-09-06
 tags: [index, documentation]
 ---
 
 # Documentation Index
+
+The project's public entry point is the [root README](../README.md). This index is the map of the
+maintained documentation behind it.
 
 | Document | Purpose |
 |---|---|

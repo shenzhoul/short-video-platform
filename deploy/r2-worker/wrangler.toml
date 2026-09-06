@@ -43,7 +43,7 @@ binding = "MEDIA_BUCKET"
 bucket_name = "douyin-media-staging"
 
 [env.staging.vars]
-# Preview/staging front ends. Add the Vercel preview origin once it exists.
+# Preview/staging front ends, comma-separated. Empty is fine for staging.
 ALLOWED_ORIGINS = ""
 CACHE_CONTROL = "public, max-age=31536000, immutable"
 
@@ -58,9 +58,9 @@ binding = "MEDIA_BUCKET"
 bucket_name = "douyin-media-production"
 
 [env.production.vars]
-# Exact production front-end origins, comma-separated. Fill in after the Vercel
-# projects exist, e.g.
-#   "https://douyin-clone.vercel.app,https://douyin-clone-admin.vercel.app"
+# Exact production front-end origins, comma-separated — the same values as
+# CORS_ORIGIN in deploy/.env, e.g.
+#   "https://app.<vm-ip>.sslip.io,https://admin.<vm-ip>.sslip.io"
 #
 # An empty value does NOT block media — media is public and still served. It
 # only means no cross-origin script may read the bytes.

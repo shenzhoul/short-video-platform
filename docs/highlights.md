@@ -4,7 +4,7 @@ description: Verified product and technical highlights implemented in the curren
 audience: [user, creator, admin, operator, developer-agent]
 domain: cross
 status: active
-updated: 2026-08-28
+updated: 2026-09-06
 tags: [highlights, features, architecture]
 ---
 
@@ -32,7 +32,36 @@ See [Authentication](./features/authentication.md), [Creator Profiles](./feature
 - Text, photo, and video post creation and editing.
 - Draft-aware video upload and publishing flow.
 - Public post detail pages.
-- Home, recommended, following, and creator-profile feeds with paginated loading.
+- Home, For You, following, and creator-profile feeds with paginated loading.
+
+### Recommendations
+
+A heuristic, explainable recommender — never described as a reproduction of any platform's
+proprietary ranking system. Home and For You are deliberately different surfaces:
+
+| | Home | For You |
+|---|---|---|
+| Purpose | Broad discovery and browsing | Personalized to the viewer |
+| Candidate mix | Weighted toward trending, fresh, and category-diverse sources | Weighted toward the viewer's affinities |
+| Scoring | Balanced across interest, engagement quality, and freshness | Weighted toward user interest and watch quality |
+| Category scope | Scoped by the selected category tab | Whole catalogue |
+
+- Guest cold start draws a recent-popular / fresh / category-diverse mix and never fabricates a
+  preference profile; guests are keyed by an opaque app-issued session id, never a fingerprint.
+- Batched, server-validated events — impressions, watch completion, quick skips, replays, photo
+  dwell, detail opens, likes, comments, shares, follow-after-view — feed a decayed affinity profile
+  over categories, hashtags, and creators.
+- Candidates are retrieved per source under a quota, scored on bounded features, then re-ranked for
+  diversity (per-creator and per-category caps in a window, no two consecutive posts by one creator).
+- Selection is a seeded weighted draw rather than a top-N slice, so two visits differ instead of
+  re-sorting one fixed list.
+- One ranked order per session is stored in Redis and paged by an opaque cursor, so scrolling never
+  duplicates or skips. Sessions link into a per-page-load browsing chain: every eligible post appears
+  at most once per browse, and the chain reports exhaustion rather than looping.
+- Post detail and the picture-in-picture player walk their own anchor-based recommendation sequence
+  rather than the rendered grid order.
+
+See [Feeds and Recommendations](./features/feeds-and-recommendations.md).
 - Search history, suggestions, trending topics, hashtags, creators, and content results.
 - Creator post search and content management.
 
@@ -88,6 +117,21 @@ See [Admin Operations](./features/admin-operations.md), [System Domain](./domain
 - Real-time message, notification, comment, reaction, and presence event consumption.
 
 See [Online Status](./features/online-status.md) and [Interaction Notifications](./features/notifications.md).
+
+## Production Deployment
+
+The platform is deployed and serving, not a local-only project:
+
+- all four applications run as Docker containers on a single cloud VM;
+- host nginx terminates TLS and is the only public entrypoint — every container binds to loopback,
+  and MongoDB and Redis publish no host port;
+- media lives in a private Cloudflare R2 bucket and is read through a Worker with an R2 binding, so
+  no storage credential reaches the edge or a browser, and playback bypasses the VM entirely;
+- the Worker honours HTTP `Range`, which is what makes video seeking work;
+- deploys are per-service: rebuild only the image whose source changed, recreate only that
+  container, verify, and roll back by tag without touching data.
+
+See [Deployment](./deployment/README.md) and [Routine deploys](./deployment/routine-deploys.md).
 
 ## Technical Foundation
 

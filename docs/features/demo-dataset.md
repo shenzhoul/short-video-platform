@@ -73,7 +73,7 @@ Pexels could not fill — on a normal run it is never called.
 
 Both go in **`api/.env`** and nowhere else. They are server-side credentials:
 never copy them into `user/` or `admin/` under a `NEXT_PUBLIC_` name, and never
-set them on the Vercel projects. `api/.env` is git-ignored; `api/.env.example`
+set them on the web apps. `api/.env` is git-ignored; `api/.env.example`
 lists the names with empty values.
 
 Neither key is ever passed on a command line — shell history and `ps` output are

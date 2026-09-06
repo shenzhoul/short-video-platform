@@ -125,7 +125,7 @@ SMTP_USER=<dedicated-demo-gmail>
 SMTP_PASS=<gmail-app-password>
 MAIL_FROM_NAME=Douyin Clone
 MAIL_FROM_ADDRESS=<same-dedicated-demo-gmail>
-USER_APP_URL=https://<user-project>.vercel.app
+USER_APP_URL=https://<user-app-public-origin>
 EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=1440
 PASSWORD_RESET_TOKEN_TTL_MINUTES=60
 ```
@@ -164,14 +164,15 @@ link; it is ignored under `NODE_ENV=production`.
 `USER_APP_URL` is required even locally — every emailed link is built from it and
 from nothing else. It is never derived from a request's `Host` or `Origin`
 header, because those are attacker-controlled and a reset link built from one is
-a credential-harvesting link on somebody else's domain. That also means a Vercel
-**preview** deployment emails the production URL; there is one canonical value.
+a credential-harvesting link on somebody else's domain. That also means any
+non-production build emails the production URL; there is one canonical value.
 
 ### Deployment shape
 
-`user/` and `admin/` are Next.js apps and can run on Vercel. The API cannot: it
-holds a Socket.IO gateway, resident BullMQ workers, Redis sessions and a pooled
-Mongo connection. It needs an always-on host.
+The API needs an **always-on** host: it holds a Socket.IO gateway, resident
+BullMQ workers, Redis sessions and a pooled Mongo connection. In production all
+four applications are containers on one VM behind nginx, so this is satisfied by
+construction — see [deployment](../deployment/README.md).
 
 On a host that **sleeps when idle** (Render's free tier), a mail job enqueued
 just before the process suspends is not processed until the next request wakes
