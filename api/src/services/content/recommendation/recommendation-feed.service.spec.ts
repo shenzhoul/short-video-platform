@@ -20,10 +20,8 @@ function service(options: {
   poolWhenRelaxed?: any[];
   /** The viewer's `recentlySeenPostIds`. */
   seenPostIds?: string[];
-  /** The chain id `getChainId` resolves a rollover to. */
-  chainId?: string | null;
-  /** Post ids the chain has already served. */
-  chainSeenPostIds?: string[];
+  /** A resolved browsing chain, when a test needs one. */
+  chain?: { chainId: string; seenPostIds: string[]; recentTailPostIds: string[]; cycle: number } | null;
 } = {}) {
   const replayPostId = options.replayPostId || new ObjectId().toString();
 
@@ -72,13 +70,21 @@ function service(options: {
   };
   const sessionService: any = {
     newSessionSeed: jest.fn().mockReturnValue('deterministic-seed'),
-    create: jest.fn().mockResolvedValue({ sessionId: 'new-session-id', chainId: 'new-session-id' }),
+    create: jest.fn().mockResolvedValue({ sessionId: 'new-session-id', postIds: [] }),
     getPage: jest.fn().mockResolvedValue({
-      sessionId: 'new-session-id', items: [], hasMore: false, nextCursor: null
-    }),
-    getChainId: jest.fn().mockResolvedValue(options.chainId ?? null),
-    getChainSeenIds: jest.fn().mockResolvedValue(options.chainSeenPostIds || []),
-    resetChainSeen: jest.fn().mockResolvedValue(undefined)
+      sessionId: 'new-session-id', items: [], hasMore: false, nextCursor: null, chainId: null, cycle: 0
+    })
+  };
+  /*
+   * Unchained by default: these tests cover ranking, diversity and the
+   * seen-starvation fallback, none of which involve a browsing chain.
+   * `recommendation-chain.spec.ts` owns the chained paths.
+   */
+  const chainService: any = {
+    resolve: jest.fn().mockResolvedValue(options.chain ?? null),
+    recordServed: jest.fn().mockResolvedValue(undefined),
+    recycle: jest.fn().mockResolvedValue(1),
+    isValidChainId: jest.fn().mockReturnValue(true)
   };
   const affinityService: any = {
     getRaw: jest.fn().mockResolvedValue(
@@ -112,7 +118,8 @@ function service(options: {
       sessionService,
       affinityService,
       detailSessionService,
-      userRelationshipService
+      userRelationshipService,
+      chainService
     ),
     postModel,
     candidateService,

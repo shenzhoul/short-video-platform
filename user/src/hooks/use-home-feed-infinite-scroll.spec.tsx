@@ -15,12 +15,16 @@ function Probe({ topicKey = '' }: { topicKey?: string }) {
   return null;
 }
 
-function page(overrides: Partial<{ data: any[]; hasMore: boolean; sessionId: string; nextCursor: string | null }> = {}) {
+function page(overrides: Partial<{
+  data: any[]; hasMore: boolean; sessionId: string; nextCursor: string | null; chainId: string; cycle: number;
+}> = {}) {
   return {
     data: overrides.data ?? [],
     hasMore: overrides.hasMore ?? false,
     sessionId: overrides.sessionId ?? 'session-1',
-    nextCursor: overrides.nextCursor ?? null
+    nextCursor: overrides.nextCursor ?? null,
+    chainId: overrides.chainId ?? 'chain-under-test',
+    cycle: overrides.cycle ?? 0
   };
 }
 
@@ -129,31 +133,59 @@ describe('useHomeFeedInfiniteScroll', () => {
     await waitFor(() => expect(latest.posts.map((p) => p._id)).toEqual(['p1', 'p2', 'p3']));
   });
 
-  /** Scenario 3 — recycle only once the corpus is genuinely exhausted. */
-  it('stops rolling over once a rollover adds nothing new', async () => {
+  /*
+   * Scenario 3/5 — the stop condition is the SERVER's, not the client's.
+   *
+   * In `deploy-2026-09-06g` this was "the rollover added nothing the client did
+   * not already hold", so a rollover re-offering posts already on screen ended
+   * the feed at 89 of 160 with "recommendations are exhausted". Now only an
+   * empty page stops it — and since an exhausted chain recycles server-side,
+   * an empty page means nothing at all is eligible.
+   */
+  it('keeps rolling over when the server re-offers a post already on screen', async () => {
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
       data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-1' })
     });
     render(<Probe />);
     await waitFor(() => expect(latest.posts).toHaveLength(1));
 
-    // A rollover that returns only what is already on screen: the catalogue,
-    // not merely this session, is spent.
+    // A recycled cycle legitimately re-offers p1 — and, because it arrives in
+    // cycle 1, it is a distinct rendered entry rather than a discarded duplicate.
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
-      data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-2' })
+      data: page({
+        data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-2', cycle: 1
+      })
     });
     await act(async () => {
       latest.loadMore();
     });
     await waitFor(() => expect(latest.sessionId).toBe('sess-2'));
-    expect(latest.hasMore).toBe(false);
+
+    expect(latest.posts.map((p) => p.feedKey)).toEqual(['p1', '1:p1']);
+    expect(latest.hasMore).toBe(true);
+  });
+
+  it('stops only when a rollover comes back empty', async () => {
+    mockGetPersonalizedHomePosts.mockResolvedValueOnce({
+      data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-1' })
+    });
+    render(<Probe />);
+    await waitFor(() => expect(latest.posts).toHaveLength(1));
+
+    mockGetPersonalizedHomePosts.mockResolvedValueOnce({
+      data: page({ data: [], hasMore: false, sessionId: 'sess-2' })
+    });
+    await act(async () => {
+      latest.loadMore();
+    });
+    await waitFor(() => expect(latest.hasMore).toBe(false));
 
     mockGetPersonalizedHomePosts.mockClear();
     await act(async () => {
       latest.loadMore();
     });
-    // Without this the rollover branch would fire on every scroll to the bottom
-    // for the rest of the session.
+    // Latched, or the rollover branch would fire on every scroll to the bottom
+    // for the rest of the browse.
     expect(mockGetPersonalizedHomePosts).not.toHaveBeenCalled();
   });
 
@@ -190,6 +222,9 @@ describe('useHomeFeedInfiniteScroll', () => {
     expect(latest.sessionForPost('p1')).toBe('sess-1');
     expect(latest.sessionForPost('p2')).toBe('sess-2');
     expect(latest.sessionForPost(null)).toBeNull();
+    // Keyed by render key, so the same post served again in a later cycle is
+    // attributed to the session that actually served it that time.
+    expect(latest.posts.map((p) => p.feedKey)).toEqual(['p1', 'p2']);
   });
 
   it('refresh() abandons the current session and starts a brand-new one', async () => {
@@ -217,7 +252,7 @@ describe('useHomeFeedInfiniteScroll', () => {
     await waitFor(() => expect(latest.posts).toHaveLength(1));
 
     mockGetPersonalizedHomePosts.mockResolvedValueOnce({
-      data: page({ data: [{ _id: 'p1' }], hasMore: false, sessionId: 'sess-2' })
+      data: page({ data: [], hasMore: false, sessionId: 'sess-2' })
     });
     await act(async () => {
       latest.loadMore();

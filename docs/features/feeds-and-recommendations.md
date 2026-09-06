@@ -177,38 +177,57 @@ owns the authenticated following feed and is untouched by the recommendation eng
 loading uses `use-creator-post-search.ts` and `use-creator-videos.ts`; there is no `/posts/infinite`
 or bookmark feed.
 
-## Scrolling past one session (since 2026-09-06)
+## Scrolling past one session (revised 2026-09-06)
 
-A ranked session is a bounded **sample** of the candidate pool, not the catalogue: Home shows 70 of
-the 160 eligible posts, For You 40. That bound is deliberate — it is what makes a reload a genuinely
-new selection instead of a re-sort of one fixed set.
+A ranked session is a bounded **sample** of the candidate pool, not the
+catalogue: Home shows 70 of the 160 eligible posts, For You 40. That bound is
+deliberate — it is what makes a reload a genuinely new selection instead of a
+re-sort of one fixed set.
 
-It used to also be where Home stopped. Reaching the end of the session set `hasMore: false` and
-nothing asked for more, so a visitor could scroll to about 70 posts and no further, with two thirds
-of the demo corpus unreachable.
+It used to also be where Home stopped, at about 70 posts. A first fix shipped on
+2026-09-06 and stopped in a different place: Home reached **89** posts and then
+reported "recommendations are exhausted", and a page reload after that served
+only **11**. Both had the same cause — the app was treating "posts this account
+has seen at some point recently" as a hard rule about what it may show *now*, so
+an engaged visitor gradually starved their own feed.
 
-Home now behaves the way For You already did, with an added guarantee. When a session is spent the
-app asks for a **successor session in the same chain**, and the server ranks that successor over the
-posts the chain has not served yet:
+### What happens now
 
-- Ranking, diversity and the category scope are unchanged — each session in a chain is a full,
-  independently ranked, diversity-re-ranked selection.
-- Posts already served in this scroll are excluded at retrieval, not filtered out afterwards, so a
-  rollover does not quietly return a page the viewer has just read.
-- The exclusion is recorded server-side when the order is fixed, so it does not depend on impression
-  telemetry arriving in time.
-- When the eligible corpus is genuinely exhausted the chain recycles — its memory is cleared and
-  ranking starts over across the whole catalogue — rather than showing an empty feed or a dead stop.
-- When a rollover returns nothing new at all, the app stops asking. There is no infinite request loop
-  at the end of the catalogue.
-- "Refresh recommendations" is deliberately *not* chained: it asks for a fresh mix of everything.
+Home and For You both browse in a **chain**: several ranked sessions linked
+across one page load. When a session is spent the app asks for a successor, and
+the server ranks it over the posts the chain has not served yet.
 
-For a viewer this means Home scrolls continuously through substantially more of the corpus, with no
-visible boundary where one session ends and the next begins.
+- Ranking, diversity, personalization and the category scope are unchanged.
+  Each session in a chain is a full, independently ranked selection, and For You
+  keeps its own personalized ranker.
+- Posts already served **in this browse** are excluded at retrieval, so a
+  rollover never re-serves the page just read.
+- Posts seen in *earlier* browsing are strongly preferred against, but never
+  allowed to empty the feed. That distinction is the fix.
+- When the remaining unseen set is too small to fill a session, those posts are
+  served anyway — a short batch, not a dead end.
+- When the browse has genuinely served every eligible post, it **recycles**
+  automatically and keeps going with a fresh ranking, holding back the couple of
+  dozen posts just read so the new pass cannot open on them.
+- The feed only stops when there is genuinely nothing eligible to show, or when
+  a single sitting reaches the rendering ceiling (400 cards), which the
+  end-of-feed message names as such rather than calling the catalogue exhausted.
 
-**Note for operators:** the chain's memory lives in Redis under `reco-feed:chain:<id>:seen`, with the
-same TTL as a feed session (45 minutes, refreshed while the scroll is active), and is capped so a
-single long scroll cannot grow it without bound.
+### A reload starts a fresh browse
+
+Deliberately. The chain id is created by the page itself and kept nowhere else,
+so:
+
+- reloading gives a brand-new browse with the whole catalogue available again;
+- two tabs browse independently and never consume each other's posts;
+- switching Home category starts its own browse, so a small category is not
+  emptied by what "All" already showed;
+- "Refresh recommendations" starts a new browse as well.
+
+**For operators:** the chain's memory lives in Redis under
+`reco-chain:<feed>:<id>:{meta,seen,tail}`, expires two hours after the last
+activity, and is capped so one long scroll cannot grow it without bound. No new
+environment variable or configuration is needed.
 
 ## Picture-in-picture next/previous (revised 2026-09-06)
 

@@ -69,7 +69,10 @@ function service(options: { candidates?: any[]; sessionItems?: string[] } = {}) 
     { create: jest.fn(), getPage: jest.fn() } as any,
     affinityService,
     detailSessionService,
-    { getBlockedEitherDirectionIds: jest.fn().mockResolvedValue([]) } as any
+    { getBlockedEitherDirectionIds: jest.fn().mockResolvedValue([]) } as any,
+    // Detail sequencing has no browsing chain: it is anchored on one
+    // post, not on a scroll.
+    { resolve: jest.fn().mockResolvedValue(null) } as any
   );
 
   return { svc, postModel, detailSessionService };
@@ -191,7 +194,10 @@ describe('detailNext videoOnly', () => {
         formatPreferenceScore: jest.fn().mockReturnValue(0)
       } as any,
       detailSessionService,
-      { getBlockedEitherDirectionIds: jest.fn().mockResolvedValue([]) } as any
+      { getBlockedEitherDirectionIds: jest.fn().mockResolvedValue([]) } as any,
+      // Detail sequencing has no browsing chain: it is anchored on one
+      // post, not on a scroll.
+      { resolve: jest.fn().mockResolvedValue(null) } as any
     );
 
     const handed: string[] = [];

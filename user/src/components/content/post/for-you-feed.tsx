@@ -68,7 +68,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
    * their impressions and watch time under whichever session is newest would
    * file that evidence against a ranking that never chose them.
    */
-  const activeSessionId = sessionForPost(activePost?._id) || sessionId;
+  const activeSessionId = sessionForPost(activePost?.feedKey) || sessionId;
   const {
     resumeTime,
     getPlaybackTime,
@@ -320,7 +320,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
           post={detailModalPost}
           posts={posts}
           source="for-you"
-          recommendationSessionId={sessionForPost(detailModalPost._id) || sessionId}
+          recommendationSessionId={sessionForPost(detailModalPost.feedKey) || sessionId}
           initialTime={detailModalInitialTime}
           onPlaybackTimeChange={(currentTime) => {
             rememberPlaybackTime(detailModalPost._id, currentTime);

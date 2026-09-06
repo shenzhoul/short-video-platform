@@ -292,31 +292,59 @@ belongs to the panel — and guards the call with `event.cancelable`.
 ## The End Of A Ranked Session Is Not The End Of The Feed
 
 Home and For You page through a Redis-stored ranked session. A session is a
-bounded *sample* — 70 of 160 posts on this catalogue — and that bound is the
-thing that makes a reload a new selection rather than a re-sort.
+bounded *sample* — 70 of 160 posts on this catalogue — and that bound is what
+makes a reload a new selection rather than a re-sort.
 
-It was also where Home stopped: `hasMore` went false at item 70 and `loadMore`
-returned early, leaving two thirds of the corpus unreachable by scrolling.
+### One browse is a chain, and the client owns its identity
 
-- **`!hasMore` means "this session is done", not "the feed is done".** Roll over:
-  send the spent `sessionId` with `rollover: 'true'` and **no cursor**, append the
-  successor session's posts, dedupe by id.
-- **The stop condition is a rollover that added nothing** (`catalogueSpent`), not
-  `hasMore`. Report `hasMore || !catalogueSpent` so the scroller keeps asking
-  across a session boundary, and latch `catalogueSpent` or the rollover fires on
-  every scroll to the bottom for the rest of the session.
+`@lib/browsing-chain` mints a chain id **per page load, per surface, per Home
+category**, in a module variable and nowhere else. That lifetime is the whole
+point:
+
+- a **reload** re-evaluates the module and mints a new chain, so a browse can
+  never inherit a spent one. `deploy-2026-09-06g` derived the chain from the
+  first session id instead, and a reload after a long browse served **11 posts**
+  before reporting the feed exhausted;
+- **two tabs** are two module instances and never consume each other's
+  catalogue;
+- **a category switch** is its own browsing context, so a small category is not
+  starved by what "All" already showed.
+
+`sessionStorage` would break the first of those and `localStorage` the first and
+third. Do not "improve" this by persisting it.
+
+The first page is server-rendered, so the SSR wrapper mints the id, sends it,
+and the hook adopts it (`adoptBrowsingChainId`) **during render** — a scroll can
+trigger `loadMore` before that commit's effects run.
+
+### Rules that follow
+
+- **`!hasMore` means "this session is done", not "the feed is done".** Roll
+  over: send the spent `sessionId` with `rollover: 'true'`, the same `chainId`,
+  and no cursor.
+- **The stop condition is the server's answer, not the client's bookkeeping.**
+  `isChainSpent` is "the rollover returned nothing at all". The previous version
+  latched on "the client added nothing new", so a rollover re-offering visible
+  posts ended Home at 89 of 160 with "recommendations are exhausted". It also
+  read a value assigned inside a `setState` updater on the very next line, which
+  React only computes eagerly when the fiber has no pending update.
+- **De-duplicate by `feedKey`, never by `_id`.** An exhausted chain recycles, so
+  a later cycle may legitimately re-offer a post; `withFeedKey` namespaces it
+  (`<cycle>:<id>`) and `home-feed.tsx` keys on it. De-duplicating by `_id` would
+  silently discard a whole recycled cycle.
 - **Never raise the session limit toward the pool size to "fix" a short feed.**
-  That deletes the ranking rather than continuing the scroll, and reinstates a
-  documented defect: a session equal to the catalogue meant reloading could only
-  re-sort one fixed set, and the same post led all ten measured reloads.
-- **Attribution follows the post, not the newest session.** Keep a
-  `sessionByPostId` map and expose `sessionForPost(id)`. A chain crosses several
-  sessions while earlier cards are still on screen; reporting their impressions
-  under whichever session is newest files that evidence against a ranking that
-  never chose them, and the first session to serve a post owns it.
-- Cover: `user/src/hooks/use-home-feed-infinite-scroll.spec.tsx`. See
+  That deletes the ranking rather than continuing the scroll.
+- **Attribution follows the post's render key.** `sessionForPost(feedKey)` — a
+  chain crosses several sessions while earlier cards are on screen, and the same
+  post in a later cycle was served by a different session.
+- **Bound the DOM, and say so honestly.** `MAX_RENDERED_FEED_POSTS` stops an
+  endless feed growing forever; the end-of-feed message distinguishes it from a
+  genuinely spent catalogue.
+- Cover: `use-home-feed-infinite-scroll.spec.tsx`, `browsing-chain.spec.ts`,
+  `use-feed-chain-page.spec.ts`. See
   `.agents/skills/recommendation-engine/SKILL.md` for the server half.
 
+## Feed Rendering And Scroll Performance
 ## Feed Rendering And Scroll Performance
 
 The Home Feed keeps every card it has loaded — 160 posts is 4,176 DOM nodes —

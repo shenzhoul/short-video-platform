@@ -76,16 +76,16 @@ export const REDIS_KEYS = {
   /** Session metadata hash (subjectId, feedType, topicKey, sessionSeed, createdAt). */
   recoFeedSessionMeta: (sessionId: string) => key('reco-feed', `${sessionId}:meta`),
   /**
-   * Every post id served by one *chain* of feed sessions.
-   *
-   * A chain is what a continuous scroll looks like on the server: the first
-   * session is the root and each rollover creates a successor that inherits the
-   * root's id. The set is the chain's seen-post exclusion, so a rollover starts
-   * from what the viewer has *not* been shown rather than re-ranking the same
-   * catalogue. Bounded by `FEED_SESSION_POLICY.maxChainSeenIds` and cleared
-   * when the eligible corpus is exhausted (`RecommendationSessionService`).
+   * One browsing chain — several ranked sessions linked across one page load of
+   * one surface, so a continuous scroll keeps finding unshown posts. Keyed by
+   * feed type as well as id, so Home and For You never share a seen set even if
+   * a client reused an id. See `RecommendationChainService`.
    */
-  recoFeedChainSeen: (chainId: string) => key('reco-feed', `chain:${chainId}:seen`),
+  recoChainMeta: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:meta`),
+  /** Every post id this chain has served in the current cycle. */
+  recoChainSeen: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:seen`),
+  /** The most recently served ids, kept across a recycle so a new cycle cannot repeat them immediately. */
+  recoChainTail: (feedType: string, chainId: string) => key('reco-chain', `${feedType}:${chainId}:tail`),
   /** Ordered post-id list for one Post Detail recommendation session (Home/notification/direct-link anchors). */
   recoDetailSessionItems: (sessionId: string) => key('reco-detail', `${sessionId}:items`),
   /** Detail session metadata hash (subjectId, anchorPostId, cursorIndex, sessionSeed). */

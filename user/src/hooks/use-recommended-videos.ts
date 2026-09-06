@@ -1,28 +1,43 @@
 'use client';
 
 import { IPost } from '@interfaces/post';
+import { adoptBrowsingChainId, getBrowsingChainId, resetBrowsingChain } from '@lib/browsing-chain';
 import { getRecommendationAnonymousId } from '@lib/recommendation-anonymous-id';
 import { getRecommendedPosts } from '@services/post.service';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import {
+  FeedChainPage,
+  FeedFetchMode,
+  isChainSpent,
+  MAX_RENDERED_FEED_POSTS,
+  mergeFeedPage,
+  withFeedKey
+} from './use-feed-chain-page';
 import { usePostInteractionUpdater } from './use-post-interactions';
 
-export interface RecommendedVideoPage {
-  data: IPost[];
-  hasMore: boolean;
-  sessionId?: string;
-  nextCursor?: string | null;
-}
+export type RecommendedVideoPage = FeedChainPage;
 
 /**
- * For You: a personalized ranked session, same session-pagination model as
- * Home (`useHomeFeedInfiniteScroll`) — one ranked order generated once
- * server-side per session and paginated by `sessionId` + opaque `cursor`, so
- * scrolling forward can never duplicate or skip a post, and a fresh mount
- * (or `refresh()`) always starts a new session with a new mix.
+ * For You: a personalized ranked session, on the same browsing-chain contract
+ * as Home (`useHomeFeedInfiniteScroll`) — one ranked order generated once
+ * server-side per session, paginated by `sessionId` + opaque `cursor`, and
+ * rolled over into a successor session in the same chain when it is spent.
+ *
+ * **The chain is shared infrastructure; the ranking is not.** For You keeps its
+ * own candidate quotas, its own score weights, its own session size and its own
+ * personalization from watch behaviour, likes, follows and replays. All the
+ * chain contributes is "what has this browse already served", which is
+ * bookkeeping rather than recommendation.
+ *
+ * The chain id is minted per page load (`@lib/browsing-chain`): a reload starts
+ * a fresh browse, two tabs never consume each other's catalogue, and an
+ * exhausted chain recycles server-side instead of dead-ending.
  */
 export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) {
-  const [posts, setPosts] = useState<IPost[]>(initialData?.data || []);
+  const [posts, setPosts] = useState<IPost[]>(
+    () => (initialData?.data || []).map((post) => withFeedKey(post, initialData?.cycle || 0))
+  );
   const [hasMore, setHasMore] = useState(initialData?.hasMore ?? true);
   const [sessionId, setSessionId] = useState<string | null>(initialData?.sessionId || null);
   const [nextCursor, setNextCursor] = useState<string | null>(initialData?.nextCursor || null);
@@ -30,38 +45,36 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   /**
-   * A rollover that added nothing means the catalogue, not just this session,
-   * is spent — so stop asking. Without this the "open a fresh session" branch
-   * below would loop forever once every eligible post had been shown.
+   * The server answered a rollover with nothing at all — which, since an
+   * exhausted chain recycles server-side, means nothing is eligible for this
+   * subject. Latched so the rollover branch cannot loop.
    */
   const [catalogueSpent, setCatalogueSpent] = useState(false);
   /**
-   * Which session ranked each loaded post.
+   * Which session ranked each loaded post, keyed by its render key.
    *
-   * A session is a bounded segment, so a long scroll crosses into a second and
-   * third one — and the posts from earlier segments stay on screen. Attributing
-   * their impressions and watch time to whichever session happens to be newest
-   * would file the evidence under a ranking that never chose them. Every event
-   * is keyed on the session the post actually came from.
+   * A chain is a sequence of bounded segments, so a long scroll crosses into a
+   * second and third one while posts from the first are still on screen.
+   * Attributing their impressions to whichever session happens to be newest
+   * would file the evidence under a ranking that never chose them.
    */
-  const [sessionByPostId, setSessionByPostId] = useState<Record<string, string>>(
+  const [sessionByFeedKey, setSessionByFeedKey] = useState<Record<string, string>>(
     () => Object.fromEntries(
       (initialData?.data || [])
         .filter(() => Boolean(initialData?.sessionId))
-        .map((post) => [post._id, initialData!.sessionId as string])
+        .map((post) => [withFeedKey(post, initialData?.cycle || 0).feedKey as string, initialData!.sessionId as string])
     )
   );
   const updatePostInteraction = usePostInteractionUpdater(setPosts);
 
+  // Adopt the chain the server render used, during render: the first
+  // `loadMore` can fire before this commit's effects run, and it must send the
+  // same chain id the server already recorded its first session under.
+  adoptBrowsingChainId('for-you', initialData?.chainId);
+
   /*
    * Make sure the guest subject id (and its cookie mirror) exists from the
    * first paint, not from the first request that happens to need it.
-   *
-   * The cookie is what lets the *next* server render create a session this
-   * client can continue. Written lazily it did not exist yet when the second
-   * page load happened, so the server render still built a session under a
-   * throwaway subject and the client abandoned it — 77 rendered cards for a
-   * 70-item session, every visit.
    */
   useEffect(() => {
     getRecommendationAnonymousId();
@@ -69,7 +82,7 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
 
   const fetchPage = useCallback(async (
     params: { sessionId: string | null; cursor: string | null },
-    mode: 'reset' | 'append' | 'rollover'
+    mode: FeedFetchMode
   ) => {
     loadingRef.current = true;
     setLoading(true);
@@ -81,37 +94,30 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
       const anonymousId = getRecommendationAnonymousId();
       const response = await getRecommendedPosts({
         limit: 10,
+        chainId: getBrowsingChainId('for-you'),
         ...(anonymousId ? { anonymousId } : {}),
         ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-        ...(params.cursor ? { cursor: params.cursor } : {})
+        ...(params.cursor ? { cursor: params.cursor } : {}),
+        ...(mode === 'rollover' ? { rollover: 'true' } : {})
       });
       const page = response.data as RecommendedVideoPage;
-      let added = 0;
-      setPosts((current) => {
-        if (mode === 'reset') {
-          added = (page.data || []).length;
-          return page.data || [];
-        }
-        const knownIds = new Set(current.map((post) => post._id));
-        const incoming = (page.data || []).filter((post) => !knownIds.has(post._id));
-        added = incoming.length;
-        return incoming.length ? [...current, ...incoming] : current;
-      });
-      // Record which session ranked each newly arrived post, before anything
-      // else can move `sessionId` on.
+      const cycle = page.cycle || 0;
+      const incoming = (page.data || []).map((post) => withFeedKey(post, cycle));
+
+      setPosts((current) => mergeFeedPage(current, incoming, mode).posts);
+
       if (page.sessionId) {
-        const arrived = (page.data || []).map((post) => post._id);
-        setSessionByPostId((current) => {
+        setSessionByFeedKey((current) => {
           const next = mode === 'reset' ? {} : { ...current };
-          arrived.forEach((id) => {
-            // First session to serve a post owns its attribution; a rollover
-            // that re-offers one must not relabel the exposure already logged.
-            if (!next[id]) next[id] = page.sessionId as string;
+          incoming.forEach((post) => {
+            const key = post.feedKey as string;
+            if (!next[key]) next[key] = page.sessionId as string;
           });
           return next;
         });
       }
-      if (mode === 'rollover' && added === 0) setCatalogueSpent(true);
+
+      if (isChainSpent(page, mode)) setCatalogueSpent(true);
       if (mode === 'reset') setCatalogueSpent(false);
       setHasMore(Boolean(page.hasMore));
       setSessionId(page.sessionId || null);
@@ -126,40 +132,46 @@ export function useRecommendedVideos(initialData?: RecommendedVideoPage | null) 
 
   const loadMore = useCallback(async () => {
     if (loadingRef.current) return;
-    /*
-     * A ranked session is a bounded segment, not the whole catalogue, so
-     * reaching its end is normal rather than the end of the feed. Opening a
-     * fresh session and appending keeps scrolling continuous; ids already shown
-     * are filtered out above, so a rollover cannot repeat a post inside this
-     * mount — and one that yields nothing new stops the rollover for good.
-     */
-    if (!hasMore) {
-      if (!sessionId || catalogueSpent) return;
-      await fetchPage({ sessionId: null, cursor: null }, 'rollover');
+    if (posts.length >= MAX_RENDERED_FEED_POSTS) return;
+
+    // No session yet — the first mount, or a previous session that expired.
+    // `loadMore` is For You's only loader, so this is where its feed starts.
+    if (!sessionId) {
+      await fetchPage({ sessionId: null, cursor: null }, 'reset');
       return;
     }
-    // No session yet (first load, or a previous session expired) starts a new
-    // one; an existing session continues its stable pagination.
-    await fetchPage(
-      { sessionId, cursor: sessionId ? nextCursor : null },
-      sessionId ? 'append' : 'reset'
-    );
-  }, [catalogueSpent, fetchPage, hasMore, nextCursor, sessionId]);
+
+    /*
+     * A ranked session is a bounded segment, not the whole catalogue, so
+     * reaching its end is normal rather than the end of the feed. The rollover
+     * continues the same chain, so the successor is ranked over what this
+     * browse has *not* served — and the server recycles the chain rather than
+     * dead-ending once it has served everything eligible.
+     */
+    if (!hasMore || !nextCursor) {
+      if (catalogueSpent) return;
+      await fetchPage({ sessionId, cursor: null }, 'rollover');
+      return;
+    }
+    await fetchPage({ sessionId, cursor: nextCursor }, 'append');
+  }, [catalogueSpent, fetchPage, hasMore, nextCursor, posts.length, sessionId]);
 
   const refresh = useCallback(async () => {
+    resetBrowsingChain('for-you');
+    setSessionByFeedKey({});
     await fetchPage({ sessionId: null, cursor: null }, 'reset');
   }, [fetchPage]);
 
-  /** The session that ranked this post — not merely the newest one open. */
+  /** The session that ranked this post in this cycle — not merely the newest one open. */
   const sessionForPost = useCallback(
-    (postId?: string | null) => (postId ? sessionByPostId[postId] || null : null),
-    [sessionByPostId]
+    (feedKey?: string | null) => (feedKey ? sessionByFeedKey[feedKey] || null : null),
+    [sessionByFeedKey]
   );
 
   return {
     posts,
-    /** More posts can still arrive — this session, or the next one after a rollover. */
-    hasMore: hasMore || !catalogueSpent,
+    /** More posts can still arrive — this session, the next after a rollover, or a recycled cycle. */
+    hasMore: (hasMore || !catalogueSpent) && posts.length < MAX_RENDERED_FEED_POSTS,
     loading,
     error,
     sessionId,

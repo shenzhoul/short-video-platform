@@ -181,19 +181,45 @@ export const FEED_SESSION_POLICY = {
   ttlSeconds: 45 * 60,
   maxItems: 160, // Matches the benchmarked-safe Home render ceiling (rules/user.md).
   defaultPageSize: 10,
-  loadMoreLockTtlMs: 5000,
+  loadMoreLockTtlMs: 5000
+} as const;
+
+/**
+ * Browsing-chain policy — see `RecommendationChainService`.
+ *
+ * A chain is one page load of one surface: several ranked sessions linked
+ * together so a continuous scroll keeps finding posts it has not shown yet. It
+ * is *not* the subject and *not* a session; the client mints its id per page
+ * load, so a reload starts a fresh browse and two tabs never consume each
+ * other's catalogue.
+ */
+export const CHAIN_POLICY = {
   /**
-   * Ceiling on one chain's seen-post set (see `REDIS_KEYS.recoFeedChainSeen`).
-   *
-   * The natural bound is the eligible corpus — once a chain has seen every
-   * post, retrieval comes back empty and the chain is recycled, which clears
-   * the set. This is the guard for the case where that never happens because
-   * the catalogue keeps growing: a single scroll must not be able to allocate
-   * an unbounded Redis set. Reaching it recycles the chain exactly as
-   * exhaustion does, and it is deliberately far above `maxItems` so an
-   * ordinary session chain never trips it.
+   * How long an idle chain survives. Refreshed on every read and write, so a
+   * scroll in progress never expires under the viewer, while an abandoned
+   * tab's chain is gone long before its id could be replayed.
    */
-  maxChainSeenIds: 5000
+  ttlSeconds: 2 * 60 * 60,
+  /**
+   * Ceiling on one chain's seen-post set.
+   *
+   * The natural bound is the eligible corpus, because exhausting it recycles.
+   * This is the guard for a catalogue that keeps growing under a very long
+   * scroll: hitting it recycles exactly as exhaustion does, so a single browse
+   * can never allocate an unbounded Redis set.
+   */
+  maxSeenIds: 5000,
+  /**
+   * How many of the most recently served posts survive a recycle, so a new
+   * cycle cannot open on what the viewer just finished reading.
+   *
+   * One Home session's worth would be too many — it would leave the first
+   * session of a new cycle unable to fill. One screen's worth is the point.
+   */
+  recentTailSize: 24,
+  /** Client-supplied ids become Redis key segments, so their shape is bounded. */
+  minIdLength: 8,
+  maxIdLength: 64
 } as const;
 
 /** Post Detail recommendation-session policy (Home / notification / direct-link anchors). */

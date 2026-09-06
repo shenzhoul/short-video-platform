@@ -5,6 +5,7 @@ import { authOptions } from '@lib/auth-options';
 import { getClientIpHeadersFromNextHeaders } from '@lib/ip';
 import { getRecommendationAnonymousIdFromCookies } from '@lib/recommendation-anonymous-id.server';
 import { getPersonalizedHomePosts } from '@services/post.service';
+import { randomUUID } from 'crypto';
 import { notFound } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 
@@ -31,8 +32,19 @@ export default async function HomeLandingWrapper({ searchParams }: { searchParam
       // the client can continue paging instead of abandoning on its first
       // load-more.
       const anonymousId = token ? undefined : await getRecommendationAnonymousIdFromCookies();
+      /*
+       * The browsing chain starts here, not in the browser.
+       *
+       * This render creates the first ranked session; if it were unchained,
+       * those posts would sit outside the chain's seen-set and the first
+       * rollover could re-offer the whole page. The id is echoed in the
+       * response and adopted by `useHomeFeedInfiniteScroll`.
+       *
+       * Minted per render, so a full page reload is a genuinely fresh browse
+       * rather than the tail of a spent one.
+       */
       const postResponse = await getPersonalizedHomePosts({
-        limit: POST_PAGE_LIMIT, ...(anonymousId ? { anonymousId } : {})
+        limit: POST_PAGE_LIMIT, chainId: randomUUID(), ...(anonymousId ? { anonymousId } : {})
       }, requestHeaders);
       if (postResponse?.data) {
         iniPosts = postResponse.data;

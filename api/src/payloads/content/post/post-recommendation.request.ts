@@ -50,6 +50,26 @@ export class PostRecommendationRequest extends SearchRequest {
   anonymousId?: string;
 
   /**
+   * The browsing chain this request belongs to.
+   *
+   * Minted by the client, once per page load per surface, and deliberately
+   * **not** derived from the subject or from a session id: one subject browses
+   * many times and in several tabs, and each of those must be free to see the
+   * catalogue from the start. A reload mints a new one, which is what makes a
+   * reload a fresh browse rather than the tail of a spent one.
+   *
+   * It becomes a Redis key segment and names a browse, so it is bounded and
+   * shape-checked here as well as in `RecommendationChainService`. An id that
+   * fails either check yields an unchained (still working) feed rather than an
+   * error.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(8, 64)
+  @Matches(/^[A-Za-z0-9_-]+$/, { message: 'chainId must be an opaque token' })
+  chainId?: string;
+
+  /**
    * Continue the scroll in a *new* session of the same chain, instead of
    * reading another page of `sessionId`.
    *

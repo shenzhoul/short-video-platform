@@ -1,5 +1,6 @@
 'use client';
 
+import { MAX_RENDERED_FEED_POSTS } from '@hooks/use-feed-chain-page';
 import { useHomeFeedInfiniteScroll } from '@hooks/use-home-feed-infinite-scroll';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
 import { isTopicKeyRetired, usePostTopicsCatalogue } from '@hooks/use-post-topics';
@@ -145,19 +146,21 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                     featuredResumeTime={playback.featuredResumeTime}
                     onFeaturedTimeUpdate={playback.updateFeaturedPlaybackTime}
                     onOpenDetail={playback.openDetailPost}
-                    recommendationSessionId={sessionForPost(posts[0]._id) || sessionId}
+                    recommendationSessionId={sessionForPost(posts[0].feedKey) || sessionId}
                   />
                 </div>
               ) : null}
 
               {posts.slice(1).map((post) => (
                 <HomeFeedCard
-                  key={post._id}
+                  // Keyed per cycle: a recycled chain may legitimately show a
+                  // post again further down, and two children may not share a key.
+                  key={post.feedKey || post._id}
                   post={post}
                   popupPipState={playback.popupPipState}
                   onCompactHoverChange={setHoveredCompactPostId}
                   onOpenDetail={playback.openDetailPost}
-                  recommendationSessionId={sessionForPost(post._id) || sessionId}
+                  recommendationSessionId={sessionForPost(post.feedKey) || sessionId}
                 />
               ))}
             </div>
@@ -183,11 +186,23 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
             </div>
           ) : null}
 
+          {/*
+            Two different reasons the feed can stop, and they must not be
+            described the same way. Reaching `MAX_RENDERED_FEED_POSTS` is a
+            rendering ceiling — the catalogue still has more — while the server
+            answering a rollover with nothing means there really is nothing
+            eligible left. Saying "recommendations are exhausted" for the first
+            is what made a feed that stopped at 89 of 160 posts look correct.
+          */}
           {!hasMore && posts.length > 0 ? (
             <div className="py-8 text-center opacity-70">
               <FaHeart className="mx-auto mb-2 text-2xl" />
               <p>You&apos;re all caught up!</p>
-              <p className="mb-4 text-sm">This session&apos;s recommendations are exhausted.</p>
+              <p className="mb-4 text-sm">
+                {posts.length >= MAX_RENDERED_FEED_POSTS
+                  ? `That's ${posts.length} posts in one sitting. Refresh for a new mix.`
+                  : 'There is nothing new to show right now.'}
+              </p>
               <button
                 type="button"
                 onClick={refresh}

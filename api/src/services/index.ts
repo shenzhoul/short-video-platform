@@ -70,6 +70,7 @@ export {
   RecommendationDiversityService,
   RecommendationSelectionService,
   RecommendationSessionService,
+  RecommendationChainService,
   PostDetailRecommendationSessionService,
   RecommendationEventService,
   RecommendationCategoryPriorService,

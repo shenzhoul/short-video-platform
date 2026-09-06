@@ -285,7 +285,8 @@ export class ContentService {
       cursor: req.cursor || null,
       limit: Number(req.limit) || PAGINATION_DEFAULTS.DEFAULT_LIMIT,
       debug: includeDebug,
-      rollover: Boolean(req.rollover)
+      rollover: Boolean(req.rollover),
+      chainId: req.chainId
     });
 
     const data = result.data.length ? await this.populatePostData(result.data, { user, ...options }) : [];
@@ -295,6 +296,11 @@ export class ContentService {
       hasMore: result.hasMore,
       sessionId: result.sessionId,
       nextCursor: result.nextCursor,
+      // Echoed so the client keeps sending the same chain, and can key its
+      // rendered list per cycle — the same post may legitimately reappear in a
+      // later cycle and two React children may not share a key.
+      chainId: result.chainId,
+      cycle: result.cycle,
       paginationInfo: { cursorPaginationAvailable: true, strategy: `${feedType}-recommendation-v1` },
       ...(includeDebug ? { debug: result.debug } : {})
     };

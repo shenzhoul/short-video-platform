@@ -89,6 +89,14 @@ The rule that follows:
 | `deploy/nginx/**` | none | Host nginx, not a container: `nginx -t` then `systemctl reload nginx`. |
 | `docs/**`, `.agents/**`, `*.md` | none | Nothing to deploy. |
 
+**No environment variable is required by the recommendation browsing chains**
+(added 2026-09-06). Their policy — TTL, size ceiling, recent-tail length — is
+compile-time (`CHAIN_POLICY` in `api/src/common/constants/recommendation.ts`), so
+changing it is an `api` rebuild, not an env edit. They add three short-lived
+Redis keys per browse under `douyin-clone:reco-chain:*`, each expiring two hours
+after the last activity; nothing needs to be created, migrated or cleaned up,
+and rolling back to an earlier image simply leaves them to expire.
+
 ### Build-time values are baked into the Next images
 
 `user` and `admin` receive these as **build args** (see the `args:` blocks in

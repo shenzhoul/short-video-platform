@@ -251,45 +251,65 @@ system.
   so an unfollow-then-refollow cycle cannot re-earn the signal.
 - A stat/priors/candidate query must always be batched (`$in`), never issued per-post in a loop.
 
-## Feed session chains
+## Browsing chains
 
-A session is a bounded ranked **sample** of the candidate pool — 70 items of 160 on this catalogue
-(`SESSION_OUTPUT_POLICY.homeSessionItemLimit`). That bound is what stops a reload being a re-sort of
-one fixed set. It was also, for a while, where Home stopped: `hasMore` went false at item 70 and
-nothing asked for more, so two thirds of the corpus were unreachable by scrolling.
+A session is a bounded ranked **sample** of the candidate pool — 70 items of 160
+(`SESSION_OUTPUT_POLICY.homeSessionItemLimit`). That bound stops a reload being
+a re-sort of one fixed set. A **chain** is what strings sessions together so a
+continuous scroll keeps finding posts it has not shown.
 
-The fix is a **chain**: the first session is the chain root, and an exhausted session rolls over into
-a successor that inherits the root's id.
+### Three identities, deliberately distinct
 
-- `POST`-less: the client sends `sessionId` + `rollover=true` with **no cursor**. `getFeed` then skips
-  `getPage` entirely — reading the exhausted session first would answer with its last page again,
-  which is exactly the repeat the rollover exists to avoid.
-- `REDIS_KEYS.recoFeedChainSeen(chainId)` is a Redis SET of every post id the chain has served,
-  written by `RecommendationSessionService.create` **at the moment the order is fixed**. It is
-  deliberately *not* driven by impression telemetry: that arrives late and best-effort, so a rollover
-  racing it would re-rank the page still on screen.
-- `createSession` excludes `union(affinity.recentlySeenPostIds, chainSeen)`. Two relaxation stages,
-  in order: drop the **chain** exclusion first (and `resetChainSeen`, so the recycle is recorded
-  rather than re-run on every page), and only then the blanket `retrieveWith([])` fallback that
-  already existed for seen-starvation. Recycling the chain first keeps the older cross-session
-  suppression in force.
-- `FEED_SESSION_POLICY.maxChainSeenIds` caps the set. The natural bound is the eligible corpus, since
-  exhaustion recycles; the cap is the guard for a catalogue that keeps growing. Hitting it recycles
-  exactly as exhaustion does.
-- `getChainId(sessionId, subjectId)` checks the subject, so a rollover quoting somebody else's
-  session gets a brand-new chain rather than theirs — a guessed session id cannot reveal what another
-  viewer was shown.
-- **`refresh()` is deliberately unchained.** "Refresh recommendations" asks for a new mix of the whole
-  catalogue, not for the remainder of the scroll just abandoned.
+| Concept | Lives for | Owned by |
+|---|---|---|
+| subject (`viewerId` / `anonymousId`) | the account or guest cookie | personalisation |
+| browsing chain (`chainId`) | one page load of one surface | `RecommendationChainService` |
+| feed session (`sessionId`) | one ranked batch | `RecommendationSessionService` |
 
-Do **not** "fix" a short feed by raising `homeSessionItemLimit` toward `candidatePoolLimit`. That
-removes the ranking instead of continuing the scroll, and it reinstates the defect
-`SESSION_OUTPUT_POLICY`'s own comment documents: a 160-item session in score order meant reloading
-could only re-sort one fixed set, and the same post led all ten measured reloads.
+The **client** mints the chain id (`user/src/lib/browsing-chain.ts`), one per
+page load per surface per Home category, and the SSR wrapper mints the one its
+own render uses. A reload starts a fresh browse; two tabs never collide.
 
-Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`,
-`user/src/hooks/use-home-feed-infinite-scroll.spec.tsx`.
+### Shared infrastructure, separate rankers
 
+`RecommendationChainService` knows nothing about scoring, candidate sources,
+quotas or diversity. Home and For You both use it and both keep their own
+ranker, their own session size and their own personalization. Do not "unify"
+the two feeds because they share a chain.
+
+### Staged exclusion, and why there is no threshold any more
+
+`deploy-2026-09-06g` excluded `chainSeen ∪ recentlySeenPostIds` and dropped the
+whole suppression below ten surviving candidates. Measured in production:
+Home stopped at **89** of 160, and a reload then stopped at **11** — because
+`recentlySeenPostIds` held ~149 distinct ids and 11 is not below 10.
+
+`createSession` now stages it:
+
+1. `chain ∪ recentlySeen ∪ tail`, while it can fill a session;
+2. `chain ∪ tail` (chained callers only), which also returns a short final
+   batch rather than declaring the feed finished;
+3. **recycle** when the chain has served everything eligible — reset the
+   seen-set, `cycle += 1`, hold back `CHAIN_POLICY.recentTailSize`.
+
+`RELAXED_SUPPRESSION_MIN_POOL` remains, for unchained callers only.
+
+### Invariants
+
+- **Write the seen-set when the order is fixed**, inside `createSession`, never
+  from impression telemetry — telemetry lands late, and a rollover racing it
+  re-ranks the page on screen.
+- **A rollover skips `getPage`.** Reading the exhausted session answers with its
+  last page again.
+- **`resolve` checks the subject**, so a guessed chain id reveals nothing.
+- **Bound the set** (`CHAIN_POLICY.maxSeenIds`) and TTL every chain key
+  (`CHAIN_POLICY.ttlSeconds`), refreshed on read and write.
+- **Return `cycle`** on every page, including pages read from an existing
+  session — the client needs it for React keys across a recycle.
+- Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`
+  (28 tests, driven against a 160-post corpus, asserting distinct served ids).
+
+## Picture-in-picture navigates a detail session, never the DOM
 ## Picture-in-picture navigates a detail session, never the DOM
 
 `PopupPipState` used to carry a `playlist`: the Home grid's video posts **in rendered order**. "Next"
@@ -358,23 +378,23 @@ Cover: `user/src/components/ui/popup-pip-navigation.spec.tsx`,
    `createdAt`/offset-based pagination scheme for either.
 2. A Home category tab change must start a brand-new session scoped to that category — it is not a
    client-side filter over the existing session's posts.
-3. `refresh()` on either hook is what "Refresh recommendations" calls. `FEED_SESSION_POLICY.maxItems`
-   remains the benchmarked-safe *rendering* ceiling for Home — see rules/user.md's Feed Rendering
-   section, and do not reopen virtualization to raise it — but it is no longer what a session holds:
-   `SESSION_OUTPUT_POLICY` decides that, and it is deliberately well below the ceiling.
-   **Both** hooks treat a session as a *segment*: when it is spent they roll over
-   (`mode: 'rollover'`), append, dedupe by id, and latch `catalogueSpent` when a rollover adds
-   nothing so the effect cannot loop. `hasMore` is reported as `hasMore || !catalogueSpent`, so the
-   scroller keeps asking across a session boundary. Do not gate For You's prefetch on `hasMore` —
-   that stops the feed dead at the end of the first segment.
-   Home additionally sends `rollover=true` so the server continues the **chain** (see above); For
-   You's rollover is currently unchained and relies on client-side dedupe plus impression-driven
-   suppression.
-3b. **Attribution follows the post, not the newest session.** Both hooks keep a `sessionByPostId` map
-   and expose `sessionForPost(postId)`. A chain crosses several sessions while the earlier ones'
-   cards are still on screen; reporting their impressions and watch time under whichever session is
-   newest files that evidence against a ranking that never chose them. The first session to serve a
-   post owns its attribution — a recycled chain re-offering one must not relabel it.
+3. `refresh()` on either hook is what "Refresh recommendations" calls, and it
+   mints a **new chain** — a new mix of the whole catalogue, not the remainder
+   of the browse being abandoned. `FEED_SESSION_POLICY.maxItems` remains the
+   benchmarked-safe *rendering* ceiling (rules/user.md; do not reopen
+   virtualization to raise it) and is not what a session holds:
+   `SESSION_OUTPUT_POLICY` decides that, deliberately well below it.
+   **Both** hooks treat a session as a segment: when it is spent they roll over
+   with the same `chainId`, append, de-duplicate by `feedKey`, and latch
+   `catalogueSpent` only when the server answers a rollover with **nothing at
+   all**. `hasMore` is reported as `(hasMore || !catalogueSpent) && under the
+   render ceiling`. Do not gate For You's prefetch on `hasMore` — that stops the
+   feed dead at the end of the first segment.
+3b. **Attribution follows the post's render key.** Both hooks keep a
+   `sessionByFeedKey` map and expose `sessionForPost(feedKey)`. A chain crosses
+   several sessions while earlier cards are still on screen, and a recycled
+   cycle re-serves a post under a different session; keying on `_id` would file
+   that evidence against a ranking that never chose it.
 4. **Which media the For You stage draws is decided by the post, not by the surface.** `PostVideoStage`
    mounts the player only when `getPostVideo(post)` is non-empty and draws `PostGraphicStageMedia`
    otherwise. Rendering a `<video>` for a photo post was a real defect — React refuses `src=""`, so the

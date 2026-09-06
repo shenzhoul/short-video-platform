@@ -224,35 +224,67 @@ noticed, because every test of the new route passed no `userId` at all.
   it is opened rather than after it is in memory. See
   `.agents/skills/file-service-integration/SKILL.md`.
 
-## A Ranked Session Is A Sample; Continuing It Is A Chain
+## A Browse Is A Chain; A Session Is One Batch; Neither Is The Subject
 
-`RecommendationSessionService` stores one session's ranked order in Redis and
-pages it with an offset cursor. A session is deliberately **smaller than the
-candidate pool** (`SESSION_OUTPUT_POLICY.homeSessionItemLimit` is 70 against a
-160-item pool), because a session equal to the catalogue makes every reload a
-re-sort of one fixed set.
+Three identities, deliberately distinct:
 
-So an exhausted session is continued, not enlarged. `getFeed` accepts
-`sessionId` + `rollover` and creates a **successor session in the same chain**.
+| Concept | Lives for | Owned by |
+|---|---|---|
+| **subject** (`viewerId` / `anonymousId`) | the account, or the guest cookie | personalisation |
+| **browsing chain** (`chainId`) | one page load of one surface | `RecommendationChainService` |
+| **feed session** (`sessionId`) | one ranked batch | `RecommendationSessionService` |
 
-- **A rollover skips `getPage` entirely.** Reading the exhausted session first
-  answers with its last page again — the exact repeat the rollover exists to
-  avoid.
-- **The chain's seen-set is written when the order is fixed**, inside
-  `RecommendationSessionService.create`, not from impression telemetry. Telemetry
-  is best-effort and lands late; a rollover racing it re-ranks the page still on
-  screen.
-- **Relax in stages.** Drop the chain exclusion first — and persist the reset, or
-  the branch re-runs on every page — and only then fall back to the blanket
-  "ignore everything seen" retrieval that already existed for seen-starvation.
-- **Bound the set.** `FEED_SESSION_POLICY.maxChainSeenIds` recycles the chain on
-  size the same way exhaustion recycles it on emptiness, so one long scroll
-  cannot allocate an unbounded Redis set.
-- **Resolve a chain through the session, and check the subject.**
-  `getChainId(sessionId, subjectId)` returns null for somebody else's session, so
-  a guessed id cannot reveal what another viewer was shown.
-- Cover: `api/src/services/content/recommendation/recommendation-chain.spec.ts`.
+**The client mints the chain id** and sends it, one per page load per surface.
+Deriving it server-side from the first session id is what shipped in
+`deploy-2026-09-06g`, and it is an identity nobody can name, reset or reason
+about: a reload silently inherited a nearly spent browse. It is bounded and
+shape-checked (`CHAIN_POLICY.minIdLength`/`maxIdLength`, `[A-Za-z0-9_-]`) because
+it becomes a Redis key segment, and it is **bound to the subject** — `resolve`
+returns null for somebody else's chain, so a guessed id reveals nothing.
 
+Chain state is three keys per (feedType, chainId): `meta` (subject + cycle),
+`seen` (a SET), `tail` (the most recent ids, kept across a recycle). All three
+carry `CHAIN_POLICY.ttlSeconds` and are refreshed on every read and write.
+
+## Never Let A Soft Memory Become A Hard Constraint
+
+`recentlySeenPostIds` is an impression-driven ring buffer of what a subject saw
+*at some point*. The chain's seen-set is what *this browse* has served. They are
+not the same kind of fact and must not be enforced the same way.
+
+`deploy-2026-09-06g` excluded their union and dropped the whole suppression only
+below ten surviving candidates. On a 160-post corpus that produced two
+production failures:
+
+- **Home stopped at 89.** Session 1 served 70; session 2's pool was
+  160 − (71 already-seen ∪ 70 in the chain) = 19; session 3 relaxed to the whole
+  corpus and returned only posts already on screen.
+- **A reload stopped at 11.** `recentlySeenPostIds` held ~149 distinct ids, so a
+  brand-new chain's first session had a pool of 11 — and 11 is *not* below 10,
+  so nothing relaxed. A threshold is a cliff, and a cliff always has an edge
+  somebody lands on.
+
+So exclusion is **staged**, each stage a weaker preference:
+
+1. `chain ∪ recentlySeen ∪ tail` — used while it can still fill a session.
+2. `chain ∪ tail` — for a chained caller, whenever stage 1 falls short of
+   `sessionLimit`. This is also what returns a genuinely short final batch
+   instead of declaring the feed finished.
+3. **recycle** — only when the chain has served everything eligible: reset the
+   seen-set, increment `cycle`, and hold back `CHAIN_POLICY.recentTailSize` so
+   the new cycle cannot open on what the viewer just read.
+
+`RELAXED_SUPPRESSION_MIN_POOL` survives for **unchained** callers only, where
+stage 2 would otherwise be the blanket relaxation.
+
+- **A short session is a normal outcome, not a fault.** `rerank` never drops a
+  candidate, so `ranked.length < sessionLimit` always means a small pool — which
+  is exactly when the remaining unseen posts should be served.
+- **Return the cycle.** The client renders the same post twice across a recycle
+  and needs distinct React keys; `cycle` is echoed on every page, including
+  pages read from an existing session's meta.
+
+## Never Overwrite `$and` On A Shared Eligibility Match
 ## Never Overwrite `$and` On A Shared Eligibility Match
 
 `buildEligibilityMatch` owns `match.$and`: it is where the blocked-creator and

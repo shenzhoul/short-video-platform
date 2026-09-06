@@ -4,7 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ObjectId } from 'mongodb';
 import {
-  FEED_SESSION_POLICY,
+  CHAIN_POLICY,
   RECOMMENDATION_FEED_TYPES,
   RECOMMENDATION_SOURCES,
   RecommendationFeedType,
@@ -19,8 +19,14 @@ import { RecommendationScoringService, ScoredCandidate } from './recommendation-
 import { RecommendationDiversityService } from './recommendation-diversity.service';
 import { RecommendationSelectionService } from './recommendation-selection.service';
 import { RecommendationSessionService, FeedSessionItem } from './recommendation-session.service';
+import { BrowsingChainState, RecommendationChainService } from './recommendation-chain.service';
 import { PostDetailRecommendationSessionService } from './post-detail-recommendation-session.service';
 import { buildEligibilityMatch } from './recommendation-eligibility.util';
+
+/** Order-preserving de-duplication, for building an exclusion list from several sources. */
+function unique(ids: string[]): string[] {
+  return Array.from(new Set(ids));
+}
 
 export interface RecommendationSubject {
   viewerId?: string;
@@ -32,14 +38,26 @@ export interface RecommendationFeedResult {
   data: any[]; // Lean Post documents, in ranked order — ContentService populates these.
   hasMore: boolean;
   nextCursor: string | null;
+  /** The browsing chain this session belongs to, echoed so the client keeps sending it. */
+  chainId: string | null;
+  /**
+   * Which pass through the catalogue this session was ranked in. Increments
+   * when the chain recycles, and is what lets the client render the same post
+   * twice — in two different cycles — without duplicate React keys.
+   */
+  cycle: number;
   debug?: Array<{ postId: string; source: string; finalScore: number; breakdown: ScoredCandidate['breakdown'] }>;
 }
 
 /**
- * Below this many candidates, seen-suppression is dropped rather than allowed
- * to starve the feed. Deliberately well under a full page: the point is to
- * rescue a viewer who would otherwise see nothing, not to stop suppressing at
- * the first sign of a small pool.
+ * Below this many candidates, an **unchained** caller's seen-suppression is
+ * dropped rather than allowed to starve the feed. Deliberately well under a
+ * full page: the point is to rescue a viewer who would otherwise see nothing,
+ * not to stop suppressing at the first sign of a small pool.
+ *
+ * A chained caller does not use this threshold at all — see the staged
+ * exclusion in `createSession`, where the chain itself guarantees no repeat
+ * inside the browse and the trigger can therefore be far more generous.
  */
 const RELAXED_SUPPRESSION_MIN_POOL = 10;
 
@@ -65,7 +83,8 @@ export class RecommendationFeedService {
     private readonly sessionService: RecommendationSessionService,
     private readonly affinityService: RecommendationAffinityService,
     private readonly detailSessionService: PostDetailRecommendationSessionService,
-    private readonly userRelationshipService: UserRelationshipService
+    private readonly userRelationshipService: UserRelationshipService,
+    private readonly chainService: RecommendationChainService
   ) { }
 
   private subjectId(subject: RecommendationSubject): string | undefined {
@@ -89,9 +108,42 @@ export class RecommendationFeedService {
   }
 
   /**
-   * Build a brand-new ranked session (called on first load and on every
-   * reload — a caller with no `sessionId` always gets a new mix/order, per
-   * rules/instructions §8.1).
+   * Build a brand-new ranked session.
+   *
+   * ## Staged exclusion — why there is no "minimum pool" cliff any more
+   *
+   * `deploy-2026-09-06g` excluded the union of the chain's served posts and the
+   * subject's `recentlySeenPostIds`, and dropped the whole suppression only
+   * once fewer than ten candidates survived. Two production failures came
+   * straight out of that, on a 160-post corpus:
+   *
+   * - Home stopped at 89. Session 1 served 70; session 2's pool was
+   *   160 − (71 already in `recentlySeenPostIds` from earlier browsing ∪ 70 in
+   *   the chain) = 19, so it served 19; session 3 relaxed to the whole corpus
+   *   and returned only posts already on screen, which the client discarded as
+   *   duplicates and reported as exhaustion.
+   * - A reload then stopped at 11. `recentlySeenPostIds` held ~149 distinct ids
+   *   by then, so the very first session of a brand-new chain had a pool of 11
+   *   — and 11 is *not* below the threshold of 10, so nothing relaxed.
+   *
+   * The mistake was treating a soft, cross-session, impression-driven memory as
+   * a hard constraint on a fresh browse. So exclusion is now staged, and each
+   * stage is a weaker preference rather than a cliff:
+   *
+   * 1. **chain ∪ recently-seen** — the strongest preference. Used whenever it
+   *    can still fill a session.
+   * 2. **chain only** — `recentlySeenPostIds` is what the subject saw *some
+   *    time ago*; it must never starve the browse happening now. This stage is
+   *    also what returns a genuinely short final batch instead of declaring the
+   *    feed finished.
+   * 3. **recycle** — only when the chain has served every eligible post does
+   *    the chain reset and a new cycle begin, still holding back the last
+   *    `CHAIN_POLICY.recentTailSize` so the new cycle cannot open on what the
+   *    viewer just read.
+   *
+   * Without a chain (an older client, or Redis down) stage 1 falls back to the
+   * pre-chain behaviour: prefer unseen, and relax completely rather than serve
+   * nothing.
    */
   private async createSession(params: {
     feedType: RecommendationFeedType;
@@ -104,12 +156,9 @@ export class RecommendationFeedService {
      * produced `undefined` and a session nobody could page.
      */
     subjectId: string;
-    /**
-     * The chain this session continues. Absent on a first load; set on a
-     * rollover so the successor is ranked over what the chain has not shown.
-     */
-    chainId?: string | null;
-  }): Promise<{ sessionId: string; ranked: ScoredCandidate[] }> {
+    /** The browsing chain, already resolved and subject-checked. */
+    chain: BrowsingChainState | null;
+  }): Promise<{ sessionId: string; ranked: ScoredCandidate[]; cycle: number }> {
     const { subjectId } = params;
     // Only a stable identity has history worth reading; an ephemeral guest
     // key names nobody, so the lookup is skipped rather than guaranteed to miss.
@@ -126,27 +175,6 @@ export class RecommendationFeedService {
     const excludedCreatorIds = params.subject.viewerId
       ? await this.userRelationshipService.getBlockedEitherDirectionIds(params.subject.viewerId)
       : [];
-    const seenAcrossHistory = (affinity?.recentlySeenPostIds || []).map((id: any) => id.toString());
-    /*
-     * What this scroll has already shown, as opposed to what this subject has
-     * seen at some point in the past.
-     *
-     * `recentlySeenPostIds` is written from impression telemetry, which is
-     * best-effort and lands after the fact — good enough to stop a session
-     * repeating last week, useless for stopping the *next page* repeating the
-     * page still on screen. The chain set is written when the order is fixed,
-     * so a rollover is ranked over the genuinely unseen remainder.
-     */
-    let seenInChain = params.chainId ? await this.sessionService.getChainSeenIds(params.chainId) : [];
-    if (seenInChain.length >= FEED_SESSION_POLICY.maxChainSeenIds) {
-      // A scroll long enough to reach this has outlived any useful memory of
-      // itself, and the set must not grow further. Recycling here is the same
-      // decision the exhaustion branch below makes, taken on size instead.
-      this.logger.log(`Feed chain seen-set hit its ceiling (${seenInChain.length}); recycling`);
-      await this.sessionService.resetChainSeen(params.chainId as string);
-      seenInChain = [];
-    }
-    const excludedPostIds = Array.from(new Set([...seenAcrossHistory, ...seenInChain]));
 
     const followingCreatorIds = params.subject.viewerId
       ? await this.candidateService.getFollowingCreatorIds(params.subject.viewerId)
@@ -172,63 +200,71 @@ export class RecommendationFeedService {
       followingCreatorIds
     });
 
-    let pool = await retrieveWith(excludedPostIds);
+    const sessionLimit = params.feedType === RECOMMENDATION_FEED_TYPES.FOR_YOU
+      ? SESSION_OUTPUT_POLICY.forYouInitialSessionLimit
+      : SESSION_OUTPUT_POLICY.homeSessionItemLimit;
+
+    const seenAcrossHistory = (affinity?.recentlySeenPostIds || []).map((id: any) => id.toString());
+    const chain = params.chain;
+    let seenInChain = chain ? chain.seenPostIds : [];
+    const recentTail = chain ? chain.recentTailPostIds : [];
+    let cycle = chain ? chain.cycle : 0;
+
+    // Stage 1 — the strongest preference.
+    let pool = await retrieveWith(unique([...seenInChain, ...seenAcrossHistory, ...recentTail]));
 
     /*
-     * Recycle the chain before relaxing anything else.
+     * Stage 2 — the cross-session memory is a preference, never a constraint on
+     * the browse happening now. This is also the stage that returns a short
+     * final batch rather than nothing.
      *
-     * A chain that has served every eligible post is the *expected* end state
-     * of a long scroll, not a fault: on this catalogue it takes three Home
-     * sessions. When it happens the chain's memory is cleared and retrieval is
-     * repeated over the whole corpus, so the scroll continues with a fresh
-     * ranking instead of stopping — and the clear is persisted, so the next
-     * rollover starts a new cycle rather than re-running this branch on every
-     * page.
-     *
-     * Ordered before the blanket relaxation below on purpose: dropping only the
-     * chain keeps the older cross-session suppression in force, so the recycled
-     * sessions still prefer what the subject has not seen recently.
+     * Gated on having a chain, because without one it *is* the blanket
+     * relaxation, and dropping the suppression as soon as the pool dips below a
+     * session's worth would throw away cross-session variety for every
+     * unchained caller. Chained callers get the generous trigger precisely
+     * because the chain still guarantees they never see a repeat inside this
+     * browse.
      */
-    if (pool.all.length < RELAXED_SUPPRESSION_MIN_POOL && seenInChain.length) {
-      const recycled = await retrieveWith(seenAcrossHistory);
-      if (recycled.all.length > pool.all.length) {
-        this.logger.log(
-          `Recycled feed chain (${params.feedType}): ${seenInChain.length} posts served across the chain, `
-          + `${pool.all.length} candidates left, ${recycled.all.length} after recycling`
-        );
-        await this.sessionService.resetChainSeen(params.chainId as string);
-        pool = recycled;
-        // The chain restarts empty, so the successor session must not re-add
-        // the ids it just forgot.
-        seenInChain = [];
-      }
+    if (chain && pool.all.length < sessionLimit && seenAcrossHistory.length) {
+      const chainOnly = await retrieveWith(unique([...seenInChain, ...recentTail]));
+      if (chainOnly.all.length > pool.all.length) pool = chainOnly;
+    }
+
+    // Stage 3 — the chain has genuinely served everything eligible.
+    let recycled = false;
+    if (!pool.all.length && chain && seenInChain.length) {
+      cycle = await this.chainService.recycle(params.feedType, chain.chainId);
+      recycled = true;
+      seenInChain = [];
+      // The tail is held back on purpose: a new cycle must not open on the
+      // posts the viewer just finished reading.
+      pool = await retrieveWith(recentTail);
+      // A corpus smaller than the tail itself — hold nothing back rather than
+      // answer with an empty feed.
+      if (!pool.all.length) pool = await retrieveWith([]);
+      this.logger.log(
+        `Recycled browsing chain (${params.feedType}, cycle ${cycle}): `
+        + `${pool.all.length} candidates in the new cycle`
+      );
     }
 
     /*
      * Seen-suppression must never be able to empty the feed.
      *
-     * `recentlySeenPostIds` is a ring buffer of the last 200 posts served, and
-     * excluding them keeps a session from repeating itself. But an engaged
-     * viewer on a small catalogue can be shown *everything*: measured here at
-     * 140 distinct seen posts out of 160 active, of which 10 were the viewer's
-     * own — leaving nothing eligible and rendering "Your Feed is Empty" to
-     * somebody whose only crime was using the product a lot.
-     *
-     * Repeating a post someone has already seen is a much smaller failure than
-     * showing them nothing, so suppression is relaxed rather than enforced to
-     * the point of starvation. It is dropped only when it is the thing causing
-     * the shortfall — every other eligibility rule (blocked creators, the
-     * viewer's own posts, inactive content) still applies.
+     * This is the unchained fallback — an older client, or Redis unavailable so
+     * `chain` is null. `recentlySeenPostIds` is a ring buffer of the last 200
+     * posts served, and an engaged viewer on a small catalogue can be shown
+     * *everything*: measured at 140 distinct seen posts out of 160 active, of
+     * which 10 were the viewer's own, leaving nothing eligible and rendering
+     * "Your Feed is Empty" to somebody whose only crime was using the product a
+     * lot. Repeating a post is a much smaller failure than showing none.
      */
-    if (pool.all.length < RELAXED_SUPPRESSION_MIN_POOL && excludedPostIds.length) {
+    if (pool.all.length < RELAXED_SUPPRESSION_MIN_POOL && !chain && seenAcrossHistory.length) {
       const relaxed = await retrieveWith([]);
       if (relaxed.all.length > pool.all.length) {
         this.logger.log(
-          // The subject is not logged. For a guest it is the anonymous session
-          // id, and there is nothing this line needs it for — the numbers are
-          // the diagnosis.
-          `Relaxed seen-suppression (${params.subject.viewerId ? 'account' : 'guest'}): `
-          + `${pool.all.length} candidates with ${excludedPostIds.length} suppressed, `
+          `Relaxed seen-suppression (${params.subject.viewerId ? 'account' : 'guest'}, unchained): `
+          + `${pool.all.length} candidates with ${seenAcrossHistory.length} suppressed, `
           + `${relaxed.all.length} without`
         );
         pool = relaxed;
@@ -262,18 +298,6 @@ export class RecommendationFeedService {
       });
     });
 
-    /*
-     * The session shows a bounded, seeded sample of the pool — not the pool.
-     *
-     * Retrieval stays wide (recall is cheap and useful); what changes is that a
-     * session no longer *is* the catalogue. Before this, a 160-candidate pool
-     * produced a 160-item session in score order, so reloading could only
-     * re-sort one fixed set and the highest-scoring post led every single time.
-     */
-    const sessionLimit = params.feedType === RECOMMENDATION_FEED_TYPES.FOR_YOU
-      ? SESSION_OUTPUT_POLICY.forYouInitialSessionLimit
-      : SESSION_OUTPUT_POLICY.homeSessionItemLimit;
-
     const recentHeroIds = this.isPersistentSubject(params.subject)
       ? await this.selectionService.getRecentHeroes(params.feedType, subjectId)
       : [];
@@ -293,6 +317,10 @@ export class RecommendationFeedService {
      * same creator; truncating the sample *before* re-ranking meant a session
      * could be composed so badly that no re-ordering could fix it, while
      * compliant candidates sat unselected in the pool.
+     *
+     * A session shorter than `sessionLimit` is a normal outcome, not a fault:
+     * it means the chain has nearly run out of unseen posts, and those few are
+     * exactly what should be served next.
      */
     const ranked = this.diversityService.rerank(candidateOrder, {
       lead: hero, limit: sessionLimit, preserveOrder: true
@@ -303,29 +331,46 @@ export class RecommendationFeedService {
       await this.selectionService.rememberHero(params.feedType, subjectId, heroId);
     }
 
-    const { sessionId } = await this.sessionService.create({
+    const { sessionId, postIds } = await this.sessionService.create({
       subjectId,
       feedType: params.feedType,
       topicKey: params.topicKey,
       sessionSeed,
       ranked,
-      chainId: params.chainId
+      chainId: chain?.chainId,
+      cycle
     });
 
-    return { sessionId, ranked };
+    if (chain && postIds.length) {
+      // Recorded when the order is fixed, not when the client reports an
+      // impression: telemetry is best-effort and lands late, and a rollover
+      // racing it would re-rank the page still on screen.
+      await this.chainService.recordServed(params.feedType, chain.chainId, postIds);
+      if (!recycled && seenInChain.length + postIds.length >= CHAIN_POLICY.maxSeenIds) {
+        // Bound on size, the same decision exhaustion makes on emptiness, so a
+        // very long scroll can never allocate an unbounded Redis set.
+        this.logger.log(`Chain seen-set reached its ceiling (${CHAIN_POLICY.maxSeenIds}); recycling`);
+        await this.chainService.recycle(params.feedType, chain.chainId);
+      }
+    }
+
+    return { sessionId, ranked, cycle };
   }
 
   /**
    * Get a feed page.
    *
    * - `sessionId` + `cursor` continues an existing session (stable pagination).
-   * - No `sessionId` starts a brand-new session under a brand-new chain — the
-   *   reload/refresh semantics.
-   * - `sessionId` + `rollover` starts a *successor* session in the same chain:
-   *   a new ranking, a new mix, and the chain's already-served posts excluded.
-   *   This is what makes an infinite scroll continue past one session's end
-   *   without either repeating itself or turning the session into the whole
-   *   catalogue.
+   * - No `sessionId` starts a brand-new ranked session. With a `chainId` it
+   *   joins that browse; without one it is unchained.
+   * - `sessionId` + `rollover` starts a *successor* session: a new ranking, a
+   *   new mix, and everything the chain has already served excluded. This is
+   *   what makes an infinite scroll continue past one session's end without
+   *   either repeating itself or turning the session into the whole catalogue.
+   *
+   * The chain id comes from the **client**, one per page load per surface, so a
+   * reload is a fresh browse and two tabs never consume each other's catalogue.
+   * It is deliberately neither the subject nor a session id.
    */
   public async getFeed(params: {
     feedType: RecommendationFeedType;
@@ -337,6 +382,8 @@ export class RecommendationFeedService {
     debug?: boolean;
     /** Continue the scroll in a new session of the same chain (see above). */
     rollover?: boolean;
+    /** Client-minted browsing chain id — one per page load per surface. */
+    chainId?: string;
   }): Promise<RecommendationFeedResult> {
     /*
      * A guest who sends no `anonymousId` still gets a feed.
@@ -355,30 +402,33 @@ export class RecommendationFeedService {
     const subjectId = this.subjectId(params.subject) || `ephemeral:${randomUUID()}`;
 
     /*
-     * A rollover inherits the chain and skips the page read entirely. Reading
-     * the exhausted session first would answer with its last page again, which
-     * is precisely the repeat this exists to avoid.
-     *
-     * The chain id is resolved through the session, and `getChainId` checks the
-     * subject — so a rollover cannot be pointed at somebody else's chain to
-     * learn what they were shown.
+     * A rollover skips the page read entirely. Reading the exhausted session
+     * first would answer with its last page again, which is precisely the
+     * repeat this exists to avoid.
      */
-    let chainId: string | null = null;
-    if (params.sessionId && params.rollover) {
-      chainId = await this.sessionService.getChainId(params.sessionId, subjectId);
-    } else if (params.sessionId) {
+    if (params.sessionId && !params.rollover) {
       const page = await this.sessionService.getPage(params.sessionId, subjectId, params.cursor || null, params.limit);
       if (page) {
         const data = await this.reorderByIds(page.items.map((item: FeedSessionItem) => item.postId));
         return {
-          sessionId: page.sessionId, data, hasMore: page.hasMore, nextCursor: page.nextCursor
+          sessionId: page.sessionId,
+          data,
+          hasMore: page.hasMore,
+          nextCursor: page.nextCursor,
+          chainId: page.chainId,
+          cycle: page.cycle
         };
       }
       // Session missing/expired/mismatched — degrade to a fresh session rather than erroring.
     }
 
-    const { sessionId, ranked } = await this.createSession({
-      feedType: params.feedType, subject: params.subject, topicKey: params.topicKey, subjectId, chainId
+    // Resolved once per request, and bound to this subject: a chain id naming
+    // somebody else's browse resolves to null, so a guessed id can never reveal
+    // what another viewer was shown.
+    const chain = await this.chainService.resolve(params.chainId, subjectId, params.feedType);
+
+    const { sessionId, ranked, cycle } = await this.createSession({
+      feedType: params.feedType, subject: params.subject, topicKey: params.topicKey, subjectId, chain
     });
     const page = await this.sessionService.getPage(sessionId, subjectId, null, params.limit);
     const data = await this.reorderByIds((page?.items || []).map((item) => item.postId));
@@ -387,7 +437,9 @@ export class RecommendationFeedService {
       sessionId,
       data,
       hasMore: Boolean(page?.hasMore),
-      nextCursor: page?.nextCursor ?? null
+      nextCursor: page?.nextCursor ?? null,
+      chainId: chain?.chainId ?? null,
+      cycle
     };
 
     if (params.debug) {

@@ -18,6 +18,14 @@ export interface FeedSessionPage {
   hasMore: boolean;
   nextCursor: string | null;
   total: number;
+  /**
+   * The browsing chain this session belongs to, and which pass through the
+   * catalogue it was ranked in. Echoed on every page so the client can key its
+   * rendered list per cycle — the same post may legitimately be shown again in
+   * a later cycle, and two React children may not share a key.
+   */
+  chainId: string | null;
+  cycle: number;
 }
 
 /**
@@ -49,10 +57,9 @@ export class RecommendationSessionService {
    * guessable, so one subject can never read another's session by swapping
    * the id even if they somehow learned it).
    *
-   * `chainId` names the continuous scroll this session belongs to. Omit it for
-   * a first load (the session becomes its own chain root); pass the previous
-   * session's chain id on a rollover, so the two share one seen-post set and
-   * the successor can be ranked over what the viewer has *not* been shown.
+   * `chainId` and `cycle` are recorded but not interpreted here: this service
+   * owns one ranked batch; `RecommendationChainService` owns the browse that
+   * strings several of them together.
    */
   public async create(params: {
     subjectId: string;
@@ -61,9 +68,9 @@ export class RecommendationSessionService {
     sessionSeed: string;
     ranked: ScoredCandidate[];
     chainId?: string | null;
-  }): Promise<{ sessionId: string; chainId: string }> {
+    cycle?: number;
+  }): Promise<{ sessionId: string; postIds: string[] }> {
     const sessionId = randomUUID();
-    const chainId = params.chainId || sessionId;
     const items = params.ranked.slice(0, FEED_SESSION_POLICY.maxItems);
     const postIds = items.map((candidate) => candidate.post._id.toString());
     const encoded = items.map((candidate, index) => JSON.stringify({
@@ -74,7 +81,6 @@ export class RecommendationSessionService {
 
     const itemsKey = REDIS_KEYS.recoFeedSessionItems(sessionId);
     const metaKey = REDIS_KEYS.recoFeedSessionMeta(sessionId);
-    const chainKey = REDIS_KEYS.recoFeedChainSeen(chainId);
 
     const pipeline = this.redisClient.pipeline();
     if (encoded.length) pipeline.rpush(itemsKey, ...encoded);
@@ -83,60 +89,15 @@ export class RecommendationSessionService {
       feedType: params.feedType,
       topicKey: params.topicKey || '',
       sessionSeed: params.sessionSeed,
-      chainId,
+      chainId: params.chainId || '',
+      cycle: String(params.cycle ?? 0),
       createdAt: new Date().toISOString()
     });
     pipeline.expire(itemsKey, FEED_SESSION_POLICY.ttlSeconds);
     pipeline.expire(metaKey, FEED_SESSION_POLICY.ttlSeconds);
-    /*
-     * The chain's seen set is written here, at the moment the order is fixed —
-     * not when the client reports an impression. Impression telemetry is
-     * best-effort and arrives late; a rollover that raced it would re-rank the
-     * page the viewer is still looking at.
-     */
-    if (postIds.length) {
-      pipeline.sadd(chainKey, ...postIds);
-      pipeline.expire(chainKey, FEED_SESSION_POLICY.ttlSeconds);
-    }
     await pipeline.exec();
 
-    return { sessionId, chainId };
-  }
-
-  /**
-   * The chain a session belongs to, or null when the session is gone.
-   *
-   * Sessions written before chains existed have no `chainId`; they fall back to
-   * their own id, which makes them the root of a chain starting now rather than
-   * an error.
-   */
-  public async getChainId(sessionId: string, subjectId: string): Promise<string | null> {
-    const meta = await this.redisClient.hgetall(REDIS_KEYS.recoFeedSessionMeta(sessionId));
-    if (!meta || !meta.subjectId) return null;
-    if (meta.subjectId !== subjectId) return null;
-    return meta.chainId || sessionId;
-  }
-
-  /** Every post id this chain has already served. Empty for a chain that does not exist. */
-  public async getChainSeenIds(chainId: string): Promise<string[]> {
-    try {
-      return await this.redisClient.smembers(REDIS_KEYS.recoFeedChainSeen(chainId));
-    } catch (e: any) {
-      // Losing the exclusion set degrades the feed to "may repeat", which is
-      // the pre-chain behaviour — never a reason to fail the request.
-      this.logger.warn(`Chain seen-set read failed, continuing without it: ${e.message}`);
-      return [];
-    }
-  }
-
-  /**
-   * Forget what this chain has served, so the next session may draw on the
-   * whole corpus again. Called when the eligible set is genuinely exhausted —
-   * the recycle point, and the only thing that bounds the set's lifetime other
-   * than its TTL.
-   */
-  public async resetChainSeen(chainId: string): Promise<void> {
-    await this.redisClient.del(REDIS_KEYS.recoFeedChainSeen(chainId));
+    return { sessionId, postIds };
   }
 
   /**
@@ -178,7 +139,9 @@ export class RecommendationSessionService {
       items,
       hasMore,
       nextCursor: hasMore ? String(offset + limit) : null,
-      total
+      total,
+      chainId: meta.chainId || null,
+      cycle: Number.parseInt(meta.cycle, 10) || 0
     };
   }
 

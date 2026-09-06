@@ -4,6 +4,7 @@ export { RecommendationScoringService } from './recommendation-scoring.service';
 export { RecommendationDiversityService } from './recommendation-diversity.service';
 export { RecommendationSelectionService } from './recommendation-selection.service';
 export { RecommendationSessionService } from './recommendation-session.service';
+export { RecommendationChainService } from './recommendation-chain.service';
 export { PostDetailRecommendationSessionService } from './post-detail-recommendation-session.service';
 export { RecommendationEventService } from './recommendation-event.service';
 export { RecommendationCategoryPriorService } from './recommendation-category-prior.service';

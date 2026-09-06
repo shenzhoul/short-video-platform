@@ -1,31 +1,47 @@
-import { ObjectId } from 'mongodb';
 import { plainToInstance } from 'class-transformer';
-import { FEED_SESSION_POLICY } from 'src/common/constants/recommendation';
+import { ObjectId } from 'mongodb';
+import { CHAIN_POLICY, SESSION_OUTPUT_POLICY } from 'src/common/constants/recommendation';
+import { REDIS_KEYS } from 'src/kernel/infras/redis/redis-keys';
 import { PostRecommendationRequest } from 'src/payloads/content/post/post-recommendation.request';
+import { RecommendationChainService } from './recommendation-chain.service';
 import { RecommendationFeedService } from './recommendation-feed.service';
 import { RecommendationSessionService } from './recommendation-session.service';
 import { createFakeRedis } from './test-fake-redis';
 
 /**
- * Feed-session **chains**: what makes an infinite scroll continue past the end
- * of one ranked session without either repeating it or turning the session into
- * the whole catalogue.
+ * Browsing chains, driven end to end against a 160-post corpus.
  *
- * The failure these cover is what shipped: Home's session limit is 70 against a
- * 160-post corpus, `hasMore` went false at the end of it, and the client had no
- * way to ask for more — the feed simply stopped, two thirds of the catalogue
- * unreachable. Raising 70 to 160 would have removed the ranking instead of
- * fixing the scroll (see `SESSION_OUTPUT_POLICY`'s note on why a session is a
- * bounded sample), so the boundary is a *successor session in the same chain*.
+ * ## The production failure these reproduce
+ *
+ * `deploy-2026-09-06g` shipped chains but excluded the union of the chain's
+ * served posts *and* the subject's `recentlySeenPostIds`, dropping the whole
+ * suppression only once fewer than ten candidates survived. Measured in
+ * production on 160 posts:
+ *
+ * - **Home stopped at 89.** Session 1 served 70; session 2's pool was
+ *   160 − (71 already in `recentlySeenPostIds` ∪ 70 in the chain) = 19; session
+ *   3 relaxed to the whole corpus and returned only posts already on screen,
+ *   which the client discarded as duplicates and reported as exhaustion.
+ * - **A reload then stopped at 11.** By then `recentlySeenPostIds` held ~149
+ *   distinct ids, so the first session of a brand-new chain had a pool of 11 —
+ *   and 11 is not below the threshold of 10, so nothing relaxed.
+ *
+ * Every assertion below counts **distinct post ids actually served**, because
+ * that is the only number that would have caught either failure.
  */
 
-function posts(count: number, offset = 0) {
+const CORPUS_SIZE = 160;
+const HOME = 'home' as any;
+const FOR_YOU = 'for-you' as any;
+
+function makeCorpus(count = CORPUS_SIZE) {
   return Array.from({ length: count }, (_, index) => ({
     _id: new ObjectId(),
+    // 16 creators x 10 posts, which is the shape of the seeded demo dataset.
     userId: new ObjectId(),
-    topicKey: `topic-${(index + offset) % 4}`,
-    totalLike: index,
-    createdAt: new Date(Date.now() - index * 1000)
+    topicKey: `topic-${index % 8}`,
+    totalLike: count - index,
+    createdAt: new Date(Date.now() - index * 60_000)
   }));
 }
 
@@ -39,12 +55,12 @@ function makeCursor(result: any[]) {
 }
 
 /**
- * A feed service whose candidate retrieval is a real function of the exclusion
- * list, so "the chain excluded these" is observable rather than asserted on a
- * mock call.
+ * A feed service whose retrieval is a real function of the exclusion list, so
+ * "the chain excluded these" is an observable outcome rather than an assertion
+ * on a mock call.
  */
-function service(options: { corpus?: any[]; sessionService?: any } = {}) {
-  const corpus = options.corpus || posts(160);
+function harness(options: { corpus?: any[]; affinitySeenIds?: string[] } = {}) {
+  const corpus = options.corpus || makeCorpus();
 
   const candidateService: any = {
     retrieve: jest.fn().mockImplementation(({ eligibility }) => {
@@ -61,6 +77,8 @@ function service(options: { corpus?: any[]; sessionService?: any } = {}) {
       post, source, finalScore: post.totalLike / 1000, breakdown: {}
     }))
   };
+  // The real re-ranker never drops a candidate; this stand-in keeps that
+  // property so a short session can only ever mean a short pool.
   const diversityService: any = {
     rerank: jest.fn((order: any[], { limit }: any) => order.slice(0, limit))
   };
@@ -70,7 +88,9 @@ function service(options: { corpus?: any[]; sessionService?: any } = {}) {
     rememberHero: jest.fn().mockResolvedValue(undefined)
   };
   const affinityService: any = {
-    getRaw: jest.fn().mockResolvedValue(null),
+    getRaw: jest.fn().mockResolvedValue(
+      options.affinitySeenIds ? { recentlySeenPostIds: options.affinitySeenIds } : null
+    ),
     topAffinities: jest.fn().mockReturnValue([]),
     formatPreferenceScore: jest.fn().mockReturnValue(0)
   };
@@ -81,22 +101,19 @@ function service(options: { corpus?: any[]; sessionService?: any } = {}) {
   };
   const postModel: any = {
     exists: jest.fn().mockResolvedValue(true),
-    find: jest.fn().mockReturnValue(makeCursor([])),
-    // `reorderByIds` reads the ranked ids straight back out of the corpus.
-    ...{}
+    find: jest.fn((query: any) => {
+      if (query?._id?.$in) {
+        const wanted = new Set(query._id.$in.map(String));
+        return { lean: jest.fn().mockResolvedValue(corpus.filter((p) => wanted.has(p._id.toString()))) };
+      }
+      return makeCursor([]);
+    })
   };
-  postModel.find = jest.fn((query: any) => {
-    if (query?._id?.$in) {
-      const wanted = new Set(query._id.$in.map(String));
-      const found = corpus.filter((post) => wanted.has(post._id.toString()));
-      return { lean: jest.fn().mockResolvedValue(found) };
-    }
-    return makeCursor([]);
-  });
   const userRelationshipService: any = { getBlockedEitherDirectionIds: jest.fn().mockResolvedValue([]) };
 
-  const { client, sets } = createFakeRedis();
-  const sessionService = options.sessionService || new RecommendationSessionService(client);
+  const fake = createFakeRedis();
+  const sessionService = new RecommendationSessionService(fake.client);
+  const chainService = new RecommendationChainService(fake.client);
 
   const svc = new RecommendationFeedService(
     postModel,
@@ -107,169 +124,424 @@ function service(options: { corpus?: any[]; sessionService?: any } = {}) {
     sessionService,
     affinityService,
     detailSessionService,
-    userRelationshipService
+    userRelationshipService,
+    chainService
   );
 
   return {
-    svc, sessionService, candidateService, corpus, sets, client
+    svc,
+    sessionService,
+    chainService,
+    candidateService,
+    corpus,
+    corpusIds: corpus.map((post) => post._id.toString()),
+    fake
   };
 }
 
-const HOME = 'home' as any;
+/**
+ * Walk a feed the way the client does: page the session, roll over when it is
+ * spent, stop when the server answers a rollover with nothing.
+ *
+ * Returns every id served, in order — repeats included, so a chain that quietly
+ * repeats itself is visible rather than hidden by a Set.
+ */
+async function browse(
+  svc: RecommendationFeedService,
+  options: {
+    feedType: any;
+    subject: any;
+    chainId?: string;
+    limit?: number;
+    maxRequests?: number;
+  }
+) {
+  const limit = options.limit ?? 20;
+  const served: string[] = [];
+  const sessionIds: string[] = [];
+  const cycles: number[] = [];
+  let sessionId: string | undefined;
+  let cursor: string | null = null;
+  let hasMore = true;
+  let spent = false;
+  let requests = 0;
 
-describe('feed session chains — Home continues past one session', () => {
-  /** Scenario 1: Home reaches the session boundary and continues with another session. */
-  it('a rollover creates a NEW session rather than re-reading the exhausted one', async () => {
-    const { svc } = service();
-    const subject = { anonymousId: 'anon-chain-1' };
+  while (!spent && requests < (options.maxRequests ?? 60)) {
+    requests += 1;
+    const rollover = Boolean(sessionId) && !hasMore;
+    // eslint-disable-next-line no-await-in-loop
+    const result = await svc.getFeed({
+      feedType: options.feedType,
+      subject: options.subject,
+      chainId: options.chainId,
+      limit,
+      ...(sessionId ? { sessionId } : {}),
+      ...(rollover ? { rollover: true } : { cursor })
+    });
 
+    served.push(...result.data.map((post: any) => post._id.toString()));
+    if (!sessionIds.includes(result.sessionId)) sessionIds.push(result.sessionId);
+    cycles.push(result.cycle);
+
+    if (rollover && result.data.length === 0) spent = true;
+    sessionId = result.sessionId;
+    hasMore = result.hasMore;
+    cursor = result.nextCursor;
+  }
+
+  return {
+    served, distinct: new Set(served), sessionIds, cycles, requests, spent
+  };
+}
+
+describe('Home browsing chain', () => {
+  const subject = { anonymousId: 'guest-home-chain' };
+
+  /** Acceptance 1. */
+  it('the first session is the policy size, not the whole catalogue', async () => {
+    const { svc } = harness();
     const first = await svc.getFeed({
-      feedType: HOME, subject, limit: 20
-    });
-    expect(first.sessionId).toBeTruthy();
-
-    const second = await svc.getFeed({
-      feedType: HOME, subject, limit: 20, sessionId: first.sessionId, rollover: true
+      feedType: HOME, subject, chainId: 'chain-first-session', limit: 200
     });
 
-    expect(second.sessionId).toBeTruthy();
-    expect(second.sessionId).not.toBe(first.sessionId);
-    expect(second.data.length).toBeGreaterThan(0);
+    expect(first.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(first.data.length).toBeLessThan(CORPUS_SIZE);
+    expect(first.cycle).toBe(0);
+    expect(first.chainId).toBe('chain-first-session');
   });
 
-  /** Scenario 2: immediate cross-session duplicates are avoided. */
-  it('the successor session shares no post with the session it continues', async () => {
-    const { svc, sessionService } = service();
-    const subject = { anonymousId: 'anon-chain-2' };
+  /** Acceptance 2, 3, 4 — the failure that shipped, measured in distinct ids. */
+  it('scrolls past 70, past 100 and past 140 distinct posts in one chain', async () => {
+    const { svc } = harness();
+    const walk = await browse(svc, { feedType: HOME, subject, chainId: 'chain-long-scroll' });
 
-    const first = await svc.getFeed({ feedType: HOME, subject, limit: 70 });
-    const firstChain = await sessionService.getChainId(first.sessionId, 'anon-chain-2');
-    const firstServed = await sessionService.getChainSeenIds(firstChain as string);
-    expect(firstServed.length).toBe(70); // homeSessionItemLimit
-
-    const second = await svc.getFeed({
-      feedType: HOME, subject, limit: 70, sessionId: first.sessionId, rollover: true
-    });
-
-    const secondIds = second.data.map((post: any) => post._id.toString());
-    expect(secondIds.length).toBeGreaterThan(0);
-    expect(secondIds.filter((id: string) => firstServed.includes(id))).toEqual([]);
+    expect(walk.distinct.size).toBeGreaterThan(70);
+    expect(walk.distinct.size).toBeGreaterThan(100);
+    expect(walk.distinct.size).toBeGreaterThan(140);
+    expect(walk.distinct.size).toBe(CORPUS_SIZE);
+    // Several sessions, none of them the catalogue.
+    expect(walk.sessionIds.length).toBeGreaterThan(1);
   });
 
-  it('keeps the chain, so a third session excludes both earlier ones', async () => {
-    const { svc, sessionService } = service();
-    const subject = { anonymousId: 'anon-chain-3' };
+  it('serves no post twice inside one cycle', async () => {
+    const { svc } = harness();
+    const walk = await browse(svc, { feedType: HOME, subject, chainId: 'chain-no-repeat' });
 
-    const a = await svc.getFeed({ feedType: HOME, subject, limit: 70 });
+    const firstCycle = walk.served.slice(0, CORPUS_SIZE);
+    expect(new Set(firstCycle).size).toBe(firstCycle.length);
+  });
+
+  /** Acceptance 5 — nothing reports exhaustion while unseen posts remain. */
+  it('never answers with an empty page while the chain still has unseen posts', async () => {
+    const { svc } = harness();
+    const chainId = 'chain-not-premature';
+    let sessionId: string | undefined;
+    let cursor: string | null = null;
+    let hasMore = true;
+    const distinct = new Set<string>();
+
+    for (let request = 0; request < 12; request += 1) {
+      const rollover = Boolean(sessionId) && !hasMore;
+      // eslint-disable-next-line no-await-in-loop
+      const result = await svc.getFeed({
+        feedType: HOME,
+        subject,
+        chainId,
+        limit: 20,
+        ...(sessionId ? { sessionId } : {}),
+        ...(rollover ? { rollover: true } : { cursor })
+      });
+
+      if (distinct.size < CORPUS_SIZE) {
+        expect(result.data.length).toBeGreaterThan(0);
+      }
+      result.data.forEach((post: any) => distinct.add(post._id.toString()));
+      sessionId = result.sessionId;
+      hasMore = result.hasMore;
+      cursor = result.nextCursor;
+    }
+  });
+
+  /** Acceptance 6 — a short final batch, rather than a premature dead end. */
+  it('returns the last few unseen posts even though they cannot fill a session', async () => {
+    const { svc, chainService, corpusIds } = harness();
+    const chainId = 'chain-partial-tail';
+
+    // Pretend the chain has already served all but nine posts.
+    await chainService.recordServed(HOME, chainId, corpusIds.slice(0, CORPUS_SIZE - 9));
+
+    const result = await svc.getFeed({
+      feedType: HOME, subject, chainId, limit: 70
+    });
+
+    expect(result.data.length).toBe(9);
+    expect(result.data.length).toBeLessThan(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(result.cycle).toBe(0); // a short batch is not a recycle
+  });
+
+  /** Acceptance 7 and 8. */
+  it('recycles once every eligible post has been served, holding back the recent tail', async () => {
+    const { svc, chainService, corpusIds } = harness();
+    const chainId = 'chain-recycle';
+    const lastServed = corpusIds.slice(CORPUS_SIZE - CHAIN_POLICY.recentTailSize);
+
+    await chainService.recordServed(HOME, chainId, corpusIds.slice(0, CORPUS_SIZE - CHAIN_POLICY.recentTailSize));
+    await chainService.recordServed(HOME, chainId, lastServed);
+
+    const recycled = await svc.getFeed({ feedType: HOME, subject, chainId, limit: 70 });
+
+    expect(recycled.cycle).toBe(1);
+    expect(recycled.data.length).toBeGreaterThan(0);
+
+    const returnedIds = recycled.data.map((post: any) => post._id.toString());
+    // The posts the viewer was reading a moment ago are held back.
+    expect(returnedIds.filter((id: string) => lastServed.includes(id))).toEqual([]);
+  });
+
+  it('a recycled chain forgets what it served, so the new cycle can use the corpus again', async () => {
+    const { svc, chainService, fake, corpusIds } = harness();
+    const chainId = 'chain-recycle-state';
+    await chainService.recordServed(HOME, chainId, corpusIds);
+    expect(await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, chainId))).toBe(CORPUS_SIZE);
+
+    await svc.getFeed({ feedType: HOME, subject, chainId, limit: 70 });
+
+    // Acceptance 21 — the reset is a real DEL, then the new session's own ids.
+    const seen = await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, chainId));
+    expect(seen).toBeGreaterThan(0);
+    expect(seen).toBeLessThan(CORPUS_SIZE);
+  });
+
+  /** Acceptance 9 — the reload defect. */
+  it('a new chain starts fresh even when the subject has seen almost everything', async () => {
+    const corpus = makeCorpus();
+    // The exact production state after Run 1: 149 of 160 in the subject's
+    // impression-driven memory. In `06g` this produced an 11-post feed.
+    const affinitySeenIds = corpus.slice(0, 149).map((post) => post._id.toString());
+    const { svc } = harness({ corpus, affinitySeenIds });
+
+    const reloaded = await svc.getFeed({
+      feedType: HOME, subject, chainId: 'chain-after-reload', limit: 70
+    });
+
+    expect(reloaded.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(reloaded.data.length).not.toBe(11);
+  });
+
+  it('still prefers unseen posts when the cross-session memory leaves enough of them', async () => {
+    const corpus = makeCorpus();
+    const affinitySeenIds = corpus.slice(0, 40).map((post) => post._id.toString());
+    const { svc } = harness({ corpus, affinitySeenIds });
+
+    const result = await svc.getFeed({
+      feedType: HOME, subject, chainId: 'chain-soft-preference', limit: 70
+    });
+
+    const returned = result.data.map((post: any) => post._id.toString());
+    // 120 unseen is more than a 70-item session needs, so the preference holds.
+    expect(returned.filter((id: string) => affinitySeenIds.includes(id))).toEqual([]);
+  });
+
+  /** Acceptance 10. */
+  it('same-page rollovers stay in one chain; a reload does not', async () => {
+    const { svc } = harness();
+
+    const a = await svc.getFeed({ feedType: HOME, subject, chainId: 'chain-same-page', limit: 20 });
     const b = await svc.getFeed({
-      feedType: HOME, subject, limit: 70, sessionId: a.sessionId, rollover: true
+      feedType: HOME, subject, chainId: 'chain-same-page', limit: 20, sessionId: a.sessionId, rollover: true
     });
-    const chainId = await sessionService.getChainId(b.sessionId, 'anon-chain-3');
+    expect(a.chainId).toBe('chain-same-page');
+    expect(b.chainId).toBe('chain-same-page');
+    expect(b.sessionId).not.toBe(a.sessionId);
 
-    // Same chain root all the way down — a rollover must not start a new one,
-    // or every rollover would forget everything before it.
-    expect(chainId).toBe(await sessionService.getChainId(a.sessionId, 'anon-chain-3'));
-
-    const seenAfterTwo = await sessionService.getChainSeenIds(chainId as string);
-    expect(seenAfterTwo.length).toBe(140);
-
-    const c = await svc.getFeed({
-      feedType: HOME, subject, limit: 70, sessionId: b.sessionId, rollover: true
+    const afterReload = await svc.getFeed({
+      feedType: HOME, subject, chainId: 'chain-after-page-reload', limit: 20
     });
-    const cIds = c.data.map((post: any) => post._id.toString());
-    expect(cIds.filter((id: string) => seenAfterTwo.includes(id))).toEqual([]);
+    expect(afterReload.chainId).toBe('chain-after-page-reload');
+    expect(afterReload.cycle).toBe(0);
   });
 
-  /** Scenario 3: seen posts are preferred against until the corpus is exhausted. */
-  it('recycles the chain only once the eligible corpus is genuinely spent', async () => {
-    // 30 posts and a 70-item session limit: the first session takes all 30, so
-    // the very next rollover has nothing unseen left.
-    const { svc, sessionService } = service({ corpus: posts(30) });
-    const subject = { anonymousId: 'anon-chain-4' };
+  it('works unchained, for a client that sends no chain id at all', async () => {
+    const { svc } = harness();
+    const result = await svc.getFeed({ feedType: HOME, subject, limit: 20 });
 
-    const first = await svc.getFeed({ feedType: HOME, subject, limit: 30 });
-    const chainId = await sessionService.getChainId(first.sessionId, 'anon-chain-4') as string;
-    expect((await sessionService.getChainSeenIds(chainId)).length).toBe(30);
-
-    const second = await svc.getFeed({
-      feedType: HOME, subject, limit: 30, sessionId: first.sessionId, rollover: true
-    });
-
-    // Recycled rather than empty: an exhausted corpus must not render a dead
-    // end, and the chain's memory is cleared so the next cycle starts fresh.
-    expect(second.data.length).toBe(30);
-    const seenAfterRecycle = await sessionService.getChainSeenIds(chainId);
-    expect(seenAfterRecycle.length).toBe(30);
-  });
-
-  it('does not recycle while unseen posts remain', async () => {
-    const { svc, sessionService } = service({ corpus: posts(160) });
-    const subject = { anonymousId: 'anon-chain-5' };
-    const resetSpy = jest.spyOn(sessionService, 'resetChainSeen');
-
-    const first = await svc.getFeed({ feedType: HOME, subject, limit: 70 });
-    await svc.getFeed({
-      feedType: HOME, subject, limit: 70, sessionId: first.sessionId, rollover: true
-    });
-
-    expect(resetSpy).not.toHaveBeenCalled();
-  });
-
-  it('recycles when the chain set reaches its ceiling, so Redis cannot grow without bound', async () => {
-    const sessionService: any = {
-      newSessionSeed: jest.fn().mockReturnValue('seed'),
-      create: jest.fn().mockResolvedValue({ sessionId: 'next', chainId: 'chain-1' }),
-      getPage: jest.fn().mockResolvedValue({
-        sessionId: 'next', items: [], hasMore: false, nextCursor: null
-      }),
-      getChainId: jest.fn().mockResolvedValue('chain-1'),
-      getChainSeenIds: jest.fn().mockResolvedValue(
-        Array.from({ length: FEED_SESSION_POLICY.maxChainSeenIds }, () => new ObjectId().toString())
-      ),
-      resetChainSeen: jest.fn().mockResolvedValue(undefined)
-    };
-    const chained = service({ sessionService });
-
-    await chained.svc.getFeed({
-      feedType: HOME, subject: { anonymousId: 'anon-chain-6' }, limit: 20, sessionId: 'old', rollover: true
-    });
-
-    expect(sessionService.resetChainSeen).toHaveBeenCalledWith('chain-1');
-    // The ceiling recycle must also drop the exclusions, or the successor is
-    // ranked over an empty pool.
-    const excluded = chained.candidateService.retrieve.mock.calls[0][0].eligibility.excludedPostIds;
-    expect(excluded).toEqual([]);
-  });
-
-  it('without the rollover flag, a sessionId still pages the existing session', async () => {
-    const { svc } = service();
-    const subject = { anonymousId: 'anon-chain-7' };
-
-    const first = await svc.getFeed({ feedType: HOME, subject, limit: 20 });
-    const page2 = await svc.getFeed({
-      feedType: HOME, subject, limit: 20, sessionId: first.sessionId, cursor: '20'
-    });
-
-    expect(page2.sessionId).toBe(first.sessionId);
-  });
-
-  it('refuses to resolve another subject\'s chain', async () => {
-    const { svc, sessionService } = service();
-
-    const first = await svc.getFeed({ feedType: HOME, subject: { anonymousId: 'owner-abc' }, limit: 20 });
-    expect(await sessionService.getChainId(first.sessionId, 'someone-else')).toBeNull();
-
-    // A rollover quoting somebody else's session gets a brand-new chain, not
-    // theirs — so a guessed session id cannot reveal what they were shown.
-    const stolen = await svc.getFeed({
-      feedType: HOME, subject: { anonymousId: 'someone-else' }, limit: 20, sessionId: first.sessionId, rollover: true
-    });
-    const stolenChain = await sessionService.getChainId(stolen.sessionId, 'someone-else');
-    expect(stolenChain).toBe(stolen.sessionId);
+    expect(result.data.length).toBeGreaterThan(0);
+    expect(result.chainId).toBeNull();
+    expect(result.cycle).toBe(0);
   });
 });
 
-describe('PostRecommendationRequest.rollover', () => {
+describe('For You browsing chain', () => {
+  const subject = { anonymousId: 'guest-for-you-chain' };
+
+  /** Acceptance 11 and 12. */
+  it('rolls over inside one chain with no cross-session duplicates', async () => {
+    const { svc } = harness();
+
+    const first = await svc.getFeed({
+      feedType: FOR_YOU, subject, chainId: 'chain-fy', limit: 40
+    });
+    expect(first.data.length).toBe(SESSION_OUTPUT_POLICY.forYouInitialSessionLimit);
+
+    const second = await svc.getFeed({
+      feedType: FOR_YOU, subject, chainId: 'chain-fy', limit: 40, sessionId: first.sessionId, rollover: true
+    });
+
+    const firstIds = first.data.map((post: any) => post._id.toString());
+    const secondIds = second.data.map((post: any) => post._id.toString());
+    expect(second.chainId).toBe('chain-fy');
+    expect(secondIds.filter((id: string) => firstIds.includes(id))).toEqual([]);
+  });
+
+  /** Acceptance 13. */
+  it('accumulates distinct posts across several sessions', async () => {
+    const { svc } = harness();
+    const walk = await browse(svc, {
+      feedType: FOR_YOU, subject, chainId: 'chain-fy-long', limit: 10
+    });
+
+    expect(walk.sessionIds.length).toBeGreaterThan(3);
+    expect(walk.distinct.size).toBe(CORPUS_SIZE);
+  });
+
+  it('keeps its own session size — a chain does not turn For You into the catalogue', async () => {
+    const { svc } = harness();
+    const result = await svc.getFeed({
+      feedType: FOR_YOU, subject, chainId: 'chain-fy-size', limit: 200
+    });
+
+    expect(result.data.length).toBe(SESSION_OUTPUT_POLICY.forYouInitialSessionLimit);
+    expect(result.data.length).toBeLessThan(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+  });
+
+  /** Acceptance 14. */
+  it('a reload gets a new chain and the catalogue from the start', async () => {
+    const { svc } = harness();
+    await browse(svc, { feedType: FOR_YOU, subject, chainId: 'chain-fy-spent', limit: 10 });
+
+    const afterReload = await svc.getFeed({
+      feedType: FOR_YOU, subject, chainId: 'chain-fy-reloaded', limit: 40
+    });
+    expect(afterReload.data.length).toBe(SESSION_OUTPUT_POLICY.forYouInitialSessionLimit);
+    expect(afterReload.cycle).toBe(0);
+  });
+
+  it('Home and For You chains never share a seen set', async () => {
+    const { svc, fake } = harness();
+
+    await svc.getFeed({ feedType: HOME, subject, chainId: 'same-id-both-surfaces', limit: 20 });
+    await svc.getFeed({ feedType: FOR_YOU, subject, chainId: 'same-id-both-surfaces', limit: 20 });
+
+    const homeSeen = await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, 'same-id-both-surfaces'));
+    const forYouSeen = await fake.client.scard(REDIS_KEYS.recoChainSeen(FOR_YOU, 'same-id-both-surfaces'));
+    expect(homeSeen).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(forYouSeen).toBe(SESSION_OUTPUT_POLICY.forYouInitialSessionLimit);
+  });
+});
+
+describe('subjects', () => {
+  /** Acceptance 16. */
+  it('an authenticated viewer gets a working chain', async () => {
+    const { svc } = harness();
+    const viewerId = new ObjectId().toString();
+    const walk = await browse(svc, {
+      feedType: HOME, subject: { viewerId }, chainId: 'chain-authed', limit: 20
+    });
+
+    expect(walk.distinct.size).toBeGreaterThan(140);
+  });
+
+  /** Acceptance 17. */
+  it('a guest anonymous subject gets a working chain', async () => {
+    const { svc } = harness();
+    const walk = await browse(svc, {
+      feedType: HOME, subject: { anonymousId: 'guest-abcdefgh' }, chainId: 'chain-guest', limit: 20
+    });
+
+    expect(walk.distinct.size).toBeGreaterThan(140);
+  });
+
+  /** Acceptance 18 — two tabs. */
+  it('two chains for the same subject do not consume each other', async () => {
+    const { svc } = harness();
+    const subject = { anonymousId: 'guest-two-tabs' };
+
+    const tabA = await svc.getFeed({ feedType: HOME, subject, chainId: 'tab-a-chain', limit: 70 });
+    const tabB = await svc.getFeed({ feedType: HOME, subject, chainId: 'tab-b-chain', limit: 70 });
+
+    // Each tab sees a full session drawn from the whole catalogue; neither is
+    // starved by the other's browse.
+    expect(tabA.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(tabB.data.length).toBe(SESSION_OUTPUT_POLICY.homeSessionItemLimit);
+    expect(tabA.chainId).not.toBe(tabB.chainId);
+  });
+
+  it('refuses a chain belonging to a different subject', async () => {
+    const { svc, chainService } = harness();
+
+    await svc.getFeed({
+      feedType: HOME, subject: { anonymousId: 'owner-subject' }, chainId: 'private-chain', limit: 20
+    });
+
+    // Another subject quoting the same id gets no chain at all rather than the
+    // owner's browse — a guessed id can never reveal what they were shown.
+    const stolen = await chainService.resolve('private-chain', 'someone-else', HOME);
+    expect(stolen).toBeNull();
+
+    const feed = await svc.getFeed({
+      feedType: HOME, subject: { anonymousId: 'someone-else' }, chainId: 'private-chain', limit: 20
+    });
+    expect(feed.chainId).toBeNull();
+    expect(feed.data.length).toBeGreaterThan(0);
+  });
+});
+
+describe('chain Redis state', () => {
+  const subject = { anonymousId: 'guest-redis-state' };
+
+  /** Acceptance 20. */
+  it('gives every chain key a TTL, refreshed while the browse is active', async () => {
+    const { svc, fake } = harness();
+    await svc.getFeed({ feedType: HOME, subject, chainId: 'chain-ttl', limit: 20 });
+
+    expect(await fake.client.ttl(REDIS_KEYS.recoChainMeta(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
+    expect(await fake.client.ttl(REDIS_KEYS.recoChainSeen(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
+    expect(await fake.client.ttl(REDIS_KEYS.recoChainTail(HOME, 'chain-ttl'))).toBe(CHAIN_POLICY.ttlSeconds);
+  });
+
+  /** Acceptance 19. */
+  it('bounds the seen set — one browse can never grow it without limit', async () => {
+    const { svc, fake } = harness();
+    const walk = await browse(svc, { feedType: HOME, subject, chainId: 'chain-bounded', limit: 20 });
+
+    expect(walk.requests).toBeGreaterThan(1);
+    const size = await fake.client.scard(REDIS_KEYS.recoChainSeen(HOME, 'chain-bounded'));
+    expect(size).toBeLessThanOrEqual(CHAIN_POLICY.maxSeenIds);
+    expect(size).toBeLessThanOrEqual(CORPUS_SIZE);
+  });
+
+  it('keeps the recent tail trimmed to its policy length', async () => {
+    const { chainService, fake, corpusIds } = harness();
+    await chainService.recordServed(HOME, 'chain-tail-bound', corpusIds);
+
+    const tail = await fake.client.lrange(REDIS_KEYS.recoChainTail(HOME, 'chain-tail-bound'), 0, -1);
+    expect(tail.length).toBe(CHAIN_POLICY.recentTailSize);
+    // Most recent first, so the anti-repeat window is the END of the cycle.
+    expect(tail[0]).toBe(corpusIds[corpusIds.length - 1]);
+  });
+
+  it('refuses a malformed chain id rather than making it a Redis key', async () => {
+    const { chainService } = harness();
+
+    expect(chainService.isValidChainId('short')).toBe(false);
+    expect(chainService.isValidChainId('has:colons:in:it')).toBe(false);
+    expect(chainService.isValidChainId('a'.repeat(CHAIN_POLICY.maxIdLength + 1))).toBe(false);
+    expect(chainService.isValidChainId('5f3b2c1a-9d8e-4f7a-b6c5-1234567890ab')).toBe(true);
+    expect(await chainService.resolve('has:colons', 'subject', HOME)).toBeNull();
+  });
+});
+
+describe('PostRecommendationRequest', () => {
   /*
    * `main.ts` runs the global pipe with `enableImplicitConversion`, which turns
    * a query string into `Boolean(string)` before any `@Transform` sees `value`
@@ -281,20 +553,22 @@ describe('PostRecommendationRequest.rollover', () => {
     PostRecommendationRequest, raw, { enableImplicitConversion: true }
   );
 
-  it('is true only for a genuine true', () => {
+  it('rollover is true only for a genuine true', () => {
     expect(parse({ rollover: 'true' }).rollover).toBe(true);
     expect(parse({ rollover: true }).rollover).toBe(true);
   });
 
-  it('is false for the string "false", which implicit conversion would make true', () => {
+  it('rollover is false for the string "false", which implicit conversion would make true', () => {
     expect(parse({ rollover: 'false' }).rollover).toBe(false);
   });
 
-  it('is absent when absent — never accidentally truthy', () => {
-    // `undefined`, not `false`: class-transformer does not run a `@Transform`
-    // for a key that is not there. `ContentService` reads it through
-    // `Boolean(req.rollover)`, so the observable behaviour is "no rollover".
+  it('rollover is absent when absent — never accidentally truthy', () => {
     expect(parse({}).rollover).toBeUndefined();
     expect(Boolean(parse({}).rollover)).toBe(false);
+  });
+
+  it('carries chainId through unchanged', () => {
+    const chainId = '5f3b2c1a-9d8e-4f7a-b6c5-1234567890ab';
+    expect(parse({ chainId }).chainId).toBe(chainId);
   });
 });
