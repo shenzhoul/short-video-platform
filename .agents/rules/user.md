@@ -78,6 +78,48 @@ photo layout and the video layout each re-derived "is the creator grid open"
 from their own booleans, and the For You stage kept walking the recommendation
 feed while a creator's grid was on screen beside it.
 
+## A Badge That Means "In This List" Needs To Know Which List
+
+`Pinned on top` is a statement about one creator's own ordering, not a property
+of the post. It was rendered from `post.isPinned` alone, and
+`CreatorProfileWorkItem` is shared between the Works tab and the "I like it"
+tab — so a liked post from another creator announced that it was pinned to the
+top of a list it was not even in.
+
+- **The prop defaults to hidden.** `showPinnedBadge` is opt-in, so a new grid
+  that forgets it shows no badge rather than the wrong one. Only the creator's
+  own collection (the Works tab, the modal's Videos grid) asks for it.
+- **Never fix this by changing the data.** The pin stays on the DTO and creator
+  ordering still uses it; what changed is that the badge has to be asked for.
+- Cover: `pinned-badge-context.spec.tsx`.
+
+## Recommendation Mode Falls Back To Whatever The Surface Passed
+
+`usePostDetailMode` is already the single owner of the mode, and it is a pure
+function of the open tab — closing the Videos tab leaves creator mode on the
+same render, with no ref holding the old playlist. When "the panel closed but
+up/down still walks that creator" is reported, **the mode is not the thing to
+audit**: what recommendation mode falls back to is `PostDetailModal`'s `posts`
+prop, and each surface chooses that for itself.
+
+| Surface | `posts` | Correct? |
+|---|---|---|
+| Home | `useRecommendationDetailFeed` | yes |
+| For You / Following | their own feed | yes — they *are* feeds |
+| creator profile | that creator's grid | yes — the profile is creator-scoped |
+| **search** | the search results | **no** |
+
+Search passed its result list, so closing the Videos tab handed navigation back
+to it. Search for a creator, or a hashtag they own, and every result is their
+work: the panel had closed but up/down kept walking their catalogue, which reads
+exactly like never having left the tab. Search now mounts the same
+recommendation detail session Home does.
+
+A surface that opens the modal without a feed of its own should mount
+`useRecommendationDetailFeed` and pass `source`, `recommendationSessionId` and
+`hasMoreAhead` with it — not hand over whatever list it happens to be rendering.
+Cover: `post-detail-navigation-mode.spec.tsx`.
+
 ## Post Detail: three modes, one owner
 
 There is now an explicit mode, decided once in `PostDetailModal` by

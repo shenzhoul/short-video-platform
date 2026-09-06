@@ -250,6 +250,29 @@ Two things this fixes:
 A realtime update from someone else liking the post is applied as an absolute
 value, so it can never double-count against your own click.
 
+## Pinned badges only on the creator's own collection (2026-09-06)
+
+"Pinned on top" describes where a post sits in **its creator's** profile
+ordering. It is shown on the creator's Works grid and on the Videos grid inside
+the post popup, and nowhere else — not on your "I like it" tab, not in search,
+not on Home or For You. A liked post from another creator used to carry the
+badge into your likes, where their pinning means nothing.
+
+Nothing about the post changed: pinning still works and still orders the
+creator's own profile exactly as before.
+
+## Opening a post from search navigates recommendations (2026-09-06)
+
+Next/previous inside the popup follows the post-detail recommendation sequence
+whichever page opened it, so search now behaves like Home. It previously walked
+the search results instead — and after opening and closing a creator's "Videos"
+tab that looked like the tab had never closed, because a search for a creator
+returns their posts and nothing else.
+
+The Videos tab itself is unchanged: while it is open, up/down moves through that
+creator's videos; closing it (the large Back button, or the avatar) returns to
+the recommendation sequence from the post you are on.
+
 ## The creator Videos tab keeps its list (2026-09-06)
 
 Opening a creator's videos, closing the post, and opening that creator again

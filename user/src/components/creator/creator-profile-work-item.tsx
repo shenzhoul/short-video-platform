@@ -25,6 +25,20 @@ interface CreatorProfileWorkItemProps {
   batchMode: boolean;
   selected: boolean;
   onToggleSelection: (postId: string) => void;
+  /**
+   * Whether this tile is part of the *owning creator's* collection, where
+   * pinning is what decides the order and the badge explains it.
+   *
+   * Defaults to false, because most grids are not that: the "I like it" tab,
+   * search results, Home, For You and every generic listing show posts from
+   * many creators, and a pin on somebody else's profile says nothing about
+   * where the post sits here. Rendering the badge from `post.isPinned` alone
+   * put "Pinned on top" on a liked post from another creator.
+   *
+   * The pin metadata itself is untouched — this is presentation context, not a
+   * change to what the post *is*.
+   */
+  showPinnedBadge?: boolean;
 }
 
 /**
@@ -48,7 +62,8 @@ function CreatorProfileWorkItem({
   onOpenDetail,
   batchMode,
   selected,
-  onToggleSelection
+  onToggleSelection,
+  showPinnedBadge = false
 }: CreatorProfileWorkItemProps) {
   const graphicPost = isGraphicPost(post);
   const graphicImages = getPostImages(post);
@@ -139,7 +154,7 @@ function CreatorProfileWorkItem({
             </button>
           ) : null}
           <div className="absolute bottom-0 h-12 w-full bg-[linear-gradient(transparent_0%,rgba(0,0,0,0.5)_100%)] opacity-100" />
-          {post.isPinned ? (
+          {showPinnedBadge && post.isPinned ? (
             <PostPinnedBadge className="absolute left-2 top-2 z-40" />
           ) : null}
           <span className={`absolute bottom-1 left-2.5 flex flex-row items-center justify-center text-[14px] font-medium leading-[22px] text-white transition-opacity ${playback.showVideo ? 'opacity-0' : 'opacity-100'}`}>

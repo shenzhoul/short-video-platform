@@ -256,6 +256,12 @@ export default function CreatorProfilePage({
                                 batchMode={batchManagement.active}
                                 selected={batchManagement.isSelected(post._id)}
                                 onToggleSelection={batchManagement.toggleSelection}
+                                // Works is this creator's own collection, where
+                                // pinning decides the order. "I like it" holds
+                                // other people's posts, where their pin means
+                                // nothing — and used to show "Pinned on top"
+                                // anyway.
+                                showPinnedBadge={!isLikedTab}
                               />
                             ))}
                           </ul>

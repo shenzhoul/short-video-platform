@@ -19,6 +19,7 @@ export type PostDetailSource =
   | 'home-feed'
   | 'for-you'
   | 'following-feed'
+  | 'search'
   | 'profile-videos'
   | 'creator-videos-tab'
   | 'notification'

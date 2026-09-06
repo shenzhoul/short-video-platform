@@ -5,6 +5,7 @@ import { formatCompactCount } from '@components/content/post/home-feed-media';
 import PostDetailModal from '@components/content/post/post-detail-modal';
 import { useFollowCreator } from '@hooks/use-follow-creator';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
+import { useRecommendationDetailFeed } from '@hooks/use-recommendation-detail-feed';
 import { useRelatedSearches } from '@hooks/use-related-searches';
 import { type SearchTabKey, useSearchResults } from '@hooks/use-search-results';
 import { IPost } from '@interfaces/post';
@@ -94,6 +95,24 @@ export default function SearchResults({ query }: SearchResultsProps) {
   } = useSearchResults(query, tab);
   const relatedSearches = useRelatedSearches(query);
   const playback = useHomeFeedPlayback(posts);
+  /*
+   * Next/previous in the modal follows the recommendation detail session, not
+   * the search results behind it — the same sequence Home uses.
+   *
+   * Search used to pass its own result list as the modal's `posts`, so closing
+   * the creator "Videos" tab handed navigation back to *those* results. Search
+   * for a creator, or for a hashtag they own, and every one of them is that
+   * creator's work: the panel had closed but up/down kept walking their
+   * catalogue, which reads exactly like the Videos tab never having been left.
+   *
+   * The navigation *mode* was never the problem — `usePostDetailMode` leaves
+   * creator mode the moment the tab closes. What was wrong is what
+   * recommendation mode fell back to on this surface.
+   */
+  const detailFeed = useRecommendationDetailFeed({
+    enabled: Boolean(playback.detailPost),
+    currentPost: playback.detailPost
+  });
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -236,7 +255,10 @@ export default function SearchResults({ query }: SearchResultsProps) {
       {playback.detailPost ? (
         <PostDetailModal
           post={playback.detailPost}
-          posts={posts}
+          posts={detailFeed.feedPosts}
+          source="search"
+          recommendationSessionId={detailFeed.sessionId}
+          hasMoreAhead={detailFeed.hasMoreAhead}
           initialTime={playback.detailInitialTime}
           onInteractionChange={playback.handleInteractionChange}
           onClose={playback.closeDetailPost}
