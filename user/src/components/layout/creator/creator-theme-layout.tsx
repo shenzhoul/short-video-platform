@@ -23,9 +23,16 @@ export default async function CreatorThemeLayout({ children }: Layout) {
   const { user: serverUser } = await getServerAuth();
 
   return (
-    <div className="min-h-screen bg-(--page-bg) xl:flex flex-col xl:overflow-hidden">
-      <div className={`min-h-0 xl:flex max-lg:flex-col gap-0 flex-1 ${serverUser ? 'max-xl:pb-[calc(84px+env(safe-area-inset-bottom))] xl:overflow-y-auto' : ''}`}>
-        <div className="relative max-lg:hidden">
+    /*
+      The same shell arrangement as `MainThemeLayout`, for the same reason: the
+      header and the content column both subtract `--app-shell-nav-width`, so
+      the rail has to be present and that wide at every viewport. Hiding it
+      below `lg` — which is what this did — would leave the creator screens with
+      an empty gutter where the navigation used to be.
+    */
+    <div className="min-h-screen bg-(--page-bg) flex flex-col overflow-hidden max-xl:h-(--app-viewport-height)">
+      <div className={`min-h-0 flex gap-0 flex-1 ${serverUser ? 'xl:overflow-y-auto' : ''}`}>
+        <div className="relative">
           <CreatorNavigation />
         </div>
         <MainPageSession>

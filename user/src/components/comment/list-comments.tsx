@@ -111,7 +111,7 @@ export function ListComments({
   }, [openReplyCommentId]);
 
   return (
-    <div className="space-y-5 pb-4">
+    <div className="space-y-5 max-lg:space-y-2 pb-4 max-lg:pb-2">
       {comments.length > 0 &&
         comments.map((comment: IComment) => (
           <CommentItem

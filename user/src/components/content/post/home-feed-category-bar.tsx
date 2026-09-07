@@ -44,9 +44,9 @@ export default function HomeFeedCategoryBar({
   };
 
   return (
-    <div className="relative z-40 bg-(--header-bg) px-4">
-      <div className="flex h-12 items-center gap-2">
-        <div ref={categoryRef} onScroll={updateButtons} className="flex h-full min-w-0 flex-1 items-center gap-7 overflow-x-auto whitespace-nowrap text-base font-medium text-(--text-soft) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="relative z-40 bg-(--header-bg) px-4 max-lg:px-2">
+      <div className="flex h-12 max-lg:h-8 items-center gap-2 max-lg:gap-1">
+        <div ref={categoryRef} onScroll={updateButtons} className="flex h-full min-w-0 flex-1 items-center gap-7 max-lg:gap-3.5 max-lg:text-[11px] overflow-x-auto whitespace-nowrap text-base font-medium text-(--text-soft) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {categories.map((category) => {
             const isActive = category.key === activeTopicKey;
             return (
@@ -62,10 +62,10 @@ export default function HomeFeedCategoryBar({
             );
           })}
         </div>
-        <button type="button" disabled={!canScrollBack} onClick={() => scroll('back')} className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--hover-bg) text-(--text-strong) transition disabled:cursor-default disabled:opacity-35" aria-label="Previous categories">
+        <button type="button" disabled={!canScrollBack} onClick={() => scroll('back')} className="flex h-7 w-7 max-lg:h-5 max-lg:w-5 max-lg:text-[10px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--hover-bg) text-(--text-strong) transition disabled:cursor-default disabled:opacity-35" aria-label="Previous categories">
           <FiChevronLeft size={16} />
         </button>
-        <button type="button" disabled={!canScrollNext} onClick={() => scroll('next')} className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--hover-bg) text-(--text-strong) transition disabled:cursor-default disabled:opacity-35" aria-label="Next categories">
+        <button type="button" disabled={!canScrollNext} onClick={() => scroll('next')} className="flex h-7 w-7 max-lg:h-5 max-lg:w-5 max-lg:text-[10px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--hover-bg) text-(--text-strong) transition disabled:cursor-default disabled:opacity-35" aria-label="Next categories">
           <FiChevronRight size={16} />
         </button>
       </div>

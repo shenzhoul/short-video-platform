@@ -13,6 +13,7 @@ import CreatorProfileWorkItem from '@components/creator/creator-profile-work-ite
 import CreatorProfileWorksToolbar from '@components/creator/creator-profile-works-toolbar';
 import EditProfileModal from '@components/creator/edit-profile';
 import { POST_PAGE_LIMIT } from '@constants/pagination';
+import { PROFILE_COLLECTION_LABELS } from '@constants/profile-labels';
 import { useCreatorBatchManagement } from '@hooks/use-creator-batch-management';
 import { useCreatorPostSearch } from '@hooks/use-creator-post-search';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
@@ -25,11 +26,11 @@ function getProfileTabs(canEditProfile: boolean, worksTotal: number): CreatorPro
   const ownerProfileTabs: CreatorProfileTabItem[] = [
     { key: 'works', label: 'Works', count: worksTotal },
     { key: 'recommended', label: 'Recommended' },
-    { key: 'liked', label: 'I like it', locked: !canEditProfile },
+    { key: 'liked', label: PROFILE_COLLECTION_LABELS.liked, locked: !canEditProfile },
     { key: 'collection', label: 'Collection', locked: true },
-    { key: 'watch-history', label: 'Watch history', locked: true },
-    { key: 'watch-later', label: 'We\'ll look at it later', locked: true },
-    { key: 'appointment', label: 'My appointment', locked: true }
+    { key: 'watch-history', label: PROFILE_COLLECTION_LABELS.watchHistory, locked: true },
+    { key: 'watch-later', label: PROFILE_COLLECTION_LABELS.watchLater, locked: true },
+    { key: 'appointment', label: PROFILE_COLLECTION_LABELS.appointment, locked: true }
   ];
 
   return canEditProfile ? ownerProfileTabs : ownerProfileTabs.slice(0, 3);
@@ -89,24 +90,44 @@ export default function CreatorProfilePage({
     initialHasMore: initialPostData?.hasMore,
     initialNextCursor: initialPostData?.nextCursor
   });
-  // Pages the works grid as the viewer reaches its end. `rootMargin` starts the
+  const liked = useLikedPosts({
+    enabled: canEditProfile && activeTab === 'liked',
+    // The same page size the works grid uses, so "which page is this" has one
+    // answer on this screen rather than two.
+    limit: POST_PAGE_LIMIT
+  });
+  const isLikedTab = activeTab === 'liked';
+  const posts = isLikedTab ? liked.posts : works;
+
+  /**
+   * Paging state for whichever grid is on screen.
+   *
+   * Both tabs render the same grid from the same `posts` array, so they must
+   * page through the same sentinel. Wiring the observer to the works hook alone
+   * is what left "I like it" at its first page: `useLikedPosts` exposed
+   * `hasMore` and `loadMore` and nothing ever called them, so 67 liked posts
+   * stopped at 20 and the footer printed the terminal message underneath.
+   */
+  const activeHasMore = isLikedTab ? liked.hasMore : worksHasMore;
+  const activeLoading = isLikedTab ? liked.loading : worksLoading;
+  const loadMoreLiked = liked.loadMore;
+  const loadMoreActive = useCallback(() => {
+    if (isLikedTab) loadMoreLiked();
+    else loadMoreWorks();
+  }, [isLikedTab, loadMoreLiked, loadMoreWorks]);
+
+  // Pages the active grid as the viewer reaches its end. `rootMargin` starts the
   // request a screen early so the list grows before the viewer hits the bottom.
   const worksSentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const sentinel = worksSentinelRef.current;
-    if (!sentinel || !worksHasMore) return;
+    if (!sentinel || !activeHasMore) return;
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) loadMoreWorks();
+      if (entries[0]?.isIntersecting) loadMoreActive();
     }, { rootMargin: '400px 0px' });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMoreWorks, worksHasMore]);
-
-  const liked = useLikedPosts({
-    enabled: canEditProfile && activeTab === 'liked'
-  });
-  const isLikedTab = activeTab === 'liked';
-  const posts = isLikedTab ? liked.posts : works;
+  }, [loadMoreActive, activeHasMore]);
   const unlikeLikedPosts = liked.unlikePosts;
   const updateLikedPostInteraction = liked.updatePostInteraction;
   const upsertLikedPost = liked.upsertLikedPost;
@@ -201,10 +222,10 @@ export default function CreatorProfilePage({
         */}
         <div
           ref={scrollContainerRef}
-          className='-mt-14 scrollbar-none overflow-auto flex-1 w-[calc(100%+var(--message-workspace-width,0px))]'
+          className='-mt-14 max-lg:-mt-8 scrollbar-none overflow-auto flex-1 w-[calc(100%+var(--message-workspace-width,0px))]'
           onScroll={handleScroll}
         >
-          <div className='w-full max-w-none min-w-170.5 min-h-[calc(100vh-60px)] relative pt-14 mx-0 my-auto'>
+          <div className='w-full max-w-none lg:min-w-170.5 min-h-[calc(var(--app-viewport-height)-60px)] relative pt-14 max-lg:pt-8 mx-0 my-auto'>
             <CreatorProfileHeader
               creator={creator}
               currentUser={currentUser}
@@ -221,7 +242,7 @@ export default function CreatorProfilePage({
             />
             {/* The works column is message-aware; the cover above it is not. */}
             <div className='bg-profile w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
-              <div className='max-w-380 mx-auto'>
+              <div className='max-w-380 mx-auto max-lg:px-2.5'>
                 <CreatorProfileWorksToolbar
                   canEditProfile={canEditProfile}
                   filters={isLikedTab ? [] : profileFilters}
@@ -244,7 +265,14 @@ export default function CreatorProfilePage({
                     <div className='w-full pt-2'>
                       {posts.length > 0 ? (
                         <>
-                          <ul className="w-full leading-0">
+                          {/*
+                            Three columns on a compact viewport, six from
+                            `lg` — the same six the fake inline-block grid used
+                            to produce, at the same width: `grid-cols-6 gap-4`
+                            gives (100% - 5x16px)/6, which is exactly the
+                            `calc(16.66% - 13.34px)` the tiles carried.
+                          */}
+                          <ul className="grid w-full grid-cols-3 gap-x-4 gap-y-4 max-lg:gap-x-2.5 max-lg:gap-y-3 lg:grid-cols-6 leading-0">
                             {posts.map((post) => (
                               <CreatorProfileWorkItem
                                 key={post._id}
@@ -272,13 +300,19 @@ export default function CreatorProfilePage({
                             posts against a twenty-post page, and silently
                             unreachable content for anyone with more.
                           */}
-                          {!isLikedTab && worksHasMore ? (
+                          {activeHasMore ? (
                             <div ref={worksSentinelRef} className='h-8' aria-hidden />
                           ) : null}
+                          {/*
+                            The terminal message is the server's word, never the
+                            client's guess. It used to print unconditionally on
+                            the liked tab, under a list that had only ever asked
+                            for its first page.
+                          */}
                           <div className='mt-15.5 flex justify-center text-[12px] font-semibold leading-5 text-(--text-disabled)'>
-                            {!isLikedTab && worksLoading
+                            {activeLoading
                               ? 'Loading more...'
-                              : !isLikedTab && worksHasMore
+                              : activeHasMore
                                 ? ''
                                 : 'No more for now'}
                           </div>

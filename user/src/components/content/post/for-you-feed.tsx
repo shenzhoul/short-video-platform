@@ -271,7 +271,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
           playerRef={playerRef}
           initialTime={resumeTime}
           isActiveSlide={!detailModalPost}
-          rightGutter="68px"
+          rightGutter="var(--feed-nav-gutter, 68px)"
           detailPanelTab={detailPanelTab}
           onDetailPanelTabChange={setDetailPanelTab}
           creatorVideos={creatorVideos.posts}
@@ -289,7 +289,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
           <PostVideoActionRail
             post={activePost}
             mediaVariant={activeIsVideo ? 'video' : 'graphic'}
-            className="right-18 pr-4"
+            className="right-18 max-lg:right-0 pr-4 max-lg:pr-1"
             isLikedOverride={activeInteraction.isLiked}
             totalLikeOverride={activeInteraction.totalLike}
             totalCommentOverride={activeInteraction.totalComment}
@@ -304,7 +304,7 @@ export default function ForYouFeed({ initialData }: ForYouFeedProps) {
         </PostVideoStage>
 
         <aside
-          className="absolute right-4 top-1/2 z-80 flex -translate-y-1/2 items-center justify-center"
+          className="absolute right-4 top-1/2 z-80 flex -translate-y-1/2 items-center justify-center max-lg:hidden"
           aria-label="Video navigation"
         >
           <PostNavigationControls

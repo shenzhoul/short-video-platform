@@ -1,5 +1,6 @@
 'use client';
 
+import { POST_PAGE_LIMIT } from '@constants/pagination';
 import { toast } from '@douyin-clone/shared-toast';
 import type { CursorInfo } from '@interfaces/pagination';
 import { IPost, PostInteractionPatch } from '@interfaces/post';
@@ -18,7 +19,7 @@ function appendUniquePosts(current: IPost[], incoming: IPost[]) {
   return [...posts.values()];
 }
 
-export function useLikedPosts({ enabled, limit = 24 }: UseLikedPostsOptions) {
+export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPostsOptions) {
   const [posts, setPosts] = useState<IPost[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -28,6 +29,13 @@ export function useLikedPosts({ enabled, limit = 24 }: UseLikedPostsOptions) {
   const loadingRef = useRef(false);
   const previousEnabledRef = useRef(false);
   const likedPostIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * Whether the first page has ever been requested.
+   *
+   * Separate from `posts.length` so an account with no likes is still counted
+   * as loaded and does not re-request on every return to the tab.
+   */
+  const startedRef = useRef(false);
 
   const loadPage = useCallback(async (cursor: CursorInfo | null = null) => {
     if (loadingRef.current) return;
@@ -59,10 +67,22 @@ export function useLikedPosts({ enabled, limit = 24 }: UseLikedPostsOptions) {
     }
   }, [limit]);
 
+  /**
+   * Load the first page the first time the tab is opened, and only then.
+   *
+   * Re-requesting page one on every return to the tab looks harmless — the
+   * merge de-duplicates, so nothing appears twice — but it rewinds `nextCursor`
+   * and `hasMore` to the *first* page's values. After paging to the end of 67
+   * liked posts, leaving the tab and coming back would set the cursor back to
+   * item 20 and claim there was more to fetch, so the next three scrolls would
+   * re-fetch pages the list already held before it could grow again.
+   */
   useEffect(() => {
     const becameEnabled = enabled && !previousEnabledRef.current;
     previousEnabledRef.current = enabled;
-    if (becameEnabled) void loadPage();
+    if (!becameEnabled || startedRef.current) return;
+    startedRef.current = true;
+    void loadPage();
   }, [enabled, loadPage]);
 
   useEffect(() => {

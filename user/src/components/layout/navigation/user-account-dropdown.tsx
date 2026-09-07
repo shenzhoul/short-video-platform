@@ -7,6 +7,7 @@ import {
 } from '@components/creator/creator-profile-types';
 import Dropdown from '@components/ui/dropdown-menu';
 import ToggleSwitch from '@components/ui/toggle-switch';
+import { PROFILE_COLLECTION_LABELS } from '@constants/profile-labels';
 import { toast } from '@douyin-clone/shared-toast';
 import { useFollowStats } from '@hooks/use-follow-stats';
 import { useLikedPostCount } from '@hooks/use-liked-post-count';
@@ -110,7 +111,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
     loggedIn ? (
       <button
         type="button"
-        className="ml-4 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-(--hover-bg) text-(--text-strong) transition hover:opacity-85"
+        className="ml-4 max-lg:ml-0.5 flex h-8 w-8 max-lg:h-6 max-lg:w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-(--hover-bg) text-(--text-strong) transition hover:opacity-85"
         aria-label={displayName}
       >
         <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
@@ -118,7 +119,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
     ) : (
       <button
         type="button"
-        className="ml-4 inline-flex h-10 w-23 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#ff2f5f] px-4 text-sm font-semibold text-white transition hover:bg-[#ff4772]"
+        className="ml-4 max-lg:ml-0.5 max-lg:h-6 max-lg:w-auto max-lg:px-1.5 max-lg:text-[10px] max-lg:gap-1 shrink-0 inline-flex h-10 w-23 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#ff2f5f] px-4 text-sm font-semibold text-white transition hover:bg-[#ff4772]"
         onClick={() => openAuthModal()}
       >
         <AvatarIcon className='text-xl' />
@@ -132,9 +133,9 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
       trigger={trigger}
       triggerMode="hover"
       width={334}
-      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none"
+      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none max-w-[calc(100vw-16px)]"
     >
-      <div className="max-h-[calc(100vh-72px)] overflow-y-auto p-3 scrollbar-custom">
+      <div className="max-h-[calc(var(--app-viewport-height)-72px)] overflow-y-auto p-3 scrollbar-custom">
         <div className="flex items-center gap-3 px-1 pb-3">
           <span className="flex h-13 w-13 overflow-hidden rounded-full bg-(--surface-soft)">
             <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
@@ -180,7 +181,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
             className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('liked')}
           >
-            <span className="flex items-center gap-2"><LikeIcon className="text-2xl" /> {loggedIn ? 'I like it' : 'My liking'}</span>
+            <span className="flex items-center gap-2"><LikeIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.liked : 'My liking'}</span>
             <span className="flex items-center text-sm font-semibold text-(--text-strong)">
               {loggedIn ? <LikedPostCount enabled={loggedIn} /> : ''} <ArrowRightIcon className='text-xl opacity-45' />
             </span>
@@ -190,7 +191,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
             className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('My collection is coming soon')}
           >
-            <span className="flex items-center gap-2"><CollectIcon className="text-2xl" /> {loggedIn ? 'My collection' : 'My collection.'}</span>
+            <span className="flex items-center gap-2"><CollectIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.collection : 'My collection.'}</span>
             <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
           </button>
           <button
@@ -198,7 +199,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
             className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch history is coming soon')}
           >
-            <span className="flex items-center gap-2"><HistoryIcon className="text-2xl" /> {loggedIn ? 'Watch history' : 'Look at history.'}</span>
+            <span className="flex items-center gap-2"><HistoryIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchHistory : 'Look at history.'}</span>
             <span className="flex items-center text-xs font-semibold text-(--text-strong)">{loggedIn ? 'Within 30 days' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
           </button>
           <button
@@ -206,7 +207,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
             className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch later is coming soon')}
           >
-            <span className="flex items-center gap-2"><WatchLaterIcon className="text-2xl" /> {loggedIn ? 'We&apos;ll look at it later' : 'See again later.'}</span>
+            <span className="flex items-center gap-2"><WatchLaterIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchLater : 'See again later.'}</span>
             <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
           </button>
           <button
@@ -214,7 +215,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
             className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('works')}
           >
-            <span className="flex items-center gap-2"><PostIcon className="text-2xl" /> {loggedIn ? 'My work' : 'My work.'}</span>
+            <span className="flex items-center gap-2"><PostIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.work : 'My work.'}</span>
             <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? postCount : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
           </button>
         </div>
@@ -222,7 +223,7 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
         <div className="mt-3 space-y-1 border-t border-(--divider) pt-3">
           <button type="button" className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
             <AppointmentIcon className="text-[26px]" />
-            {loggedIn ? 'My appointment' : 'My appointment.'}
+            {loggedIn ? PROFILE_COLLECTION_LABELS.appointment : 'My appointment.'}
           </button>
           <button type="button" className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
             <OrderIcon className="text-[26px]" />

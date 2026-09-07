@@ -259,16 +259,16 @@ function HomeFeedCard({
       </div>
 
       {!featured ? (
-        <div className="home-feed-card-info mt-2 min-w-0 overflow-hidden">
+        <div className="home-feed-card-info mt-2 max-lg:mt-1.5 min-w-0 overflow-hidden">
           <button
             type="button"
             onClick={() => onOpenDetail?.(post, 0)}
             className="block w-full cursor-pointer text-left"
           >
-            <h3 className={`${isProfileVariant ? 'line-clamp-1' : 'line-clamp-2'} text-[16px] font-medium leading-5 text-(--text-strong) transition hover:text-(--text-strong)`}>{playback.description}</h3>
+            <h3 className={`${isProfileVariant ? 'line-clamp-1' : 'line-clamp-2'} text-[16px] max-lg:text-[11px] font-medium leading-5 max-lg:leading-[15px] text-(--text-strong) transition hover:text-(--text-strong)`}>{playback.description}</h3>
           </button>
           {!isProfileVariant ? (
-            <div className="mt-2 flex min-w-0 items-center gap-2 text-sm text-(--text-soft)">
+            <div className="mt-2 max-lg:mt-1 flex min-w-0 items-center gap-2 max-lg:gap-1 text-sm max-lg:text-[10px] text-(--text-soft)">
               <span className="truncate">@{metaName}</span>
               {timeText ? <span className="shrink-0">· {timeText}</span> : null}
             </div>

@@ -32,12 +32,12 @@ export default function NotificationBell({ isLoggedIn }: IProps) {
       width={isLoggedIn ? 328 : 300}
       menuClassName="!z-90 !rounded-xl !border-(--border-faint) !bg-(--surface-raised) !p-0 !shadow-(--shadow-popover) max-w-[calc(100vw-24px)]"
       trigger={(
-        <span className="group relative flex h-12 min-w-10.5 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium text-(--text-soft) transition hover:bg-(--hover-bg) hover:text-(--text-strong)">
-          {unreadCount > 0 && <span className="absolute -right-1.25 left-[calc(50%+6px)] top-px h-2 w-2 rounded-full bg-[#ff2f5f]" />}
-          <div className="flex h-5 w-5 items-center justify-center">
-            <NotificationIcon className="text-2xl" />
+        <span className="group relative flex h-12 max-lg:h-7 min-w-10.5 max-lg:min-w-0 max-lg:px-1 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium text-(--text-soft) transition hover:bg-(--hover-bg) hover:text-(--text-strong)" aria-label="Notification" title="Notification">
+          {unreadCount > 0 && <span className="absolute -right-1.25 left-[calc(50%+6px)] top-px h-2 w-2 max-lg:h-1.5 max-lg:w-1.5 rounded-full bg-[#ff2f5f]" />}
+          <div className="flex h-5 w-5 max-lg:h-4 max-lg:w-4 items-center justify-center">
+            <NotificationIcon className="text-2xl max-lg:text-base" />
           </div>
-          <span>Notification</span>
+          <span className="max-lg:text-[7px] max-lg:leading-[9px] max-lg:tracking-tight">Notification</span>
         </span>
       )}
     >

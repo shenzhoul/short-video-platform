@@ -96,7 +96,7 @@ export function CommentItem({
       // text and hid the very comment it was meant to point at.
       data-comment-id={item._id}
       className={`
-        group relative flex w-full gap-3 py-1
+        group relative flex w-full gap-3 max-lg:gap-1 py-1 max-lg:py-0
         ${isReplying ? 'bg-[linear-gradient(270deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.06)_18.23%,rgba(255,255,255,0.06)_51.56%,rgba(255,255,255,0.06)_82.29%,rgba(255,255,255,0)_100%)]' : ''}
         ${isHighlighted ? 'rounded-lg bg-(--overlay-surface-hover) ring-1 ring-(--overlay-border-faint) transition-colors duration-500' : ''}
       `}
@@ -105,7 +105,7 @@ export function CommentItem({
         <img
           alt="user-avatar"
           src={resolveAvatarUrl(item?.user?.avatar)}
-          className={`${isReply ? 'h-8 w-8' : 'h-9 w-9'} rounded-full object-cover`}
+          className={`${isReply ? 'h-8 w-8 max-lg:h-4 max-lg:w-4' : 'h-9 w-9 max-lg:h-5 max-lg:w-5'} rounded-full object-cover`}
         />
       </Link>
 
@@ -123,7 +123,7 @@ export function CommentItem({
               </button>
             ) : null}
 
-            <div className="flex min-w-0 items-center gap-1 text-[13px] leading-4">
+            <div className="flex min-w-0 items-center gap-1 text-[13px] max-lg:text-[9px] leading-4 max-lg:leading-[12px]">
               <Link
                 href={profileHref}
                 prefetch={false}
@@ -132,7 +132,7 @@ export function CommentItem({
                 {displayName}
               </Link>
               {isPostAuthor ? (
-                <span className="shrink-0 rounded-[3px] bg-[#fe2c55]/15 px-1 py-px text-[11px] leading-4 font-medium text-[#fe2c55]">
+                <span className="shrink-0 rounded-[3px] bg-[#fe2c55]/15 px-1 py-px text-[11px] max-lg:text-[8px] leading-4 max-lg:leading-[11px] font-medium text-[#fe2c55]">
                   Author
                 </span>
               ) : null}
@@ -153,7 +153,7 @@ export function CommentItem({
               margin, which reads as a gap somebody left by accident.
             */}
             {item.content ? (
-              <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[14px] leading-5 text-white/92">
+              <p className="mt-1 max-lg:mt-0 whitespace-pre-wrap wrap-break-word text-[14px] max-lg:text-[10px] leading-5 max-lg:leading-[13px] text-white/92">
                 {item.content}
               </p>
             ) : null}
@@ -171,12 +171,12 @@ export function CommentItem({
                 <Link
                   href={profileHref}
                   prefetch={false}
-                  className="min-w-0 truncate text-[14px] font-semibold leading-5 text-white/95 hover:underline"
+                  className="min-w-0 truncate text-[14px] max-lg:text-[10px] font-semibold leading-5 max-lg:leading-[13px] text-white/95 hover:underline"
                 >
                   {displayName}
                 </Link>
                 {isPostAuthor ? (
-                  <span className="shrink-0 rounded-[3px] bg-[#fe2c55]/15 px-1 py-px text-[11px] leading-4 font-medium text-[#fe2c55]">
+                  <span className="shrink-0 rounded-[3px] bg-[#fe2c55]/15 px-1 py-px text-[11px] max-lg:text-[8px] leading-4 max-lg:leading-[11px] font-medium text-[#fe2c55]">
                     Author
                   </span>
                 ) : null}
@@ -196,7 +196,7 @@ export function CommentItem({
 
             {/* Same reasoning as the reply layout above. */}
             {item.content ? (
-              <p className="mt-1 whitespace-pre-wrap wrap-break-word text-[15px] leading-5.5 text-white/92">
+              <p className="mt-1 max-lg:mt-0 whitespace-pre-wrap wrap-break-word text-[15px] max-lg:text-[10px] leading-5.5 max-lg:leading-[13px] text-white/92">
                 {item.content}
               </p>
             ) : null}
@@ -204,30 +204,30 @@ export function CommentItem({
           </>
         )}
 
-        <div className={`mt-2 text-white/60 ${isReply ? 'text-[12px]' : 'text-[13px]'}`}>
+        <div className={`mt-2 max-lg:mt-0.5 text-white/60 max-lg:text-[7px]! max-lg:leading-[10px] max-lg:flex max-lg:flex-wrap max-lg:items-center max-lg:gap-x-1.5 max-lg:gap-y-0 ${isReply ? 'text-[12px]' : 'text-[13px]'}`}>
           {/* Time + location */}
-          <div className="flex items-center gap-2">
-            <span>{moment(item.createdAt).fromNow()}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 max-lg:shrink-0">
+            <span className="whitespace-nowrap">{moment(item.createdAt).fromNow()}</span>
             <span>·</span>
             <span>Guangdong</span>
           </div>
 
           {/* Reply / Share / Like */}
-          <div className="mt-1.5 flex items-center gap-3">
+          <div className="mt-1.5 max-lg:mt-0 flex flex-wrap items-center gap-x-3 gap-y-1.5 max-lg:gap-x-1.5 max-lg:gap-y-0 max-lg:shrink-0">
             <button
               type="button"
               onClick={handleReply}
-              className="flex items-center gap-1 cursor-pointer hover:text-white"
+              className="flex items-center gap-1 max-lg:gap-px cursor-pointer hover:text-white"
             >
-              <CommentOutlineIcon className='text-xl' />
+              <CommentOutlineIcon className='text-xl max-lg:text-[9px]' />
               {isReplying ? 'Replying' : 'Reply'}
             </button>
 
             <button
               type="button"
-              className="flex items-center gap-1 cursor-pointer hover:text-white"
+              className="flex items-center gap-1 max-lg:gap-px cursor-pointer hover:text-white"
             >
-              <ShareOutlineIcon className='text-xl' />
+              <ShareOutlineIcon className='text-xl max-lg:text-[9px]' />
               Share
             </button>
 
@@ -240,12 +240,12 @@ export function CommentItem({
               unstyled
               tooltip={false}
               showCount
-              className="flex cursor-pointer items-center gap-1 hover:text-white"
+              className="flex cursor-pointer items-center gap-1 max-lg:gap-px hover:text-white"
               renderIcon={({ isLiked }) =>
                 isLiked ? (
-                  <HeartFilledIcon className="text-xl text-[#fe2c55]" />
+                  <HeartFilledIcon className="text-xl max-lg:text-[9px] text-[#fe2c55]" />
                 ) : (
-                  <HeartOutlineIcon className="text-xl" />
+                  <HeartOutlineIcon className="text-xl max-lg:text-[9px]" />
                 )
               }
               renderCount={(totalLikes) => (
@@ -260,9 +260,9 @@ export function CommentItem({
             type="button"
             data-testid={`comment-expand-replies-${item._id}`}
             onClick={onToggleReplies}
-            className="mt-3 flex items-center gap-1 text-[13px] text-white/35 hover:text-white/60"
+            className="mt-3 max-lg:mt-0.5 flex items-center gap-1 text-[13px] max-lg:text-[8px] max-lg:leading-[11px] text-white/35 hover:text-white/60"
           >
-            <span className="h-px w-6 bg-white/20" />
+            <span className="h-px w-6 max-lg:w-3 bg-white/20" />
             Expand {totalReply} replies
             <AiOutlineDown size={12} />
           </button>
@@ -286,7 +286,7 @@ export function CommentItem({
               onClick={onToggleReplies}
               className="mt-2 ml-7 flex items-center gap-1 text-[13px] text-white/35 hover:text-white/60"
             >
-              <span className="h-px w-6 bg-white/20" />
+              <span className="h-px w-6 max-lg:w-3 bg-white/20" />
               Collapse
               <AiOutlineUp size={12} />
             </button>

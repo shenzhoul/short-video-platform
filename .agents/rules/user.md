@@ -475,6 +475,110 @@ instead of together. `useState` plus `memo` is the faster arrangement.
 Measure in **production builds only**. Dev-mode numbers varied by ±2.7x on the
 same build and are worthless here.
 
+## One Shell, One Nav Width, One Reflow Point
+
+`user/` is a desktop web application that adapts to a narrow viewport. Below
+1024px the labelled 160px navigation becomes a 48px icon rail **beside** the
+content; it is never replaced by a bottom bar or a hamburger drawer.
+
+Every consumer reads the width from `--app-shell-nav-width` (`globals.css`),
+never from a literal. Its compact value — like `--app-header-height` (2rem),
+`--post-detail-panel-ratio` (0.38) and `--feed-nav-gutter` (0) — is **measured
+off the reference screenshots**, never chosen to fit content comfortably. The
+first pass chose them and shipped a shell that was uniformly too large while
+passing 83 checks that only asked whether it fitted and whether it errored. The rail, its flex spacer, `AppHeader` and
+`MainPageSession` all subtract the same token, unconditionally, at every width.
+
+That last word is the point. The content column used to subtract `160px` only
+from `xl` up while the fixed rail appeared from `lg`, so for 256px of viewport
+range the navigation was drawn on top of the page with nothing holding a column
+open for it. Two literals in two files is what let them disagree.
+
+- **The rail renders at every width.** It was `max-lg:hidden`, which left a
+  phone with a content column, a header, and no navigation at all — plus 84px of
+  bottom padding reserving room for a bottom bar this app does not have.
+- **Both shells feed the same header and content column**, so
+  `creator-theme-layout.tsx` has to match `main.tsx`. Hiding the rail in one of
+  them leaves that app's pages with an empty gutter the header is already
+  offset past.
+- **Use `--app-viewport-height` (`100dvh`), never `100vh`,** anywhere a fixed
+  or full-height surface reaches the bottom of the screen. With `100vh` a mobile
+  browser's collapsing URL bar puts the last row of an internally scrolling
+  panel under the browser chrome.
+- **The compact arrangement is CSS, not a JavaScript breakpoint.**
+  `NavigationMenuItem variant="rail"` expresses it as `max-lg:flex-col` /
+  `lg:flex-row`; `useIsMobile()` would render the desktop shape on the server
+  and snap after hydration.
+- **A caption may be hidden. A control may not.** Header actions drop their
+  captions below `lg` and move the accessible name to `aria-label`/`title`; the
+  three promotional links fold into a "More" menu rendered from the same array,
+  one level deeper rather than gone.
+- **A strip that cannot fit scrolls — it never wraps and never clips** — and it
+  scrolls its *active* item into view on mount and on change, because the
+  selection often arrives from a deep link or another surface rather than from a
+  tap on the strip. Give that item `scroll-mr` so it does not land under a
+  pinned close button.
+- **A percentage-width `inline-block` grid cannot respond.** The profile tile
+  was `w-[calc(16.66%-13.34px)] mr-4 nth-[6n]:mr-0` — six columns hardcoded into
+  the tile. `grid-cols-6 gap-4` is the identical width, so the conversion was
+  pixel-neutral on desktop and made three columns on a phone one class.
+- **An unconditional `min-w-*` on a page wrapper is a horizontal scrollbar.**
+  `min-w-170.5` on the profile content (682px) was the app's only source of
+  document-level sideways scrolling at 440px.
+- **Never fake it** with `transform: scale()`, a viewport meta hack or browser
+  zoom.
+
+`--post-detail-panel-ratio` divides the post-detail stage the same way, and both
+layouts must read it: the desktop 2/7 leaves the panel 110px at a 440px
+viewport, narrower than one creator-grid tile. `POST_VIDEO_PLAYER_RATIO` is
+written as `(1 - ratio)` so the two halves cannot be tuned apart.
+
+Cover: `responsive-shell.spec.tsx` (contract, in Jest) and
+`browser-verify/21-responsive-shell.js` (four viewports, real geometry, real
+overflow). See `.agents/skills/responsive-shell/SKILL.md`.
+
+## Both Profile Grids Page Through One Sentinel
+
+The Works tab and the "I like it" tab render the same grid from the same `posts`
+array, so they must share the infinite-scroll sentinel and the end-of-list
+message, switched by which tab is active.
+
+Wiring the observer to the works hook alone is what shipped: `useLikedPosts`
+exposed `hasMore` and `loadMore` and **nothing ever called them**, while the
+footer printed "No more for now" unconditionally whenever the liked tab was
+open. An account with 67 likes saw 20 posts and a terminal message underneath
+them. The API was never at fault — `/posts/liked` answers
+`20 + 20 + 20 + 7 = 67` distinct posts against the real database.
+
+- **A hook that exposes `loadMore` is not paginated until something calls it.**
+  Grep the consumer before believing a list pages.
+- **The terminal message is the server's word for the *active* list**, never a
+  constant and never the other tab's `hasMore`.
+- **Load the first page once, on first open — not on every re-enable.**
+  Re-requesting page one when the reader returns to the tab looks harmless
+  because the merge de-duplicates, but it rewinds `nextCursor` and `hasMore` to
+  the first page's values, so the next three scrolls re-fetch content the list
+  already held.
+- **Both tabs use `POST_PAGE_LIMIT`,** so "which page is this" has one answer on
+  one screen.
+- Cover: `use-liked-posts.spec.tsx` pages a 67-item catalogue to exhaustion and
+  asserts `[20, 40, 60, 67]`, distinct ids, no request while one is in flight,
+  and that a tab switch keeps both the pages and the cursor.
+
+## A Label In A String Literal Is Not Markup
+
+`'We&apos;ll look at it later'` inside a JSX **expression** renders the
+characters `&apos;` on screen. JSX *text* is parsed as markup and the entity
+decodes; a JavaScript string literal is handed to React verbatim and escaped.
+The account menu shipped that form while the profile tab a click away spelled
+the same label correctly with `'`.
+
+Shared visible labels live in `src/constants/profile-labels.ts` and are imported
+by every surface that shows them, so two copies cannot drift.
+`profile-labels.spec.tsx` scans every `.ts`/`.tsx` string literal in `user/` and
+`admin/` for HTML entities, which is what catches the next one in a file nobody
+thought to look at.
+
 ## Skills To Use
 
 Load the relevant repo skills when the task matches them:
@@ -483,6 +587,7 @@ Load the relevant repo skills when the task matches them:
 - `.agents/skills/vercel-composition-patterns/SKILL.md`
 - `.agents/skills/taste-skill/SKILL.md` — any new design or UI/UX change
 - `.agents/skills/redesign-skill/SKILL.md` — audit-first polish of an existing page
+- `.agents/skills/responsive-shell/SKILL.md` — compact rail, shell width tokens, narrow-viewport layout
 - `.agents/skills/web-ssr/SKILL.md`
 - `.agents/skills/web-seo/SKILL.md`
 - `.agents/skills/file-service-integration/SKILL.md`

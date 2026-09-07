@@ -78,7 +78,14 @@ function CreatorProfileWorkItem({
     <li
       data-post-id={post._id}
       data-creator-id={post.user?._id}
-      className="mb-4 mr-4 inline-block w-[calc(16.66%-13.34px)] list-none select-none overflow-hidden rounded-t-[12px] leading-0 nth-[6n]:mr-0"
+      /*
+        The tile is sized by the grid it sits in, not by a percentage of its own.
+        It used to be `inline-block w-[calc(16.66%-13.34px)] mr-4 nth-[6n]:mr-0`,
+        which hardcodes six columns; the grid that replaced it produces the same
+        width at `grid-cols-6 gap-4` and can also be three columns wide on a
+        compact viewport without the tile knowing.
+      */
+      className="min-w-0 list-none select-none overflow-hidden rounded-t-[12px] leading-0"
     >
       <a
         className="relative block w-full cursor-pointer overflow-hidden rounded-t-[12px] transition-[transform,box-shadow,background-color] duration-350"
@@ -157,11 +164,11 @@ function CreatorProfileWorkItem({
           {showPinnedBadge && post.isPinned ? (
             <PostPinnedBadge className="absolute left-2 top-2 z-40" />
           ) : null}
-          <span className={`absolute bottom-1 left-2.5 flex flex-row items-center justify-center text-[14px] font-medium leading-[22px] text-white transition-opacity ${playback.showVideo ? 'opacity-0' : 'opacity-100'}`}>
+          <span className={`absolute bottom-1 max-lg:bottom-0.5 left-2.5 max-lg:left-1.5 flex flex-row items-center justify-center text-[14px] max-lg:text-[10px] font-medium leading-[22px] max-lg:leading-4 text-white transition-opacity ${playback.showVideo ? 'opacity-0' : 'opacity-100'}`}>
             {metricVariant === 'views' ? (
-              <PlayOutlinedIcon className="text-xl" />
+              <PlayOutlinedIcon className="text-xl max-lg:text-sm" />
             ) : (
-              <HeartOutlineIcon className="text-2xl" />
+              <HeartOutlineIcon className="text-2xl max-lg:text-sm" />
             )}
             <span className="ml-[5px] inline-block">
               {formatCompactCount(metricVariant === 'views' ? post.totalView || 0 : post.totalLike)}

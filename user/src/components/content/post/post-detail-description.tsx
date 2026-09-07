@@ -78,15 +78,15 @@ export default function PostDetailDescription({
       className={`relative block w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${className}`}
       aria-label="Open post details"
     >
-      <span className="block max-h-[72px] overflow-hidden">
+      <span className="block max-h-[72px] max-lg:max-h-[26px] overflow-hidden">
         <PostTextContent
           text={visibleText}
-          className="whitespace-pre-wrap text-[15px] font-medium leading-6 text-white/95"
+          className="whitespace-pre-wrap text-[15px] max-lg:text-[9px] font-medium leading-6 max-lg:leading-[13px] text-white/95"
           hashtagClassName="text-[#f5d90a]"
           hashtagsInteractive={false}
         />
         {overflowing ? (
-          <span className="pointer-events-none ml-1 inline rounded bg-white/20 px-2 py-0.5 text-sm font-semibold text-white/90 backdrop-blur-sm">
+          <span className="pointer-events-none ml-1 max-lg:ml-0.5 inline rounded bg-white/20 px-2 max-lg:px-1 py-0.5 max-lg:py-0 text-sm max-lg:text-[9px] font-semibold text-white/90 backdrop-blur-sm">
             more
           </span>
         ) : null}
@@ -95,10 +95,10 @@ export default function PostDetailDescription({
       <span
         ref={measurementRef}
         aria-hidden="true"
-        className="pointer-events-none invisible absolute left-0 top-0 -z-10 block whitespace-pre-wrap text-[15px] font-medium leading-6"
+        className="pointer-events-none invisible absolute left-0 top-0 -z-10 block whitespace-pre-wrap text-[15px] max-lg:text-[9px] font-medium leading-6 max-lg:leading-[13px]"
       >
         <span ref={measurementTextRef} />
-        <span ref={measurementMoreRef} className="ml-1 rounded px-2 py-0.5 text-sm font-semibold">more</span>
+        <span ref={measurementMoreRef} className="ml-1 max-lg:ml-0.5 rounded px-2 max-lg:px-1 py-0.5 max-lg:py-0 text-sm max-lg:text-[9px] font-semibold">more</span>
       </span>
     </button>
   );

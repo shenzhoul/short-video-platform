@@ -311,7 +311,7 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
     // group rather than a margin on each button, so reordering or adding one
     // cannot leave a hole.
     <div
-      className={`flex shrink-0 items-center gap-2 ${commentImage.image ? 'pb-2' : 'ml-2'}`}
+      className={`flex shrink-0 items-center gap-2 max-lg:gap-1 ${commentImage.image ? 'pb-2' : 'ml-2 max-lg:ml-1'}`}
       data-testid="comment-toolbar"
     >
       <input
@@ -438,7 +438,7 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
         */}
         <div
           className={`
-          flex min-h-11 px-3
+          flex min-h-11 px-3 max-lg:px-2
           ${commentImage.image ? 'flex-col' : 'items-center'}
           ${replyTarget ? 'bg-[rgba(255,255,255,.08)]' : ''}
         `}
@@ -463,7 +463,7 @@ export const CommentForm = forwardRef<CommentFormRef, IProps>(function CommentFo
               blurCloseRef.current = setTimeout(() => mentions.closePicker(), 150);
             }}
             className="
-          h-[35px] min-h-[35px] flex-1 resize-none overflow-hidden
+          h-[35px] min-h-[35px] min-w-0 flex-1 resize-none overflow-hidden
           border-0 bg-transparent p-0 py-2 text-sm leading-5
           text-white outline-none placeholder:text-white/45
         "

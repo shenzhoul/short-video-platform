@@ -43,7 +43,7 @@ export default function MessageBell({ isLoggedIn }: MessageBellProps) {
         aria-expanded={onMessagesPage ? undefined : open}
         aria-current={onMessagesPage ? 'page' : undefined}
         aria-label="Messages"
-        className={`group relative flex h-12 min-w-10.5 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium transition ${onMessagesPage
+        className={`group relative flex h-12 max-lg:h-7 min-w-10.5 max-lg:min-w-0 max-lg:px-1 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium transition ${onMessagesPage
           ? 'cursor-default text-(--text-strong)'
           : 'cursor-pointer text-(--text-soft) hover:bg-(--hover-bg) hover:text-(--text-strong)'
           }`}
@@ -51,13 +51,13 @@ export default function MessageBell({ isLoggedIn }: MessageBellProps) {
         {hasUnread ? (
           <span
             aria-hidden="true"
-            className="absolute -right-1.25 left-[calc(50%+6px)] top-px h-2 w-2 rounded-full bg-[#ff2f5f]"
+            className="absolute -right-1.25 left-[calc(50%+6px)] top-px h-2 w-2 max-lg:h-1.5 max-lg:w-1.5 rounded-full bg-[#ff2f5f]"
           />
         ) : null}
-        <div className="flex h-5 w-5 items-center justify-center">
-          <MessageIcon className="text-2xl" />
+        <div className="flex h-5 w-5 max-lg:h-4 max-lg:w-4 items-center justify-center">
+          <MessageIcon className="text-2xl max-lg:text-base" />
         </div>
-        <span>Message</span>
+        <span className="max-lg:text-[7px] max-lg:leading-[9px] max-lg:tracking-tight">Message</span>
       </button>
     ) : (
       <Dropdown
@@ -66,11 +66,11 @@ export default function MessageBell({ isLoggedIn }: MessageBellProps) {
         width={300}
         menuClassName="!z-90 !rounded-xl !border-(--border-faint) !bg-(--surface-raised) !p-0 !shadow-(--shadow-popover) max-w-[calc(100vw-24px)]"
         trigger={(
-          <span className="group relative flex h-12 min-w-10.5 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium text-(--text-soft) transition hover:bg-(--hover-bg) hover:text-(--text-strong)">
-            <div className="flex h-5 w-5 items-center justify-center">
-              <MessageIcon className="text-2xl" />
+          <span className="group relative flex h-12 max-lg:h-7 min-w-10.5 max-lg:min-w-0 max-lg:px-1 flex-col items-center justify-center rounded-md px-1 text-[10px] font-medium text-(--text-soft) transition hover:bg-(--hover-bg) hover:text-(--text-strong)" aria-label="Messages" title="Messages">
+            <div className="flex h-5 w-5 max-lg:h-4 max-lg:w-4 items-center justify-center">
+              <MessageIcon className="text-2xl max-lg:text-base" />
             </div>
-            <span>Message</span>
+            <span className="max-lg:text-[7px] max-lg:leading-[9px] max-lg:tracking-tight">Message</span>
           </span>
         )}
       >

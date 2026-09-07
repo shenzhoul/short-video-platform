@@ -56,7 +56,7 @@ export default function ConversationList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-3 pb-2 pt-1">
-        <div className="flex h-9 items-center gap-2 rounded-lg bg-(--field-bg) px-3">
+        <div className="conversation-search flex h-9 items-center gap-2 rounded-lg bg-(--field-bg) px-3">
           <FiSearch aria-hidden="true" className="shrink-0 text-[15px] text-(--text-faint)" />
           <input
             value={draft}

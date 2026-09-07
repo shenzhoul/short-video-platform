@@ -45,18 +45,24 @@ export default function FollowingCreatorsRail({
 
   return (
     <aside
-      className={`relative z-50 h-full shrink-0 border-r border-(--border-faint) text-(--text-strong) transition-[width] duration-200 ${expanded ? 'w-52' : 'w-18'}`}
+      /*
+        The secondary strip is an avatar column on a compact viewport, matching
+        the reference: 28px collapsed (a 20px avatar plus its gutters), never a
+        labelled rail. The 56px it used to be cost the media stage a fifth of
+        its width for a column that shows nothing but circles.
+      */
+      className={`relative z-50 h-full shrink-0 border-r border-(--border-faint) text-(--text-strong) transition-[width] duration-200 ${expanded ? 'w-52 max-lg:w-32' : 'w-18 max-lg:w-7'}`}
     >
-      <div className="flex h-full min-h-0 flex-col py-3">
-        <div className="mb-2 flex h-8 shrink-0 items-center justify-between px-3">
+      <div className="flex h-full min-h-0 flex-col py-3 max-lg:py-1">
+        <div className="mb-2 max-lg:mb-1 flex h-8 max-lg:h-5 shrink-0 items-center justify-between px-3 max-lg:px-0">
           <button
             type="button"
             onClick={() => setExpanded(current => !current)}
-            className={`flex h-8 cursor-pointer items-center rounded-lg text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55] ${expanded ? 'gap-1 px-1.5 text-sm font-semibold' : 'mx-auto w-9 justify-center'}`}
+            className={`flex h-8 max-lg:h-5 cursor-pointer items-center rounded-lg text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55] ${expanded ? 'gap-1 px-1.5 text-sm font-semibold' : 'mx-auto w-9 max-lg:w-full justify-center'}`}
             aria-label={expanded ? 'Collapse following list' : 'Expand following list'}
             aria-expanded={expanded}
           >
-            {expanded ? <PlaylistArrowLeftIcon className="text-xl" /> : <PlaylistArrowRightIcon className="text-xl" />}
+            {expanded ? <PlaylistArrowLeftIcon className="text-xl max-lg:text-[13px]" /> : <PlaylistArrowRightIcon className="text-xl max-lg:text-[13px]" />}
             {expanded ? <span>List</span> : null}
           </button>
 
@@ -94,12 +100,12 @@ export default function FollowingCreatorsRail({
           ) : null}
         </div>
 
-        <div className={`mb-2 shrink-0 ${expanded ? 'px-3' : 'px-4'}`}>
+        <div className={`mb-2 max-lg:mb-1 shrink-0 ${expanded ? 'px-3 max-lg:px-1' : 'px-4 max-lg:px-1'}`}>
           <label
-            className="flex h-9 cursor-text items-center rounded-xl border border-(--border-soft) bg-(--surface-muted) text-(--text-muted) transition hover:border-(--divider-strong) focus-within:border-(--divider-strong)"
+            className="flex h-9 max-lg:h-5 cursor-text items-center rounded-xl max-lg:rounded-md border border-(--border-soft) bg-(--surface-muted) text-(--text-muted) transition hover:border-(--divider-strong) focus-within:border-(--divider-strong)"
             onClick={() => setExpanded(true)}
           >
-            <SearchIcon className={`shrink-0 text-2xl ${expanded ? 'ml-2' : 'mx-auto'}`} />
+            <SearchIcon className={`shrink-0 text-2xl max-lg:text-[13px] ${expanded ? 'ml-2' : 'mx-auto'}`} />
             {expanded ? (
               <input
                 value={query}
@@ -117,7 +123,7 @@ export default function FollowingCreatorsRail({
           </p>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-2">
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 max-lg:px-0.5 pb-2 max-lg:pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <ul className="flex flex-col items-center">
             {filteredCreators.map(creator => {
               const creatorName = creator.name || creator.username;
@@ -126,7 +132,7 @@ export default function FollowingCreatorsRail({
               return (
                 <li key={creator._id} className="w-full">
                   <div
-                    className={`group flex h-12 w-full items-center rounded-xl transition hover:bg-(--hover-bg) focus-within:bg-(--hover-bg) ${expanded ? 'px-3' : 'justify-center px-0'} ${isActive ? 'bg-(--active-bg)' : ''}`}
+                    className={`group flex h-12 max-lg:h-7 w-full items-center rounded-xl max-lg:rounded-lg transition hover:bg-(--hover-bg) focus-within:bg-(--hover-bg) ${expanded ? 'px-3 max-lg:px-1' : 'justify-center px-0'} ${isActive ? 'bg-(--active-bg)' : ''}`}
                   >
                     <button
                       type="button"
@@ -134,7 +140,7 @@ export default function FollowingCreatorsRail({
                       className={`flex h-full min-w-0 cursor-pointer items-center focus-visible:outline-2 focus-visible:outline-[#fe2c55] ${expanded ? 'flex-1' : 'justify-center'}`}
                       aria-label={`Show posts by ${creatorName}`}
                     >
-                      <span className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-(--border-faint) ${!expanded && isActive ? 'ring-2 ring-[#fe2c55] ring-offset-2 ring-offset-(--surface)' : ''}`}>
+                      <span className={`relative h-8 w-8 max-lg:h-5 max-lg:w-5 shrink-0 overflow-hidden rounded-full border border-(--border-faint) ${!expanded && isActive ? 'ring-2 max-lg:ring-1 ring-[#fe2c55] ring-offset-2 max-lg:ring-offset-1 ring-offset-(--surface)' : ''}`}>
                         <img src={resolveAvatarUrl(creator.avatar)} alt="" className="h-full w-full object-cover" />
                       </span>
 

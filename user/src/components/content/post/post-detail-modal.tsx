@@ -270,7 +270,9 @@ function GraphicPostDetail({
        * variable the shell's content column reads, so the two stay in step.
        */
       style={{
-        '--post-video-detail-panel-width': '28.5714%',
+        // Same responsive split the video layout uses, so a photo and a video
+        // give the panel the same share of the stage at every viewport.
+        '--post-video-detail-panel-width': 'calc(100% * var(--post-detail-panel-ratio, 0.285714))',
         right: 'var(--message-workspace-width, 0px)'
       } as CSSProperties}
     >
@@ -286,13 +288,13 @@ function GraphicPostDetail({
         ref={closeButtonRef}
         type="button"
         onClick={onClose}
-        className="absolute left-8 top-9 z-50 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/25 text-2xl text-white/80 backdrop-blur-md transition hover:bg-white/12 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        className="absolute left-8 max-lg:left-2 top-9 max-lg:top-2 z-50 flex h-16 w-16 max-lg:h-9 max-lg:w-9 cursor-pointer items-center justify-center rounded-full border border-white/15 text-2xl max-lg:text-base bg-black/25 text-white/80 backdrop-blur-md transition hover:bg-white/12 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         aria-label="Close graphic details"
       >
         <FaTimes />
       </button>
 
-      <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-black/15 px-4 text-sm text-white/75 backdrop-blur-md md:flex">
+      <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-black/15 px-4 text-sm text-white/75 backdrop-blur-md lg:flex">
         <span className="truncate">{description || `@${creatorName}`}</span>
         <span className="ml-auto text-white/55">Search</span>
       </div>
@@ -308,15 +310,20 @@ function GraphicPostDetail({
         post-detail area in both states.
       */}
       <div
-        className="pointer-events-none absolute top-9 z-50 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
-        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + 1.5rem)` : '1.5rem' }}
+        className="pointer-events-none absolute top-9 max-lg:top-2 z-80 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
+        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + var(--post-detail-message-inset, 1.5rem))` : 'var(--post-detail-message-inset, 1.5rem)' }}
       >
         <PostDetailMessageButton />
       </div>
 
       <main
         className="absolute inset-0 right-24 flex items-center justify-center"
-        style={{ right: detailPanelTab ? VIDEO_DETAIL_PANEL_WIDTH : '6rem' }}
+        /*
+          The gutter that keeps the media clear of the action rail. 6rem is the
+          desktop reference; the rail itself is 4.25rem, so a narrow stage gives
+          it exactly what it occupies rather than a sixth of 384px.
+        */
+        style={{ right: detailPanelTab ? VIDEO_DETAIL_PANEL_WIDTH : 'var(--post-detail-rail-gutter, 6rem)' }}
         onClick={() => {
           if (images.length > 1) setIsPlaying(current => !current);
         }}
@@ -348,7 +355,7 @@ function GraphicPostDetail({
           )}
         >
           {images.map((image, index) => (
-            <div key={image._id || `${post._id}-${index}`} className="flex h-full w-full items-center justify-center px-24 py-8">
+            <div key={image._id || `${post._id}-${index}`} className="flex h-full w-full items-center justify-center px-24 max-lg:px-3 py-8 max-lg:py-4">
               <img
                 src={image.url}
                 alt={`${description || 'Graphic post'} ${index + 1} of ${images.length}`}
@@ -374,12 +381,12 @@ function GraphicPostDetail({
       </main>
 
       {detailPanelTab !== 'details' ? (
-        <div className="absolute bottom-24 left-4 z-40 max-w-[min(620px,55vw)] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.75)]">
-          <div className="flex flex-wrap items-center gap-2 text-xl font-bold">
+        <div className="absolute bottom-24 max-lg:bottom-12 left-4 max-lg:left-2 z-40 max-w-[min(620px,55vw)] max-lg:max-w-[calc(100%-58px)] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.75)]">
+          <div className="flex flex-wrap items-center gap-2 max-lg:gap-1 text-xl max-lg:text-[10px] max-lg:leading-[14px] font-bold">
             <span>@{post.user?.username || creatorName}</span>
-            {timeText ? <span className="text-sm font-semibold text-white/80">· {timeText}</span> : null}
-            <span className="flex items-center gap-1 rounded bg-white/20 px-2 py-1 text-xs font-semibold backdrop-blur-sm">
-              <CopyIcon className="text-[14px]" />
+            {timeText ? <span className="text-sm max-lg:text-[9px] font-semibold text-white/80">· {timeText}</span> : null}
+            <span className="flex items-center gap-1 max-lg:gap-0.5 rounded bg-white/20 px-2 max-lg:px-1 py-1 max-lg:py-0 text-xs max-lg:text-[8px] font-semibold backdrop-blur-sm">
+              <CopyIcon className="text-[14px] max-lg:text-[9px]" />
               Text and images
             </span>
           </div>
@@ -388,7 +395,7 @@ function GraphicPostDetail({
               key={post._id}
               text={description}
               onOpenDetails={() => setDetailPanelTab('details')}
-              className="mt-2"
+              className="mt-2 max-lg:mt-0.5"
             />
           ) : null}
         </div>
@@ -558,19 +565,29 @@ function VideoPostDetail({
   return (
     <div
       onWheel={handleWheel}
-      style={{ right: 'var(--message-workspace-width, 0px)' }}
+      style={{
+        /*
+          Declared on the overlay root, not only inside `PostVideoStage`.
+          Anything positioned against the panel edge — the message action, the
+          action rail's offset — is a sibling of the stage, so reading the
+          variable from the stage silently fell back to 28.5714% and put those
+          controls underneath a panel that is actually 38% wide.
+        */
+        '--post-video-detail-panel-width': 'calc(100% * var(--post-detail-panel-ratio, 0.285714))',
+        right: 'var(--message-workspace-width, 0px)'
+      } as CSSProperties}
       className="fixed inset-y-0 left-0 z-120 overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
     >
       <button
         type="button"
         onClick={backOrCloseDetail}
-        className="absolute left-8 top-9 z-50 flex h-16 w-16 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/20 text-2xl text-white/75 transition hover:bg-white/10 hover:text-white"
+        className="absolute left-8 max-lg:left-2 top-9 max-lg:top-2 z-50 flex h-16 w-16 max-lg:h-9 max-lg:w-9 cursor-pointer items-center justify-center rounded-full border border-white/15 text-2xl max-lg:text-base bg-black/20 text-white/75 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         aria-label={videoModeActive ? 'Exit creator videos' : 'Close video'}
       >
         {videoModeActive ? <FaChevronLeft /> : <FaTimes />}
       </button>
 
-      <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-white/5 px-4 text-sm text-white/70 backdrop-blur-md md:flex">
+      <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-white/5 px-4 text-sm text-white/70 backdrop-blur-md lg:flex">
         <span className="truncate">{description}</span>
         <span className="ml-auto text-white/50">Search</span>
       </div>
@@ -586,8 +603,8 @@ function VideoPostDetail({
         post-detail area in both states.
       */}
       <div
-        className="pointer-events-none absolute top-9 z-50 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
-        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + 1.5rem)` : '1.5rem' }}
+        className="pointer-events-none absolute top-9 max-lg:top-2 z-80 flex items-center transition-[right] duration-200 ease-out motion-reduce:transition-none"
+        style={{ right: detailPanelTab ? `calc(${VIDEO_DETAIL_PANEL_WIDTH} + var(--post-detail-message-inset, 1.5rem))` : 'var(--post-detail-message-inset, 1.5rem)' }}
       >
         <PostDetailMessageButton />
       </div>

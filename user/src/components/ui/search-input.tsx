@@ -146,7 +146,7 @@ const SearchInput: FC<SearchInputProps> = ({
 
   const getInputClasses = () => {
     if (variant === 'douyin') {
-      return 'z-100 m-0 h-full w-0 grow rounded-l-[12px] border-none bg-transparent px-3 text-[16px] font-medium leading-[22px] text-(--text-soft) caret-[#fe2c55] outline-none placeholder:text-(--text-faint)';
+      return 'z-100 m-0 h-full w-0 grow rounded-l-[12px] border-none bg-transparent px-3 max-lg:px-2 text-[16px] max-lg:text-[11px] font-medium leading-[22px] max-lg:leading-4 text-(--text-soft) caret-[#fe2c55] outline-none placeholder:text-(--text-faint)';
     }
 
     if (variant === 'share-popover') {
@@ -166,7 +166,7 @@ const SearchInput: FC<SearchInputProps> = ({
         revealOnFocus
       >
         <div className={getContainerClasses()}>
-          <div className='flex h-10 w-full flex-row items-center rounded-xl border border-solid border-transparent bg-transparent transition-colors group-hover/hover-reveal:border-2 group-hover/hover-reveal:border-solid group-hover/hover-reveal:border-(--text-strong) group-focus-within/hover-reveal:border-2 group-focus-within/hover-reveal:border-solid group-focus-within/hover-reveal:border-(--text-strong)'>
+          <div className='flex h-10 max-lg:h-6.5 w-full flex-row items-center rounded-xl max-lg:rounded-lg border border-solid border-transparent bg-transparent transition-colors group-hover/hover-reveal:border-2 group-hover/hover-reveal:border-solid group-hover/hover-reveal:border-(--text-strong) group-focus-within/hover-reveal:border-2 group-focus-within/hover-reveal:border-solid group-focus-within/hover-reveal:border-(--text-strong)'>
             <div className='[-webkit-app-region:no-drag] h-full z-50 flex-1 flex items-center relative overflow-hidden'>
               <input
                 placeholder={placeholder}
@@ -177,15 +177,15 @@ const SearchInput: FC<SearchInputProps> = ({
                 aria-label={placeholder}
               />
             </div>
-            <div className='relative -right-1 h-4 w-px border-l border-l-(--divider-strong)' />
+            <div className='relative -right-1 h-4 max-lg:h-3 w-px border-l border-l-(--divider-strong)' />
             <button
               type="button"
-              className='relative -right-0.5 z-50 flex h-full w-20 cursor-pointer items-center justify-center rounded-r-xl border-none bg-transparent text-(--text-soft) transition-colors duration-300 group-hover/hover-reveal:bg-(--bg-inverse) group-hover/hover-reveal:text-(--text-inverse) group-focus-within/hover-reveal:bg-(--bg-inverse) group-focus-within/hover-reveal:text-(--text-inverse)'
+              className='relative -right-0.5 z-50 flex h-full w-20 max-lg:w-11 shrink-0 cursor-pointer items-center justify-center rounded-r-xl max-lg:rounded-r-lg border-none bg-transparent text-(--text-soft) transition-colors duration-300 group-hover/hover-reveal:bg-(--bg-inverse) group-hover/hover-reveal:text-(--text-inverse) group-focus-within/hover-reveal:bg-(--bg-inverse) group-focus-within/hover-reveal:text-(--text-inverse)'
               onClick={handleSearchClick}
               aria-label="Search"
             >
-              <SearchIcon className="text-2xl" />
-              <span className='text-[16px] leading-6'>Search</span>
+              <SearchIcon className="text-2xl max-lg:text-sm" />
+              <span className='text-[16px] max-lg:text-[10px] leading-6 max-lg:leading-4'>Search</span>
             </button>
           </div>
         </div>

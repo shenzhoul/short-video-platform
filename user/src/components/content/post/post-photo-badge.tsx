@@ -27,7 +27,7 @@ export default function PostPhotoBadge({ imageCount = 1, className = '' }: PostP
 
   return (
     <span
-      className={`pointer-events-none inline-flex h-5 items-center gap-1 rounded bg-black/55 px-1.5 text-[11px] font-semibold leading-5 text-white shadow-sm backdrop-blur-sm ${className}`}
+      className={`pointer-events-none inline-flex h-5 max-lg:h-4 items-center gap-1 rounded bg-black/55 px-1.5 max-lg:px-1 text-[11px] max-lg:text-[9px] font-semibold leading-5 max-lg:leading-4 text-white shadow-sm backdrop-blur-sm ${className}`}
       role="img"
       aria-label={label}
       title={label}

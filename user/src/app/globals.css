@@ -323,7 +323,112 @@ body {
  * header actions or leave a gap above the panel.
  */
 :root {
-  --app-header-height: 3.5rem;
+  /**
+   * Compact by default, 56px from `lg`.
+   *
+   * 32px is what the Douyin reference measures at a 440px viewport (the
+   * viewport is 423px wide in the supplied screenshot, so the scale is
+   * 440/423 = 1.040; the bar occupies 28-30 image pixels above the content).
+   * The previous compact value was the desktop 56px, which made the bar nearly
+   * twice the reference height and pushed every surface down with it.
+   */
+  --app-header-height: 2rem;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-header-height: 3.5rem;
+  }
+}
+
+/**
+ * RESPONSIVE APP SHELL
+ *
+ * Three numbers describe how the shell reflows, and every surface that needs to
+ * know reads them from here rather than repeating a literal. They are declared
+ * as custom properties instead of Tailwind breakpoint variants because the
+ * consumers are `calc()` expressions spread across the shell, the header, the
+ * post-detail overlay and the profile grid — a token is one definition, whereas
+ * `max-lg:w-[calc(100%-56px)] lg:w-[calc(100%-160px)]` is the same fact written
+ * twice at every call site, which is how the content column and the fixed
+ * navigation came to disagree between 1024px and 1280px in the first place.
+ *
+ * `1024px` is the single reflow point: below it the navigation is a compact
+ * icon rail and post detail gives the side panel half the stage, at and above it
+ * the labelled 160px rail and the 2:5 panel split of the desktop reference.
+ * Desktop breakpoints (>=1024px) therefore keep exactly the values they had.
+ */
+:root {
+  /**
+   * Width the fixed left navigation removes from the page.
+   *
+   * 48px, measured off the Douyin references: the rail occupies 45-47 image
+   * pixels at a 423px-wide capture of a 440px viewport, i.e. 47-49 CSS px. The
+   * previous 56px was picked to fit a 10px caption comfortably rather than
+   * measured, and it was visibly wider than the reference on every page.
+   */
+  --app-shell-nav-width: 48px;
+
+  /**
+   * Share of the post-detail stage the side panel takes when it is open.
+   *
+   * A ratio rather than a width because the stage it divides is itself already
+   * narrowed by the navigation and, on desktop, by the message workspace. The
+   * desktop 0.285714 (2/7) leaves 110px of panel at a 440px viewport — too
+   * narrow for a comment, a creator grid tile or a tab strip.
+   *
+   * 0.38 is the reference split: the media side is noticeably wider than the
+   * panel, roughly 62/38. The 0.5 that shipped in the first responsive pass was
+   * chosen to give the panel room rather than measured, and it takes 53px of
+   * media away from a 440px stage.
+   */
+  --post-detail-panel-ratio: 0.38;
+
+  /**
+   * Height of the application viewport.
+   *
+   * `100dvh` rather than `100vh` so a mobile browser's collapsing URL bar does
+   * not leave the shell taller than what is actually on screen — with `100vh`
+   * the bottom of a fixed rail and the last row of an internally scrolling
+   * panel sit under the browser chrome and cannot be reached.
+   */
+  --app-viewport-height: 100dvh;
+
+  /**
+   * Width post detail keeps clear on the right for the vertical action rail
+   * when no side panel is open.
+   *
+   * **Zero on a compact viewport, and that is the point.** The action rail
+   * *overlays* the media; reserving layout width for it made the media canvas
+   * 368px inside a 440px overlay, so a contained image centred on 184 while the
+   * canvas centred on 220 — a visible 36px left shift, measured. A gutter here
+   * is only breathing room on a wide desktop stage, never a centring input.
+   */
+  --post-detail-rail-gutter: 0px;
+
+  /** Inset of the post-detail message action from the stage's right edge. */
+  --post-detail-message-inset: 0.75rem;
+
+  /**
+   * Width the vertical feed surfaces (For You, Following, Friends) keep clear
+   * on the right for their up/down navigation column.
+   *
+   * Zero on a compact viewport. The reference reserves **no** column at all:
+   * the media stage runs from the rail to the right edge of the viewport and
+   * the up/down control is not drawn. Reserving 52px there cost the stage 52px
+   * of a 384px budget for a control the reference does not show.
+   */
+  --feed-nav-gutter: 0px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --app-shell-nav-width: 160px;
+    --post-detail-panel-ratio: 0.285714;
+    --post-detail-rail-gutter: 6rem;
+    --post-detail-message-inset: 1.5rem;
+    --feed-nav-gutter: 68px;
+  }
 }
 
 /**
@@ -342,6 +447,100 @@ body {
 :root {
   --message-workspace-width: 0px;
 }
+/**
+ * THE MESSAGES COLUMN INSIDE POST DETAIL
+ *
+ * Post detail reflows into three columns on a compact viewport — media, detail
+ * panel, messages — so the workspace gets a 130px strip rather than overlaying
+ * the post. Desktop typography does not fit a 130px strip, and these rules are
+ * plain CSS rather than utility variants because the panel's rows are rendered
+ * by shared components (`ConversationList`, `ConversationRow`) that also serve
+ * the full-width workspace; scoping by an ancestor attribute is what lets one
+ * component serve both without a prop threaded through every layer.
+ */
+[data-compact-messages='true'] {
+  font-size: 9px;
+}
+
+[data-compact-messages='true'] .conversation-row-name {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+[data-compact-messages='true'] .conversation-row-preview,
+[data-compact-messages='true'] .conversation-row-time {
+  font-size: 8px;
+  line-height: 11px;
+}
+
+[data-compact-messages='true'] .conversation-row-avatar {
+  width: 22px;
+  height: 22px;
+}
+
+[data-compact-messages='true'] .conversation-row {
+  gap: 6px;
+  padding-inline: 6px;
+  padding-block: 4px;
+}
+
+[data-compact-messages='true'] .conversation-row-body {
+  padding-block: 2px;
+  padding-right: 4px;
+}
+
+[data-compact-messages='true'] .message-workspace-title {
+  font-size: 10px;
+}
+
+[data-compact-messages='true'] .message-workspace-header {
+  height: 30px;
+  padding-inline: 6px;
+  gap: 4px;
+}
+
+[data-compact-messages='true'] .message-workspace-header button,
+[data-compact-messages='true'] .message-workspace-header a {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+
+[data-compact-messages='true'] .conversation-search {
+  height: 22px;
+  padding-inline: 6px;
+  gap: 4px;
+}
+
+[data-compact-messages='true'] .conversation-search input {
+  font-size: 8px;
+}
+
+[data-compact-messages='true'] .conversation-search svg {
+  font-size: 10px;
+}
+
+/**
+ * With the messages column present the detail panel would otherwise be a
+ * *fraction of a fraction* — 38% of the 310px left over, i.e. 110px, which
+ * clips its own tab row. Half of the remainder keeps it at the ~155px the tab
+ * row was measured against.
+ */
+@media (max-width: 1023px) {
+  html[data-message-open='true'] {
+    --post-detail-panel-ratio: 0.5;
+  }
+
+  /*
+   * The tab row was sized against a 167px panel; with messages open the panel
+   * is 155px and the five labels fit only by squeezing the gaps to zero. One
+   * step smaller keeps them separated and still never scrolling.
+   */
+  html[data-message-open='true'] nav[aria-label='Video details'] button {
+    font-size: 7px;
+  }
+}
+
 
 .home-feed-card-media {
   padding-top: 56.25%;
@@ -361,6 +560,19 @@ body {
   color: var(--text);
   font-size: 13px;
   line-height: 20px;
+}
+
+/* Three columns of a 440px viewport give a 115px tile; 13px captions read as
+   two words per line there. The reference caption is one compact line. */
+@media (max-width: 1023px) {
+  .creator-profile-work-card .home-feed-card-info h3 {
+    font-size: 10px;
+    line-height: 14px;
+  }
+
+  .creator-profile-work-card .home-feed-card-info {
+    min-height: 1.25rem;
+  }
 }
 
 .creator-profile-work-card .home-feed-card-info>div {

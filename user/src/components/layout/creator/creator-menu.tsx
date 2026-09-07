@@ -75,11 +75,12 @@ export function CreatorMenu() {
   ];
 
   return (
-    <div className="space-y-2 flex flex-col gap-2">
+    <div className="lg:space-y-2 flex flex-col gap-2 max-lg:gap-1">
       {menuItems.map((item) => (
         <NavigationMenuItem
           key={item.key}
           item={item}
+          variant="rail"
           className="rounded-xl text-(--text-soft) hover:transition-colors hover:duration-200 hover:ease-in hover:bg-(--hover-bg) hover:text-(--text-strong) focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2f5f]"
           isActive={isPathActive(item.href, item.key)}
           isMobile={isHydratedMobile}

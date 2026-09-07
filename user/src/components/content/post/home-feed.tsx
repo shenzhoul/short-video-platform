@@ -3,6 +3,7 @@
 import { MAX_RENDERED_FEED_POSTS } from '@hooks/use-feed-chain-page';
 import { useHomeFeedInfiniteScroll } from '@hooks/use-home-feed-infinite-scroll';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
+import { useIsMobile } from '@hooks/use-mobile';
 import { isTopicKeyRetired, usePostTopicsCatalogue } from '@hooks/use-post-topics';
 import { useRecommendationDetailFeed } from '@hooks/use-recommendation-detail-feed';
 import Link from 'next/link';
@@ -80,6 +81,27 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
     if (isTopicKeyRetired(topicKey, catalogue)) setTopicKey('');
   }, [catalogue, topicKey]);
 
+  /**
+   * Whether the feed is in its compact arrangement.
+   *
+   * The reference renders a uniform two-column grid at 440px — the first post
+   * is an ordinary card, not a full-width hero with its title and author
+   * overlaid on the media. `featured` is not a CSS concern: it decides whether
+   * the card mounts a transport bar, whether the like/duration badges render at
+   * all, and whether the caption sits under the thumbnail or on top of it. So
+   * it has to be a value, not a class.
+   *
+   * `hasHydrated` keeps the first client render identical to the server's, the
+   * same way `user-menu` does it; the correction lands in the commit right
+   * after, before any media has decoded.
+   */
+  const isCompactViewport = useIsMobile();
+  const [hasHydrated, setHasHydrated] = useState(false);
+  useEffect(() => {
+ setHasHydrated(true);
+}, []);
+  const compactFeed = hasHydrated && isCompactViewport;
+
   const [hoveredCompactPostId, setHoveredCompactPostId] = useState<string | null>(null);
   const playback = useHomeFeedPlayback(posts, updatePostInteraction);
   // Post Detail's next/previous for a Home/direct-link open follows the
@@ -103,7 +125,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
       <HomeFeedCategoryBar topics={catalogue.topics} activeTopicKey={topicKey} onTopicChange={setTopicKey} />
 
       <div id="home-feed-scroll" className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="px-4 pb-8">
+        <div className="px-4 max-lg:px-2.5 pb-8">
           <InfiniteScroll
             dataLength={posts.length}
             hasMore={hasMore}
@@ -125,12 +147,22 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
 
               The thresholds are calibrated against the shell, not picked from
               the default scale: the content column is the viewport minus the
-              160px navigation, and the workspace removes a further 360px. 88rem
-              sits between a 1920px viewport with messages closed (110rem) and
-              the same viewport with them open (87.5rem), which is what makes
-              that case fall from five columns to three.
+              navigation (56px compact, 160px from `lg`), and the workspace
+              removes a further 360px. 88rem sits between a 1920px viewport with
+              messages closed (110rem) and the same viewport with them open
+              (87.5rem), which is what makes that case fall from five columns to
+              three.
+
+              `20rem` is the compact threshold. A 440px viewport leaves a 392px
+              (24.5rem) column and a 390px viewport leaves 342px (21.4rem), so
+              both reach the reference's two-column arrangement; a single column
+              is kept only for something genuinely narrower than a phone.
+
+              The first card does **not** span both of them. It spans from
+              `42rem`, where there is room for the desktop hero; below that the
+              reference shows a uniform grid and so does this.
             */}
-            <div className="grid grid-cols-1 items-start gap-x-4 gap-y-5 pb-6 @min-[42rem]:grid-cols-2 @min-[64rem]:grid-cols-3 @min-[88rem]:grid-cols-5">
+            <div className="grid grid-cols-1 items-start gap-x-4 max-lg:gap-x-2.5 gap-y-5 max-lg:gap-y-3.5 pb-6 @min-[20rem]:grid-cols-2 @min-[64rem]:grid-cols-3 @min-[88rem]:grid-cols-5">
               {/*
                 The featured post takes the whole row until there is room for
                 the reference's five-column arrangement, where it occupies three
@@ -140,7 +172,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
                 <div className="min-w-0 @min-[42rem]:col-span-2 @min-[64rem]:col-span-3 @min-[88rem]:col-span-3 @min-[88rem]:row-span-2">
                   <HomeFeedCard
                     post={posts[0]}
-                    featured
+                    featured={!compactFeed}
                     popupPipState={playback.popupPipState}
                     compactHoverActive={Boolean(hoveredCompactPostId) || Boolean(playback.detailPost)}
                     featuredResumeTime={playback.featuredResumeTime}

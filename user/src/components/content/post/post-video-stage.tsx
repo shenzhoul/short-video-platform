@@ -34,8 +34,19 @@ import PostDetailDescription from './post-detail-description';
 import PostGraphicStageMedia from './post-graphic-stage-media';
 import PostVideoDetailPanel, { PostVideoDetailTab } from './post-video-detail-panel';
 
-const POST_VIDEO_PLAYER_RATIO = 0.714286;
-const POST_VIDEO_PANEL_RATIO = 0.285714;
+/**
+ * How the stage divides between the player and the side panel.
+ *
+ * Read from `--post-detail-panel-ratio` (globals.css) rather than hardcoded, so
+ * the split responds to the viewport: 2/7 on desktop, half on a narrow one. The
+ * desktop share left the panel 110px wide at a 440px viewport — narrower than a
+ * single creator-grid tile, and too narrow for the tab strip to fit at all.
+ *
+ * The player takes the remainder, expressed as `1 - ratio` so the two can never
+ * be tuned apart and leave a gap or an overlap.
+ */
+const POST_VIDEO_PANEL_RATIO = 'var(--post-detail-panel-ratio, 0.285714)';
+const POST_VIDEO_PLAYER_RATIO = `(1 - ${POST_VIDEO_PANEL_RATIO})`;
 export const VIDEO_DETAIL_PANEL_WIDTH = 'var(--post-video-detail-panel-width, 28.5714%)';
 
 interface PostVideoDetailContextValue {
@@ -123,14 +134,14 @@ export function PostVideoActionRail({
 
   const actionItems = [
     {
-      icon: <CommentLottieIcon className="text-5xl" />,
+      icon: <CommentLottieIcon className="text-5xl max-lg:text-[30px]" />,
       label: formatCompactCount(resolvedTotalComment),
       title: 'Comment',
       onClick: () => handleOpenPanel('comments')
     },
-    { icon: <FavoriteLottieIcon className='text-5xl' />, label: '2022', title: 'Collect' },
+    { icon: <FavoriteLottieIcon className='text-5xl max-lg:text-[30px]' />, label: '2022', title: 'Collect' },
     {
-      icon: <ShareLottieIcon className='text-5xl' />,
+      icon: <ShareLottieIcon className='text-5xl max-lg:text-[30px]' />,
       label: formatCompactCount(resolvedTotalShare),
       title: 'Share',
       // No onClick: the popover owns the interaction, opening on hover and
@@ -139,18 +150,18 @@ export function PostVideoActionRail({
     },
     isGraphic
       ? {
-        icon: <YoutubeIcon className='text-2xl' />,
+        icon: <YoutubeIcon className='text-2xl max-lg:text-base' />,
         label: 'Related',
         title: 'Related',
         onClick: () => handleOpenPanel('related')
       }
-      : { icon: <HeadphoneIcon className='text-4xl' />, label: 'Listen Video', title: 'Listen video' },
-    { icon: <MoreIcon className='text-5xl' />, label: '', title: 'More actions' }
+      : { icon: <HeadphoneIcon className='text-4xl max-lg:text-[24px]' />, label: 'Listen Video', title: 'Listen video' },
+    { icon: <MoreIcon className='text-5xl max-lg:text-[30px]' />, label: '', title: 'More actions' }
   ];
 
   return (
     <aside
-      className={`absolute z-40 flex w-17 flex-col items-center gap-2 origin-right-bottom scale-[1.07647] pr-4 bottom-20 justify-end ${className}`}
+      className={`absolute z-40 flex w-17 max-lg:w-11 flex-col items-center gap-2 max-lg:gap-0.5 origin-right-bottom scale-[1.07647] max-lg:scale-100 pr-4 max-lg:pr-0 bottom-20 max-lg:bottom-12 justify-end ${className}`}
       style={{ marginRight: detailPanelOpen ? VIDEO_DETAIL_PANEL_WIDTH : 0 }}
     >
       {sharePanelOpen ? (
@@ -169,9 +180,9 @@ export function PostVideoActionRail({
       {!isGraphic ? (
         <button
           type="button"
-          className="my-2 cursor-pointer w-11 h-11 border border-solid border-[rgba(255,255,255,.12)] rounded-xl flex justify-center items-center"
+          className="my-2 max-lg:my-1 cursor-pointer w-11 h-11 max-lg:w-7 max-lg:h-7 border border-solid border-[rgba(255,255,255,.12)] rounded-xl max-lg:rounded-lg flex justify-center items-center"
         >
-          <AiEntryIcon className='text-3xl' />
+          <AiEntryIcon className='text-3xl max-lg:text-lg' />
         </button>
       ) : <div className='h-8 w-8' />}
 
@@ -189,7 +200,7 @@ export function PostVideoActionRail({
           <img
             src={resolveAvatarUrl(post.user.avatar)}
             alt={post.user.name}
-            className="h-12 w-12 rounded-full object-cover ring-2 ring-white/80"
+            className="h-12 w-12 max-lg:h-8 max-lg:w-8 rounded-full object-cover ring-2 max-lg:ring-1 ring-white/80"
           />
         </button>
         {!followState.isOwner && !followState.isFollowed ? (
@@ -220,16 +231,16 @@ export function PostVideoActionRail({
         animateOnLike
         className="group/action flex cursor-pointer flex-col items-center text-white/92 hover:text-white"
         renderIcon={({ isLiked, animating }) => (
-          <span className="douyin-action-icon flex h-11 w-11 items-center justify-center text-[34px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.5)]">
+          <span className="douyin-action-icon flex h-11 w-11 max-lg:h-8 max-lg:w-8 items-center justify-center text-[34px] max-lg:text-[22px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.5)]">
             {isLiked ? (
               <LikeActiveIcon className="text-5xl" animate={animating} />
             ) : (
-              <LikeLottieIcon className="text-5xl" />
+              <LikeLottieIcon className="text-5xl max-lg:text-[30px]" />
             )}
           </span>
         )}
         renderCount={(totalLikes) => (
-          <span className="mt-1 max-w-16 select-none text-center text-xs font-bold text-white/90">
+          <span className="mt-1 max-lg:mt-0 max-w-16 max-lg:max-w-11 select-none truncate text-center text-xs max-lg:text-[9px] font-bold text-white/90">
             {formatCompactCount(totalLikes)}
           </span>
         )}
@@ -243,12 +254,12 @@ export function PostVideoActionRail({
             className="group/action flex cursor-pointer flex-col items-center text-white/92 hover:text-white"
             aria-label={item.title}
           >
-            <span className="douyin-action-icon flex h-11 w-11 items-center justify-center text-[34px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.5)]">
+            <span className="douyin-action-icon flex h-11 w-11 max-lg:h-8 max-lg:w-8 items-center justify-center text-[34px] max-lg:text-[22px] drop-shadow-[0_2px_5px_rgba(0,0,0,0.5)]">
               {item.icon}
             </span>
             {item.label !== undefined ? (
               <span
-                className='text-center select-none max-w-16 text-xs font-bold text-white/90 mt-1'
+                className='text-center select-none max-w-16 max-lg:max-w-11 truncate text-xs max-lg:text-[9px] font-bold text-white/90 mt-1 max-lg:mt-0'
               >
                 {item.label}
               </span>
@@ -455,12 +466,12 @@ export default function PostVideoStage({
           style={{ width: 'var(--post-video-player-width)' }}
         >
           <div
-            className="pointer-events-none absolute inset-0 scale-110 bg-cover bg-center opacity-70 blur-3xl"
+            className="pointer-events-none absolute inset-0 max-lg:hidden scale-110 bg-cover bg-center opacity-70 blur-3xl"
             style={{ backgroundImage: `url(${mediaUrl})` }}
             aria-hidden
           />
 
-          <div className="pointer-events-none absolute inset-0 bg-black/35" aria-hidden />
+          <div className="pointer-events-none absolute inset-0 max-lg:hidden bg-black/35" aria-hidden />
 
           {/*
             The media element is chosen from what the post actually holds, not
@@ -494,7 +505,22 @@ export default function PostVideoStage({
               showVolumeSlider
               showCenterPlayButton
               forceBackgroundBlur
-              objectFit="auto"
+              /*
+                A full playback stage contains the frame; it never crops to
+                fill. `auto` resolved to `object-cover` for any **landscape**
+                video, so a 1280x720 clip in a 276x900 stage was scaled 3.25x
+                and lost its sides — measured, not inferred. Douyin letterboxes
+                the same clip with black above and below.
+
+                `contain` is deliberately not gated on a breakpoint: the
+                desktop stage is roughly 1.1:1 and crops a 16:9 clip just as
+                badly, and the poster is drawn by the same element so the frame
+                before playback and the frame during it now agree. Thumbnail
+                cards keep `cover` — see `home-feed-card` and
+                `creator-profile-work-item`, where cropping to a fixed tile is
+                the intent.
+              */
+              objectFit="contain"
               pictureInPicturePayload={popupPayload || undefined}
               onPictureInPictureOpen={onPictureInPictureOpen}
               onTimeUpdate={onTimeUpdate}
@@ -508,9 +534,9 @@ export default function PostVideoStage({
             <PostGraphicStageMedia post={post} active={isActiveSlide ? !isCurrentPopup : null} />
           )}
           {detailPanelTab !== 'details' ? (
-            <div className="pointer-events-none absolute bottom-16 left-4 z-40 max-w-[min(760px,calc(100%-112px))] pr-8 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,.75)]">
-              <div className="mb-2 text-lg font-bold">
-                @{creatorName}{timeText ? <span className="ml-2 text-base font-semibold text-white/85">· {timeText}</span> : null}
+            <div className="pointer-events-none absolute bottom-16 max-lg:bottom-14 left-4 max-lg:left-2 z-40 max-w-[min(760px,calc(100%-112px))] max-lg:max-w-[calc(100%-58px)] pr-8 max-lg:pr-1 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,.75)]">
+              <div className="mb-2 max-lg:mb-0.5 text-lg max-lg:text-[10px] max-lg:leading-[14px] font-bold">
+                @{creatorName}{timeText ? <span className="ml-2 max-lg:ml-1 text-base max-lg:text-[9px] font-semibold text-white/85">· {timeText}</span> : null}
               </div>
               {description ? (
                 <PostDetailDescription
@@ -520,7 +546,7 @@ export default function PostVideoStage({
                   className="pointer-events-auto"
                 />
               ) : null}
-              <button type="button" className="pointer-events-auto mt-3 inline-flex cursor-pointer items-center rounded-lg bg-white/16 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/24">
+              <button type="button" className="pointer-events-auto mt-3 max-lg:mt-1 inline-flex cursor-pointer items-center rounded-lg max-lg:rounded max-lg:leading-[13px] bg-white/16 px-4 max-lg:px-1.5 py-2 max-lg:py-0.5 text-sm max-lg:text-[9px] font-semibold text-white backdrop-blur transition hover:bg-white/24">
                 Collection · {collectionLabel}
               </button>
             </div>
@@ -528,7 +554,7 @@ export default function PostVideoStage({
         </div>
         {children}
         {isCurrentPopup ? (
-          <div className="absolute inset-0 z-60 flex flex-col items-center justify-center gap-5 bg-black text-center text-white w-[calc(100%-68px)]">
+          <div className="absolute inset-0 z-60 flex flex-col items-center justify-center gap-5 bg-black text-center text-white w-[calc(100%-var(--feed-nav-gutter,68px))]">
             <p className="text-base font-medium text-white/70">Playing in Picture-in-Picture</p>
             <button
               type="button"

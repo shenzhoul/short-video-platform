@@ -187,7 +187,7 @@ function CoverUpload({
 
   return (
     <>
-      <div className={`w-full h-[251px] mt-[-68px] relative overflow-hidden ${!hasCover ? 'bg-douyin' : ''} ${className}`}>
+      <div className={`w-full h-[251px] max-lg:h-[104px] mt-[-68px] max-lg:mt-[-32px] relative overflow-hidden ${!hasCover ? 'bg-douyin' : ''} ${className}`}>
         <input
           ref={inputRef}
           type="file"

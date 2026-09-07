@@ -54,6 +54,7 @@ Load only the skills relevant to the task:
   - `.agents/skills/post-sharing/SKILL.md`
   - `.agents/skills/demo-dataset/SKILL.md`
 - Next.js:
+  - `.agents/skills/responsive-shell/SKILL.md`
   - `.agents/skills/web-ssr/SKILL.md`
   - `.agents/skills/web-seo/SKILL.md`
   - `.agents/skills/vercel-react-best-practices/SKILL.md`

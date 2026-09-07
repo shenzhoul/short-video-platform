@@ -3,6 +3,8 @@
 import { resolveAvatarUrl } from '@lib/avatar';
 import { useMessages } from '@providers/message.provider';
 import {
+  MESSAGE_WORKSPACE_COMPACT_WIDTH,
+  MESSAGE_WORKSPACE_INLINE_MIN_WIDTH,
   MESSAGE_WORKSPACE_WIDTH,
   useMessageWorkspace
 } from '@providers/message-workspace.provider';
@@ -43,6 +45,15 @@ export default function MessageWorkspace() {
   // surface that already covers the header, the panel runs to the very top so
   // the header cannot show through in the strip next to it.
   const topClass = placement === 'fullscreen' ? 'top-0' : 'top-(--app-header-height)';
+  /**
+   * The compact third column beside post detail.
+   *
+   * `inline` is true here because the surface reflows; `compactColumn` is what
+   * distinguishes "a column beside a 440px post" from "a column beside a
+   * 1920px page", which need very different widths.
+   */
+  const compactColumn = inline && placement === 'fullscreen'
+    && typeof window !== 'undefined' && window.innerWidth < MESSAGE_WORKSPACE_INLINE_MIN_WIDTH;
 
   const conversation = activeConversationId ? getConversation(activeConversationId) : undefined;
   const participant = conversation?.participant;
@@ -93,18 +104,22 @@ export default function MessageWorkspace() {
       */}
       <aside
         aria-label="Messages"
-        style={{ width: inline ? MESSAGE_WORKSPACE_WIDTH : undefined }}
-        className={`fixed bottom-0 right-0 z-126 flex flex-col ${topClass} ${inline ? '' : 'w-full max-w-100 shadow-(--shadow-popover)'
+        data-compact-messages={compactColumn ? 'true' : undefined}
+        style={{ width: inline ? (compactColumn ? MESSAGE_WORKSPACE_COMPACT_WIDTH : MESSAGE_WORKSPACE_WIDTH) : undefined }}
+        className={`fixed bottom-0 right-0 z-126 flex flex-col ${topClass} ${inline ? '' : 'w-full max-w-100 max-lg:max-w-[calc(100vw-2.5rem)] shadow-(--shadow-popover)'
           }`}
       >
-        <div className={`${topClass} z-3 w-89 ${placement === 'fullscreen' ? 'h-full' : 'h-[calc(100vh-56px)]'} transition-transform duration-200 fixed right-0 translate-x-0`}>
+        <div
+          style={compactColumn ? { width: MESSAGE_WORKSPACE_COMPACT_WIDTH } : undefined}
+          className={`${topClass} z-3 ${compactColumn ? '' : 'w-89 max-lg:w-[min(22.25rem,calc(100vw-2.5rem))]'} ${placement === 'fullscreen' ? 'h-full' : 'h-[calc(var(--app-viewport-height)-var(--app-header-height))]'} transition-transform duration-200 fixed right-0 translate-x-0`}
+        >
           <div className={`bg-(--surface-raised) ${placement === 'fullscreen' ? 'ml-0 w-full h-full' : 'ml-2 rounded-2xl w-[calc(100%-20px)] h-[calc(100%-12px)] static'}`}>
             <div className='w-full h-full'>
               {inThread ? (
                 <MessageThreadPanel
                   conversationId={activeConversationId as string}
                   header={(
-                    <div className="flex h-14 shrink-0 items-center gap-2 border-b border-(--border-faint) px-3">
+                    <div className="message-workspace-header flex h-14 shrink-0 items-center gap-2 border-b border-(--border-faint) px-3">
                       <button
                         type="button"
                         onClick={backToList}
@@ -129,8 +144,8 @@ export default function MessageWorkspace() {
                 />
               ) : (
                 <>
-                  <div className="flex h-14 shrink-0 items-center gap-2 px-4 border-b border-(--border-faint)">
-                    <span className="min-w-0 flex-1 truncate text-[16px] font-medium text-(--text-strong)">
+                  <div className="message-workspace-header flex h-14 shrink-0 items-center gap-2 px-4 border-b border-(--border-faint)">
+                    <span className="message-workspace-title min-w-0 flex-1 truncate text-[16px] font-medium text-(--text-strong)">
                       Messages
                     </span>
                     {openPageLink}

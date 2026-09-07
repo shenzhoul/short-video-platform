@@ -27,10 +27,10 @@ export default function PostDetailMessageButton() {
       onClick={toggleWorkspace}
       aria-expanded={open}
       aria-label="Open messages"
-      className="pointer-events-auto flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-white/20 bg-black/25 px-3 text-[13px] font-medium text-white/85 backdrop-blur-md transition hover:bg-white/15 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      className="pointer-events-auto flex h-9 max-lg:h-8 cursor-pointer items-center gap-1.5 rounded-lg max-lg:rounded-full border border-white/20 bg-black/25 px-3 max-lg:px-2 text-[13px] font-medium text-white/85 backdrop-blur-md transition hover:bg-white/15 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
     >
       <MessageIcon className="text-[17px]" />
-      <span>Messages</span>
+      <span className="max-lg:hidden">Messages</span>
     </button>
   );
 }

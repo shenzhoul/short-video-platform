@@ -70,3 +70,25 @@ Profile media mutations validate file ownership before adding persistent referen
 - The owner-only `I like it` tab loads the current user's liked posts from `GET /posts/liked` in newest-like-first order. It supports both video and graphic posts and uses the same post detail modal and interaction state as other feeds.
 - Batch management on `I like it` changes the action to `Unlike`. `DELETE /posts/liked` accepts up to 50 unique `postIds` and idempotently removes only the current user's like reactions, so retries cannot accidentally like a post again.
 - Unliking from either the batch toolbar or the post detail action rail immediately removes the post from the liked collection and updates the displayed total.
+
+#### Paging both grids (2026-09-07)
+
+Both tabs render the same grid and page through the same infinite-scroll
+sentinel, driven by whichever tab is active. The page size is `POST_PAGE_LIMIT`
+(20) for both, so 67 liked posts load as `20 + 20 + 20 + 7` as the reader
+scrolls.
+
+- `useLikedPosts` requests the first page the first time the tab is opened and
+  never again. Leaving the tab and returning keeps the pages already loaded and
+  keeps the cursor where it was — re-requesting page one would rewind
+  `nextCursor` and `hasMore` to the first page's values and make the next three
+  scrolls re-fetch content the list already held.
+- The terminal message (`No more for now`) is shown only once the API reports
+  `hasMore: false` for the **active** tab. Before 2026-09-07 it was printed
+  unconditionally on `I like it`, under a grid that had only ever asked for its
+  first page — so an account with 67 likes saw 20 posts and an end-of-list
+  message underneath them.
+- The count in the header account menu comes from the same endpoint's `total`
+  (a `limit=1` request read purely for the count), so the number in the menu and
+  the set of posts the grid can reach come from one query with one set of
+  filters.

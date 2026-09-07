@@ -28,7 +28,9 @@ import SidebarBottom from '@components/layout/sidebar-bottom';
 import { useLogout } from '@hooks/use-logout';
 import { IUser } from '@interfaces/user';
 import { useProfile } from '@providers/profile.provider';
+import Link from 'next/link';
 import { useCallback, useMemo } from 'react';
+import { DouyinFavicon } from 'src/icons';
 
 import Logo from './logo';
 import DashboardMenu from './navigation/user-menu';
@@ -60,15 +62,37 @@ export function LeftNavigation({ serverUser }: LeftNavigationProps) {
 
   return (
     <>
-      <div className='w-40 h-full transition-all max-xl:hidden' />
-      <div className='fixed left-0 top-0 flex h-screen w-40 flex-col bg-(--page-bg) text-(--text-strong) transition-all z-99'>
+      {/*
+        The spacer that reserves the rail's column in the flex row.
+
+        Present at every width now. It used to be `max-xl:hidden`, while the
+        fixed rail below it appeared from `lg` — so between 1024px and 1280px
+        the rail was drawn over the page with nothing holding a column open for
+        it. Both read `--app-shell-nav-width`, so they cannot drift again.
+      */}
+      <div className='w-(--app-shell-nav-width) h-full shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none' />
+      <div className='fixed left-0 top-0 flex h-(--app-viewport-height) w-(--app-shell-nav-width) flex-col bg-(--page-bg) text-(--text-strong) transition-[width] duration-200 ease-out motion-reduce:transition-none z-99'>
+        {/*
+          The full wordmark needs room the compact rail does not have, so below
+          `lg` it is replaced by the app icon rather than dropped — the rail must
+          still lead back to the home feed.
+        */}
         <div className='max-lg:hidden flex justify-center'><Logo /></div>
         <div className='max-lg:hidden flex justify-center'><img src="/get_app_hover.png" alt="Get App" width={128} /></div>
+        <Link
+          href="/"
+          aria-label="Get the app"
+          title="Get APP"
+          className='lg:hidden mx-auto mt-1.5 flex h-8 w-9 shrink-0 flex-col items-center justify-center gap-px rounded-lg bg-[#fe2c55] text-[7px] font-semibold leading-none text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fe2c55]'
+        >
+          <DouyinFavicon className='text-[13px]' />
+          <span>Get APP</span>
+        </Link>
         <div className='p-2 overflow-hidden overflow-y-auto scrollbar-custom
-          max-xl:-right-full max-xl:rounded-none h-full flex flex-col justify-between'
+          max-lg:p-0 h-full min-h-0 flex flex-col justify-between'
         >
           {/* Navigation Menu */}
-          <div className="flex-1 flex flex-col gap-2.5 pl-2.5 pr-2.5 pt-1">
+          <div className="flex-1 flex flex-col gap-2.5 pt-1 lg:pl-2.5 lg:pr-2.5 max-lg:gap-0.5 max-lg:px-0.5 max-lg:pt-0">
             <DashboardMenu onLogout={menuProps.onLogout} serverUser={menuProps.user} />
           </div>
           <SidebarBottom />

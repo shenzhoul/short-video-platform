@@ -50,6 +50,7 @@ Load the matching repo skill before changing specialized areas:
 - API pagination — SearchRequest, cursor/offset, PageableData: `.agents/skills/api-pagination/SKILL.md`
 - API payload and request class patterns: `.agents/skills/api-payload/SKILL.md`
 - API exception handling — RuntimeException, service throws: `.agents/skills/api-exception-handling/SKILL.md`
+- Responsive application shell — the compact left rail, the shared width tokens, the 1024px reflow point, and the narrow-viewport layout of post detail, messages, the vertical feeds and the profile grid: `.agents/skills/responsive-shell/SKILL.md`
 - User app SSR request headers and session forwarding: `.agents/skills/web-ssr/SKILL.md`
 - User app public SEO and metadata rules: `.agents/skills/web-seo/SKILL.md`
 - React and Next.js implementation: `.agents/skills/vercel-react-best-practices/SKILL.md`

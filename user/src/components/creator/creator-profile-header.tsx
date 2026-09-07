@@ -207,52 +207,52 @@ export default function CreatorProfileHeader({
         narrowed column so none of them can end up beneath the panel.
       */}
       <div className='w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
-        <div className='pointer-events-none relative z-60 -mt-40 max-w-380 w-full flex mx-auto mb-5.25'>
-          <div className='w-28 flex-none'>
+        <div className='pointer-events-none relative z-60 -mt-40 max-lg:-mt-9 max-w-380 w-full flex max-lg:flex-col max-lg:items-start mx-auto mb-5.25 max-lg:mb-2 max-lg:px-2'>
+          <div className='w-28 max-lg:w-14 flex-none'>
             <button
               type="button"
-              className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
+              className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 max-lg:w-14 max-lg:h-14 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
               onClick={onOpenAvatarPreview}
               aria-label="Preview avatar"
             >
               <img src={resolveAvatarUrl(previewAvatar)} className='rounded-full w-full h-full object-cover block relative border-none' />
             </button>
           </div>
-          <div className='min-h-30 flex-1 flex-wrap flex items-center content-center ml-8'>
+          <div className='min-h-30 max-lg:min-h-0 w-full min-w-0 flex-1 flex-wrap flex items-center content-center ml-8 max-lg:ml-0 max-lg:mt-1.5'>
             <div className='flex relative w-full'>
-              <h1 className='m-0 text-xl leading-7 pointer-events-auto'>
-                <span className='block max-w-75 flex-none overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl font-medium leading-7'>
+              <h1 className='m-0 text-xl max-lg:text-[15px] leading-7 max-lg:leading-5 pointer-events-auto'>
+                <span className='block max-w-75 max-lg:max-w-[calc(100vw-7rem)] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl max-lg:text-[15px] font-medium leading-7 max-lg:leading-5'>
                   {previewName}
                 </span>
               </h1>
               {canEditProfile ? (
                 <span className='pointer-events-auto cursor-pointer py-0.5' onClick={onOpenEdit}>
-                  <EditIcon className='text-2xl text-(--text-muted)' />
+                  <EditIcon className='text-2xl max-lg:text-base text-(--text-muted)' />
                 </span>
             ) : null}
             </div>
-            <div className='w-full mt-1 flex'>
+            <div className='w-full mt-1 max-lg:mt-0.5 flex flex-wrap gap-y-1 max-lg:gap-y-0.5'>
               <button
                 type="button"
-                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
+                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 max-lg:after:h-3 after:mx-4 max-lg:after:mx-2 after:border-l after:border-[#363741]'
                 onClick={() => openFollowList('following')}
               >
-                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
+                <div className='mr-1.5 max-lg:mr-1 text-sm max-lg:text-[11px] leading-5.5 max-lg:leading-4 text-(--text-muted) hover:text-(--text-strong)'>
                   Following
                 </div>
-                <div className='text-[16px] leading-6 text-(--text)'>
+                <div className='text-[16px] max-lg:text-[11px] leading-6 max-lg:leading-4 text-(--text)'>
                   {formatCompactCount(followingCount)}
                 </div>
               </button>
               <button
                 type="button"
-                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 after:mx-4 after:border-l after:border-[#363741]'
+                className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 max-lg:after:h-3 after:mx-4 max-lg:after:mx-2 after:border-l after:border-[#363741]'
                 onClick={() => openFollowList('follower')}
               >
-                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted) hover:text-(--text-strong)'>
+                <div className='mr-1.5 max-lg:mr-1 text-sm max-lg:text-[11px] leading-5.5 max-lg:leading-4 text-(--text-muted) hover:text-(--text-strong)'>
                   Follower
                 </div>
-                <div className='text-[16px] leading-6 text-(--text)'>
+                <div className='text-[16px] max-lg:text-[11px] leading-6 max-lg:leading-4 text-(--text)'>
                   {formatCompactCount(followerCount)}
                 </div>
               </button>
@@ -260,22 +260,22 @@ export default function CreatorProfileHeader({
                 <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted)'>
                   Received praise
                 </div>
-                <div className='text-[16px] leading-6 text-(--text)'>
+                <div className='text-[16px] max-lg:text-[11px] leading-6 max-lg:leading-4 text-(--text)'>
                   {formatCompactCount(likeCount)}
                 </div>
               </div>
             </div>
-            <p className='pointer-events-auto w-full h-5 flex items-center mt-3'>
-              <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
+            <p className='pointer-events-auto w-full h-5 max-lg:h-auto flex max-lg:flex-wrap max-lg:gap-y-0.5 items-center mt-3 max-lg:mt-1'>
+              <span className='mr-5 max-lg:mr-2 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
                 Douyin ID: {creator.username}
               </span>
-              <span className='mr-5 text-[12px] leading-5 text-(--text-muted)'>
+              <span className='mr-5 max-lg:mr-2 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
                 IP location: Guangdong
               </span>
-              <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
+              <span className='h-5 max-lg:h-4 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
                 <MaleIcon className='text-xs mr-1' /> 28 years old
               </span>
-              <span className='h-5 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 py-0 flex text-[12px] leading-5'>
+              <span className='h-5 max-lg:h-4 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
                 Guangdong Â· Shenzhen
               </span>
             </p>
@@ -291,7 +291,7 @@ export default function CreatorProfileHeader({
           that space the Download action sat underneath it. `max-content` keeps
           the column bounded without re-breaking if a label changes length.
         */}
-          <div className='pointer-events-auto max-w-max flex-wrap content-between h-28 items-center flex absolute right-0 bottom-2'>
+          <div className='pointer-events-auto max-w-max max-lg:max-w-full flex-wrap content-between h-28 max-lg:h-auto max-lg:gap-x-2 max-lg:gap-y-1 items-center flex absolute max-lg:static right-0 bottom-2 max-lg:mt-1.5 max-lg:w-full'>
             {(!currentUser || currentUser._id !== creator._id) && (
             <div className='w-full flex-row-reverse flex relative'>
               <HoverRevealPanel
@@ -317,8 +317,8 @@ export default function CreatorProfileHeader({
             </div>
           )}
             {canEditProfile ? (
-              <div className='w-full flex-row-reverse flex relative'>
-                <div className='ml-auto z-1 h-full inline-flex items-center justify-center'>
+              <div className='w-full max-lg:w-auto flex-row-reverse max-lg:flex-row flex relative'>
+                <div className='ml-auto max-lg:ml-0 z-1 h-full inline-flex items-center justify-center'>
                   <HoverRevealPanel
                     panel={<SaveLoginHelpPanel />}
                     panelPositionClassName="right-[-180px] top-full pt-2"
@@ -327,12 +327,12 @@ export default function CreatorProfileHeader({
                       <HelpCircleIcon className='text-[16px]' />
                     </div>
                   </HoverRevealPanel>
-                  <div className='w-19 h-5.5 spacing tracking-[0.6px] ml-2 mr-2 text-xs leading-5 text-(--text-soft)'>Save login</div>
+                  <div className='w-19 max-lg:w-auto h-5.5 max-lg:h-4 spacing tracking-[0.6px] ml-2 max-lg:ml-1 mr-2 max-lg:mr-1 text-xs max-lg:text-[10px] leading-5 max-lg:leading-4 whitespace-nowrap text-(--text-soft)'>Save login</div>
                   <ToggleSwitch aria-label="Save login" />
                 </div>
               </div>
           ) : null}
-            <div className='flex ml-auto'>
+            <div className='flex ml-auto max-lg:ml-0'>
               {(!currentUser || currentUser._id !== creator._id) && (
               <div className='flex'>
                 <button
@@ -367,12 +367,12 @@ export default function CreatorProfileHeader({
               </div>
             )}
               {currentUser ? (
-                <div className='h-8.25 rounded-4xl m-o ml-2 transition-all duration-300 ease-in-out overflow-hidden'>
+                <div className='h-8.25 max-lg:h-6 rounded-4xl m-o ml-2 max-lg:ml-1 transition-all duration-300 ease-in-out overflow-hidden'>
                   <div className='bg-(--field-bg) text-(--text-soft) rounded-xl justify-between flex-row items-center text-[13px] flex overflow-hidden'>
-                    <div className='py-1.5 pr-0 pl-3 w-45 whitespace-nowrap flex justify-center'>
+                    <div className='py-1.5 max-lg:py-0.5 pr-0 pl-3 max-lg:pl-1.5 w-45 max-lg:w-auto max-lg:text-[10px] whitespace-nowrap flex justify-center'>
                       Download the PC client
                     </div>
-                    <a className='bg-(--glass-bg) text-(--text-strong) font-bold py-1.5 px-3 h-full cursor-pointer whitespace-nowrap items-center flex transition-all duration-300 ease-in-out hover:bg-[rgba(255,44,85,1)]'>
+                    <a className='bg-(--glass-bg) text-(--text-strong) font-bold py-1.5 max-lg:py-0.5 px-3 max-lg:px-1.5 max-lg:text-[10px] h-full cursor-pointer whitespace-nowrap items-center flex transition-all duration-300 ease-in-out hover:bg-[rgba(255,44,85,1)]'>
                       <DownloadIcon className='text-sm pr-0.5' />
                       <span>Download</span>
                     </a>

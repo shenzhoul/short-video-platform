@@ -22,24 +22,24 @@ export default function CreatorNavigation() {
 
   return (
     <>
-      <div className='w-40 h-full transition-all max-xl:hidden' />
-      <div className='fixed left-0 top-0 flex h-screen w-40 flex-col bg-(--page-bg) text-(--text-strong) transition-all z-99'>
+      <div className='w-(--app-shell-nav-width) h-full shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none' />
+      <div className='fixed left-0 top-0 flex h-(--app-viewport-height) w-(--app-shell-nav-width) flex-col bg-(--page-bg) text-(--text-strong) transition-[width] duration-200 ease-out motion-reduce:transition-none z-99'>
         <div className='max-lg:hidden flex justify-center'><Logo /></div>
-        <div className='flex my-3 mx-5'>
+        <div className='flex my-3 mx-5 max-lg:mx-1 max-lg:my-2'>
           <button
             type="button"
             onClick={() => router.push('/creator/publish')}
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-md bg-[#fe2c55] px-3 text-[14px] font-semibold text-white transition-colors hover:bg-[#e9274e] active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fe2c55]"
+            className="flex h-10 w-full cursor-pointer items-center justify-between max-lg:justify-center rounded-md bg-[#fe2c55] px-3 max-lg:px-0 text-[14px] max-lg:text-[9px] font-semibold text-white transition-colors hover:bg-[#e9274e] active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fe2c55]"
           >
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2 max-lg:flex-col max-lg:gap-0.5">
               <FiPlusSquare className="text-base" />
               <span>Publish</span>
             </span>
-            <FiChevronDown className="text-base" />
+            <FiChevronDown className="text-base max-lg:hidden" />
           </button>
         </div>
-        <div className='p-2 overflow-hidden overflow-y-auto scrollbar-custom
-              max-xl:-right-full max-xl:rounded-none h-full flex flex-col justify-between'
+        <div className='p-2 max-lg:px-0.5 overflow-hidden overflow-y-auto scrollbar-custom
+              h-full min-h-0 flex flex-col justify-between'
         >
           {/* Navigation Menu */}
           <CreatorMenu />

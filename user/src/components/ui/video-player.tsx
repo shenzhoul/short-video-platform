@@ -597,14 +597,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     >
       {shouldShowBackgroundBlur ? (
         <div
-          className="pointer-events-none absolute inset-0 z-0 scale-110 bg-cover bg-center opacity-70 blur-2xl"
+          className="pointer-events-none absolute inset-0 z-0 max-lg:hidden scale-110 bg-cover bg-center opacity-70 blur-2xl"
           style={{ backgroundImage: `url(${poster})` }}
           aria-hidden
         />
       ) : null}
       <video
         ref={videoElementRef}
-        className={`relative z-10 h-full w-full ${shouldShowBackgroundBlur ? 'bg-transparent' : 'bg-black'} ${shouldCoverVideo ? 'object-cover' : 'object-contain'} ${classVideo} ${isCurrentPictureInPicture ? 'opacity-0' : ''}`}
+        className={`relative z-10 h-full w-full ${shouldShowBackgroundBlur ? 'bg-transparent max-lg:bg-black' : 'bg-black'} ${shouldCoverVideo ? 'object-cover' : 'object-contain'} ${classVideo} ${isCurrentPictureInPicture ? 'opacity-0' : ''}`}
         data-video-id={id}
         src={src}
         poster={poster}
@@ -678,36 +678,36 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center justify-between gap-3 max-lg:gap-1">
+            <div className="flex min-w-0 shrink items-center gap-2 max-lg:gap-0.5">
               <button
                 type="button"
                 onClick={handlePlayPauseClick}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm hover:bg-white/15"
+                className="inline-flex h-8 w-8 max-lg:h-7 max-lg:w-7 shrink-0 items-center justify-center rounded-full text-sm hover:bg-white/15"
                 aria-label={isPlaying ? 'Pause' : 'Play'}
               >
-                {isPlaying ? <PauseIcon className='text-3xl' /> : <PlayIcon className='text-3xl' />}
+                {isPlaying ? <PauseIcon className='text-3xl max-lg:text-2xl' /> : <PlayIcon className='text-3xl max-lg:text-2xl' />}
               </button>
-              <div className="min-w-21.5 text-xs font-semibold text-white">
+              <div className="min-w-21.5 max-lg:min-w-15 truncate whitespace-nowrap text-xs max-lg:text-[10px] font-semibold text-white">
                 {`${videoDuration(currentTime)} / ${videoDuration(duration)}`}
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1 max-lg:gap-0">
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-xl hover:bg-white/15"
+                className="inline-flex h-8 w-8 max-lg:h-6 max-lg:w-6 items-center justify-center rounded-full text-xl hover:bg-white/15"
                 aria-label="Add to watch later"
               >
-                <AddToWatchLaterIcon className='text-3xl' />
+                <AddToWatchLaterIcon className='text-3xl max-lg:text-xl' />
               </button>
               <button
                 type="button"
                 onClick={togglePictureInPicture}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-base hover:bg-white/15"
+                className="inline-flex h-8 w-8 max-lg:h-6 max-lg:w-6 items-center justify-center rounded-full text-base hover:bg-white/15"
                 aria-label="Picture in picture"
               >
-                <PiPIcon className='text-3xl' />
+                <PiPIcon className='text-3xl max-lg:text-xl' />
               </button>
               {showVolumeSlider ? (
                 <VideoVolumeControl
@@ -719,21 +719,21 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               ) : (
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm hover:bg-white/15"
+                  className="inline-flex h-8 w-8 max-lg:h-6 max-lg:w-6 items-center justify-center rounded-full text-sm hover:bg-white/15"
                   aria-label={isMuted ? 'Unmute' : 'Mute'}
                   onClick={toggleMute}
                 >
-                  {isMuted ? <MuteIcon className='text-3xl' /> : <VolumeIcon className='text-3xl' />}
+                  {isMuted ? <MuteIcon className='text-3xl max-lg:text-xl' /> : <VolumeIcon className='text-3xl max-lg:text-xl' />}
                 </button>
               )}
               {showFullscreenControl ? (
                 <button
                   type="button"
                   onClick={toggleFullscreen}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-xs hover:bg-white/15"
+                  className="inline-flex h-8 w-8 max-lg:h-6 max-lg:w-6 items-center justify-center rounded-full text-xs hover:bg-white/15"
                   aria-label="Toggle fullscreen"
                 >
-                  <FullscreenIcon className='text-3xl' />
+                  <FullscreenIcon className='text-3xl max-lg:text-xl' />
                 </button>
               ) : null}
             </div>

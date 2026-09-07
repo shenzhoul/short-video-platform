@@ -179,7 +179,7 @@ export default function FollowingFeed({
           <div className="relative h-full w-full overflow-hidden">
             <div
               className="relative h-full overflow-hidden rounded-2xl bg-black shadow-[0_24px_70px_rgba(0,0,0,.32)]"
-              style={{ width: 'calc(100% - 68px)' }}
+              style={{ width: 'calc(100% - var(--feed-nav-gutter, 68px))' }}
               onClick={() => {
                 if (images.length > 1) setGraphicPlaying(current => !current);
               }}
@@ -250,7 +250,7 @@ export default function FollowingFeed({
             <PostVideoActionRail
               post={activePost}
               mediaVariant="graphic"
-              className="right-18 pr-4"
+              className="right-18 max-lg:right-0 pr-4 max-lg:pr-1"
               isLikedOverride={activeInteraction.isLiked}
               totalLikeOverride={activeInteraction.totalLike}
               totalCommentOverride={activeInteraction.totalComment}
@@ -269,7 +269,7 @@ export default function FollowingFeed({
             playerRef={playerRef}
             initialTime={resumeTime}
             isActiveSlide={!detailModalPost}
-            rightGutter="68px"
+            rightGutter="var(--feed-nav-gutter, 68px)"
             detailPanelTab={detailPanelTab}
             onDetailPanelTabChange={setDetailPanelTab}
             creatorVideos={creatorVideos.posts}
@@ -282,7 +282,7 @@ export default function FollowingFeed({
           >
             <PostVideoActionRail
               post={activePost}
-              className="right-18 pr-4"
+              className="right-18 max-lg:right-0 pr-4 max-lg:pr-1"
               isLikedOverride={activeInteraction.isLiked}
               totalLikeOverride={activeInteraction.totalLike}
               totalCommentOverride={activeInteraction.totalComment}
@@ -293,7 +293,7 @@ export default function FollowingFeed({
           </PostVideoStage>
         )}
 
-        <aside className="absolute right-3 top-1/2 z-80 -translate-y-1/2">
+        <aside className="absolute right-3 top-1/2 z-80 -translate-y-1/2 max-lg:hidden">
           <PostNavigationControls canPrevious={currentIndex > 0} canNext={currentIndex < posts.length - 1} onNavigate={navigate} />
         </aside>
       </section>

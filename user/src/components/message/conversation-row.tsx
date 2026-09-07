@@ -63,14 +63,14 @@ export default function ConversationRow({
       aria-current={selected ? 'true' : undefined}
       onClick={() => onSelect(conversation._id)}
       onKeyDown={handleKeyDown}
-      className={`group flex w-full cursor-pointer items-center gap-3 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${comfortable ? 'px-4 py-3' : 'px-4 py-2.5'
+      className={`conversation-row group flex w-full cursor-pointer items-center gap-3 text-left transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${comfortable ? 'px-4 py-3' : 'px-4 py-2.5'
         } ${selected ? 'bg-(--surface-soft)' : 'hover:bg-(--hover-bg)'}`}
     >
       <div className="relative shrink-0">
         <img
           src={resolveAvatarUrl(participant?.avatar)}
           alt=""
-          className={`rounded-full object-cover ${comfortable ? 'h-12 w-12' : 'h-11 w-11'}`}
+          className={`conversation-row-avatar rounded-full object-cover ${comfortable ? 'h-12 w-12' : 'h-11 w-11'}`}
         />
         {isUnread ? (
           <span
@@ -80,21 +80,21 @@ export default function ConversationRow({
         ) : null}
       </div>
 
-      <div className="min-w-0 flex-1 border-b border-solid border-(--border-faint) py-2 pr-2.5">
+      <div className="conversation-row-body min-w-0 flex-1 border-b border-solid border-(--border-faint) py-2 pr-2.5">
         <div className="flex items-baseline gap-2">
-          <span className={`min-w-0 flex-1 truncate text-[14px] ${isUnread ? 'font-semibold text-(--text-strong)' : 'font-medium text-(--text)'
+          <span className={`conversation-row-name min-w-0 flex-1 truncate text-[14px] ${isUnread ? 'font-semibold text-(--text-strong)' : 'font-medium text-(--text)'
             }`}
           >
             {name}
           </span>
-          <span className="shrink-0 text-[12px] text-(--text-faint)">
+          <span className="conversation-row-time shrink-0 text-[12px] text-(--text-faint)">
             {conversation.lastMessageCreatedAt
               ? formatActivityTimestamp(conversation.lastMessageCreatedAt)
               : ''}
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className={`min-w-0 flex-1 truncate text-[13px] ${isUnread ? 'text-(--text-soft)' : 'text-(--text-faint)'
+          <span className={`conversation-row-preview min-w-0 flex-1 truncate text-[13px] ${isUnread ? 'text-(--text-soft)' : 'text-(--text-faint)'
             }`}
           >
             {resolvePreview(conversation)}

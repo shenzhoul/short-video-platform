@@ -449,11 +449,11 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
       className={[
         isTopLevelThread
           ? 'flex h-full min-h-0 flex-col overflow-hidden text-white'
-          : 'space-y-4',
+          : 'space-y-4 max-lg:space-y-1.5',
         className
       ].join(' ')}
     >
-      <div className="shrink-0 px-4 pb-2 pt-3 text-[15px] leading-6 text-white/90">
+      <div className="shrink-0 px-4 max-lg:px-2 pb-2 max-lg:pb-1 pt-3 max-lg:pt-1.5 text-[15px] max-lg:text-[9px] leading-6 max-lg:leading-[13px] text-white/90">
         <div>
           Everyone is searching:
           <span className="ml-0.5 font-semibold text-[#ffd400]">Truth capture⌕</span>
@@ -523,7 +523,7 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
       <div
         ref={listRef}
         onScroll={(event) => setIsAtNewest(event.currentTarget.scrollTop <= 24)}
-        className={`${isTopLevelThread ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-2' : ''}`}
+        className={`${isTopLevelThread ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pr-2 max-lg:px-2 max-lg:pr-1' : ''}`}
       >
         <ListComments
           comments={visibleComments}
@@ -549,7 +549,7 @@ const CommentWrapperInner = forwardRef<CommentWrapperRef, CommentWrapperProps>((
       </div>
 
       {/* Comment Form */}
-      <div className={isTopLevelThread ? 'shrink-0 bg-[#191a23] px-4 pb-2 pt-1' : ''}>
+      <div className={isTopLevelThread ? 'shrink-0 bg-[#191a23] px-4 max-lg:px-2.5 pb-2 pt-1' : ''}>
         {!!user?._id ? (
           <CommentForm
             ref={commentFormRef}

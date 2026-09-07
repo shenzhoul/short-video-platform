@@ -88,7 +88,7 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
     const iconTheme = theme === 'dark' ? 'dark' : 'light';
     const hasActiveArt = !ICONS_WITHOUT_AN_ACTIVE_VARIANT.has(name);
     const iconState = active && hasActiveArt ? 'active' : 'normal';
-    return <img src={`/icons/${name}_${iconTheme}_${iconState}@actual.png`} className='w-6 h-6' alt="" />;
+    return <img src={`/icons/${name}_${iconTheme}_${iconState}@actual.png`} className='w-6 h-6 max-lg:w-4.5 max-lg:h-4.5' alt="" />;
   };
 
   const menuItems: FanMenuItem[] = [
@@ -153,23 +153,28 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
     }
   ];
 
-  const filteredMenu = menuItems.filter((item) => {
-    if (isHydratedMobile && (item.href === '/' || item.href === '/creators')) {
-      return false;
-    }
-    return true;
-  });
+  /*
+    Every destination is in the rail at every width.
+
+    "Topick" used to be dropped below 1024px. That made sense while the rail was
+    hidden there and its entries were being folded into a narrower surface; with
+    the compact rail present at all widths it just removed the home feed from
+    the navigation on a phone, which is the one entry a person is most likely to
+    want back.
+  */
+  const filteredMenu = menuItems;
 
   return (
     <>
       {/* Top Menu */}
-      <div className="border-t border-border pt-4 space-y-2 flex flex-col gap-1">
+      <div className="border-t border-border lg:pt-4 lg:space-y-2 max-lg:pt-1 flex flex-col gap-1 max-lg:gap-0.5">
         {filteredMenu.map((item) => {
           return (
             <NavigationMenuItem
               key={item.key}
               item={item}
               isActive={isPathActive(item.href, item.key)}
+              variant="rail"
               className="rounded-xl text-(--text-soft) hover:transition-colors hover:duration-200 hover:ease-in hover:bg-(--hover-bg) hover:text-(--text-strong) focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2f5f]"
               isMobile={isHydratedMobile}
               onClick={() => {
@@ -184,11 +189,12 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
       </div>
 
       {/* Middle Menu */}
-      <div className="border-t border-border pt-4 space-y-2 flex flex-col gap-1">
+      <div className="border-t border-border lg:pt-4 lg:space-y-2 max-lg:pt-1 flex flex-col gap-1 max-lg:gap-0.5">
         {menuItemsMiddle.map((item) => (
           <NavigationMenuItem
             key={item.key}
             item={item}
+            variant="rail"
             className="rounded-xl text-(--text-soft) hover:transition-colors hover:duration-200 hover:ease-in hover:bg-(--hover-bg) hover:text-(--text-strong) focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2f5f]"
             isActive={isPathActive(item.href, item.key)}
             isMobile={isHydratedMobile}
@@ -217,11 +223,12 @@ export function DashboardMenu({ onLogout, serverUser }: FanMenuProps) {
       </div>
 
       {/* Bottom Menu */}
-      <div className="border-t border-border pt-4 space-y-2 flex flex-col gap-1">
+      <div className="border-t border-border lg:pt-4 lg:space-y-2 max-lg:pt-1 flex flex-col gap-1 max-lg:gap-0.5">
         {menuItemsBottom.map((item) => (
           <NavigationMenuItem
             key={item.key}
             item={item}
+            variant="rail"
             className="rounded-xl text-(--text-soft) hover:transition-colors hover:duration-200 hover:ease-in hover:bg-(--hover-bg) hover:text-(--text-strong) focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff2f5f]"
             isActive={isPathActive(item.href, item.key)}
             isMobile={isHydratedMobile}

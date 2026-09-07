@@ -32,6 +32,17 @@ export type MessageWorkspacePlacement = 'shell' | 'fullscreen';
 export const MESSAGE_WORKSPACE_WIDTH = 356;
 
 /**
+ * Width the workspace takes beside a fullscreen surface on a compact viewport.
+ *
+ * Post detail is already two columns at 440px — a 273px media stage and a 167px
+ * detail panel. The desktop 356px cannot be a third column there, so the panel
+ * used to overlay instead and simply covered the post. The reference reflows to
+ * three columns, and this is the third one: the same width as the detail panel,
+ * so the two read as a pair and the media keeps the remainder.
+ */
+export const MESSAGE_WORKSPACE_COMPACT_WIDTH = 130;
+
+/**
  * Viewport below which the workspace stops taking layout width and floats over
  * the content instead.
  *
@@ -108,24 +119,36 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<MessageWorkspaceView>('list');
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [inline, setInline] = useState(true);
   // How many covering surfaces are currently mounted. Counted rather than a
   // boolean so two of them cannot fight over the flag on unmount.
   const [fullscreenClaims, setFullscreenClaims] = useState(0);
 
-  // Whether there is room to give the panel its own column. Watched rather than
-  // read once, so dragging a window narrow switches it to an overlay instead of
-  // crushing the content.
+  // Whether the viewport alone is wide enough to give the panel its own column.
+  // Watched rather than read once, so dragging a window narrow switches it to an
+  // overlay instead of crushing the content.
+  const [wideEnough, setWideEnough] = useState(true);
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
     const query = window.matchMedia(`(min-width: ${MESSAGE_WORKSPACE_INLINE_MIN_WIDTH}px)`);
-    const apply = () => setInline(query.matches);
+    const apply = () => setWideEnough(query.matches);
     apply();
 
     query.addEventListener('change', apply);
     return () => query.removeEventListener('change', apply);
   }, []);
+
+  /**
+   * A fullscreen surface always reflows, at every width.
+   *
+   * Post detail owns the whole viewport and lays itself out in columns, so it
+   * can give the workspace one — which is what the reference does. Treating it
+   * like an ordinary page and overlaying below 1280px is what put a 356px panel
+   * on top of a 440px post and hid it completely.
+   */
+  const fullscreen = fullscreenClaims > 0;
+  const inline = wideEnough || fullscreen;
+  const inlineWidth = wideEnough ? MESSAGE_WORKSPACE_WIDTH : MESSAGE_WORKSPACE_COMPACT_WIDTH;
 
   /**
    * Publish the width the rest of the layout should subtract.
@@ -137,7 +160,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
     if (typeof document === 'undefined') return undefined;
 
     const root = document.documentElement;
-    const width = open && inline ? `${MESSAGE_WORKSPACE_WIDTH}px` : '0px';
+    const width = open && inline ? `${inlineWidth}px` : '0px';
     root.style.setProperty('--message-workspace-width', width);
     root.dataset.messageOpen = open ? 'true' : 'false';
 
@@ -145,7 +168,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
       root.style.setProperty('--message-workspace-width', '0px');
       delete root.dataset.messageOpen;
     };
-  }, [inline, open]);
+  }, [inline, inlineWidth, open]);
 
   const openWorkspace = useCallback((conversationId?: string) => {
     setOpen(true);
@@ -198,7 +221,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
     return () => setFullscreenClaims((count) => Math.max(0, count - 1));
   }, []);
 
-  const placement: MessageWorkspacePlacement = fullscreenClaims > 0 ? 'fullscreen' : 'shell';
+  const placement: MessageWorkspacePlacement = fullscreen ? 'fullscreen' : 'shell';
 
   const value = useMemo<MessageWorkspaceContextValue>(() => ({
     open,
