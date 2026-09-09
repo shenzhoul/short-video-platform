@@ -6,8 +6,11 @@ import Carousel, {
   CarouselTimelineControl
 } from '@components/ui/carousel';
 import { VideoPlayerRef } from '@components/ui/video-player';
+import { useElementHeight } from '@hooks/use-element-height';
+import { useNavigationInputActive } from '@hooks/use-navigation-input-active';
 import { PostDetailMode, usePostDetailMode } from '@hooks/use-post-detail-mode';
 import { PostDetailSource, usePostDetailSequence } from '@hooks/use-post-detail-sequence';
+import { usePostDragNavigation } from '@hooks/use-post-drag-navigation';
 import { PostInteractionChangeHandler, usePostInteractionState } from '@hooks/use-post-interactions';
 import { PostNavigationDirection } from '@hooks/use-post-navigation-wheel';
 import { usePostRoom } from '@hooks/use-post-room';
@@ -20,12 +23,14 @@ import { useRecommendationWatchTracking } from '@hooks/use-recommendation-watch-
 import { IPost } from '@interfaces/post';
 import { GRAPHIC_SLIDE_DURATION_MS } from '@lib/post-graphic';
 import { useMessageWorkspace } from '@providers/message-workspace.provider';
-import { CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaChevronLeft, FaChevronRight, FaTimes } from 'react-icons/fa';
+import { CSSProperties, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { CopyIcon, PauseIcon, PlayIcon } from 'src/icons';
 
 import { getPostImages, isGraphicPost } from './home-feed-media';
+import PostDetailBackButton, { usePostDetailBackControl, usePostDetailBackOrigin } from './post-detail-back-control';
 import PostDetailDescription from './post-detail-description';
+import PostFeedDragViewport from './post-feed-drag-viewport';
 import PostNavigationControls from './post-navigation-controls';
 import PostVideoDetailPanel, { PostVideoDetailTab } from './post-video-detail-panel';
 import PostVideoStage, { PostVideoActionRail, VIDEO_DETAIL_PANEL_WIDTH } from './post-video-stage';
@@ -69,6 +74,8 @@ interface PostDetailModalProps {
    * loaded, so a refill in flight looks exactly like the end of the feed.
    */
   hasMoreAhead?: boolean;
+  /** Reports which list owns next/previous, so the surface can freeze its own session. */
+  onNavigationModeChange?: (mode: PostDetailMode) => void;
 }
 
 /** The side panel is owned by the modal, not by either layout. */
@@ -88,6 +95,17 @@ interface SequenceControl {
   hasMoreAhead: boolean;
 }
 
+/**
+ * Where Back returns to, decided once above the layout swap.
+ *
+ * Like the panel tab and the navigation mode, this must outlive the photo/video
+ * component swap — it is destroyed exactly when the viewer crosses a media-type
+ * boundary, which is the one moment it matters.
+ */
+interface BackOriginControl {
+  originPost: IPost;
+}
+
 interface DetailActionRailProps {
   post: IPost;
   mediaVariant: 'video' | 'graphic';
@@ -105,6 +123,62 @@ interface DetailActionRailProps {
   onFollow?: (creatorId: string) => void;
   onOpenPanel?: (tab: PostVideoDetailTab) => void;
   onAvatarClick?: () => void;
+}
+
+/**
+ * Touch navigation for the popup, expressed entirely in terms of the sequence
+ * the popup already navigates by.
+ *
+ * ## What this deliberately does not do
+ *
+ * It computes no index, reads no creator list, holds no cursor and knows no
+ * post id. It is handed `previousPost`, `nextPost` and `navigate` straight out
+ * of `usePostDetailSequence` — the same three values the Next and Previous
+ * buttons and the arrow keys use — so "swipe up" and "press Next" cannot
+ * disagree about which post comes next. Creator scope, pinned ordering, image
+ * and video inclusion, pagination, the tab rules and the edges are all decided
+ * upstream and inherited whole.
+ *
+ * The gesture engine is the one the feeds use (`usePostDragNavigation` and
+ * `PostFeedDragViewport`); this only chooses *what it wraps*. The feeds wrap
+ * the whole stage, panel included. The popup wraps the media alone, so the
+ * close button, the message button and the tab panel stay anchored while the
+ * post travels.
+ */
+function usePopupDrag({
+  stageRef, previousPost, nextPost, canNext, navigate, enabled
+}: {
+  stageRef: { current: HTMLElement | null };
+  previousPost: IPost | null;
+  nextPost: IPost | null;
+  canNext: boolean;
+  navigate: (direction: 'previous' | 'next') => void;
+  enabled: boolean;
+}) {
+  const itemHeight = useElementHeight(stageRef);
+  const drag = usePostDragNavigation({
+    canPrevious: Boolean(previousPost),
+    canNext,
+    onNavigate: navigate,
+    itemHeight,
+    enabled
+  });
+
+  const wrap = useCallback((stage: ReactNode, currentClassName = '') => (
+    <PostFeedDragViewport
+      itemHeight={itemHeight}
+      dragDeltaY={drag.dragDeltaY}
+      transitionMs={drag.transitionMs}
+      previewDirection={drag.previewDirection}
+      previousPost={previousPost}
+      nextPost={nextPost}
+      currentClassName={currentClassName}
+    >
+      {stage}
+    </PostFeedDragViewport>
+  ), [drag.dragDeltaY, drag.previewDirection, drag.transitionMs, itemHeight, nextPost, previousPost]);
+
+  return { handlers: drag.handlers, wrap, itemHeight };
 }
 
 function DetailActionRail({
@@ -139,12 +213,20 @@ function DetailActionRail({
       onFollow={onFollow}
       onOpenPanel={onOpenPanel}
       onAvatarClick={onAvatarClick}
+      /*
+        The capsule is a desktop affordance. On a compact viewport the gesture
+        *is* the navigation, and a floating pair of arrows over the media is
+        both redundant and in the way — `hidden` rather than transparent, so it
+        keeps no hit target and stays out of the tab order.
+      */
       topSlot={(
-        <PostNavigationControls
-          canPrevious={Boolean(previousPost)}
-          canNext={canNext}
-          onNavigate={onNavigate}
-        />
+        <div className="max-lg:hidden">
+          <PostNavigationControls
+            canPrevious={Boolean(previousPost)}
+            canNext={canNext}
+            onNavigate={onNavigate}
+          />
+        </div>
       )}
     />
   );
@@ -161,11 +243,15 @@ function GraphicPostDetail({
   mode,
   creatorId,
   hasMoreAhead,
+  originPost,
   targetCommentId = null,
   targetCommentFallbackId = null,
   onInteractionChange,
-  recommendationSessionId
-}: Pick<PostDetailModalProps, 'post' | 'posts' | 'source' | 'onClose' | 'onNavigate' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange' | 'recommendationSessionId'> & PanelTabControl & SequenceControl) {
+  recommendationSessionId,
+  // The graphic layout needs this for the same reason the video one does: a
+  // popup opened straight into the creator grid has nowhere to go Back to.
+  closeOnVideoModeBack = false
+}: Pick<PostDetailModalProps, 'post' | 'posts' | 'source' | 'onClose' | 'onNavigate' | 'targetCommentId' | 'targetCommentFallbackId' | 'onInteractionChange' | 'recommendationSessionId' | 'closeOnVideoModeBack'> & PanelTabControl & SequenceControl & BackOriginControl) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const setDetailPanelTab = onDetailPanelTabChange;
@@ -222,6 +308,7 @@ function GraphicPostDetail({
   const {
     creatorPosts,
     previousPost,
+    nextPost,
     canNext,
     navigate,
     handleWheel
@@ -233,16 +320,37 @@ function GraphicPostDetail({
     hasMoreAhead,
     onNavigate: handlePostNavigate
   });
+  const stageRef = useRef<HTMLElement>(null);
+  const drag = usePopupDrag({
+    stageRef, previousPost, nextPost, canNext, navigate, enabled: mode !== 'disabled'
+  });
   const handleOpenPanel = useCallback((tab: PostVideoDetailTab) => {
     setDetailPanelTab(detailPanelTab === tab ? null : tab);
   }, [detailPanelTab, setDetailPanelTab]);
+
+  /*
+    The same top-left control the video layout uses, driven by the same mode.
+    An image post with the Videos tab open must say Back and behave as Back.
+  */
+  const backControl = usePostDetailBackControl({
+    mode,
+    detailPanelTab,
+    onDetailPanelTabChange: setDetailPanelTab,
+    post,
+    originPost,
+    onNavigate,
+    onClose,
+    closeOnVideoModeBack
+  });
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = 'hidden';
     closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      // Escape leaves the Videos tab first; a second Escape closes the popup.
+      if (event.key === 'Escape') backControl.activate();
       if (event.key === 'ArrowUp') navigate('previous');
       if (event.key === 'ArrowDown') navigate('next');
     };
@@ -252,17 +360,19 @@ function GraphicPostDetail({
       window.removeEventListener('keydown', handleKeyDown);
       previouslyFocused?.focus();
     };
-  }, [navigate, onClose]);
+  }, [backControl, navigate]);
 
   if (!images.length) return null;
 
   return (
     <div
-      className="fixed inset-y-0 left-0 z-120 overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
+      className="fixed inset-y-0 left-0 z-120 touch-pan-x overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
+      data-post-detail-popup="graphic"
       role="dialog"
       aria-modal="true"
       aria-label="Graphic post details"
       onWheel={handleWheel}
+      {...drag.handlers}
       /*
        * Inset from the right by whatever the message workspace is taking,
        * rather than `inset-0`. The two surfaces coexist: opening messages from
@@ -284,15 +394,11 @@ function GraphicPostDetail({
       />
       <div className="pointer-events-none absolute inset-0 bg-black/35" />
 
-      <button
-        ref={closeButtonRef}
-        type="button"
-        onClick={onClose}
+      <PostDetailBackButton
+        control={backControl}
+        buttonRef={closeButtonRef}
         className="absolute left-8 max-lg:left-2 top-9 max-lg:top-2 z-50 flex h-16 w-16 max-lg:h-9 max-lg:w-9 cursor-pointer items-center justify-center rounded-full border border-white/15 text-2xl max-lg:text-base bg-black/25 text-white/80 backdrop-blur-md transition hover:bg-white/12 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        aria-label="Close graphic details"
-      >
-        <FaTimes />
-      </button>
+      />
 
       <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-black/15 px-4 text-sm text-white/75 backdrop-blur-md lg:flex">
         <span className="truncate">{description || `@${creatorName}`}</span>
@@ -317,7 +423,8 @@ function GraphicPostDetail({
       </div>
 
       <main
-        className="absolute inset-0 right-24 flex items-center justify-center"
+        ref={stageRef}
+        className="absolute inset-0 right-24 touch-pan-x"
         /*
           The gutter that keeps the media clear of the action rail. 6rem is the
           desktop reference; the rail itself is 4.25rem, so a narrow stage gives
@@ -328,43 +435,45 @@ function GraphicPostDetail({
           if (images.length > 1) setIsPlaying(current => !current);
         }}
       >
-        <Carousel
-          resetKey={post._id}
-          className="h-full w-full"
-          interval={GRAPHIC_SLIDE_DURATION_MS}
-          playing={slideshowPlaying}
-          slideClassName="h-full"
-          timelineAutoplay
-          onIndexChange={setActiveImageIndex}
-          control={(
-            <>
-              <CarouselNavigationButton
-                direction="previous"
-                className="absolute left-[18%] top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/30 text-lg text-white/80 backdrop-blur-md transition hover:bg-black/50 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
-              >
-                <FaChevronLeft />
-              </CarouselNavigationButton>
-              <CarouselNavigationButton
-                direction="next"
-                className="absolute right-[8%] top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/30 text-lg text-white/80 backdrop-blur-md transition hover:bg-black/50 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
-              >
-                <FaChevronRight />
-              </CarouselNavigationButton>
-              <CarouselTimelineControl className="pointer-events-none fixed inset-x-0 bottom-12 z-60 px-3" />
-            </>
+        {drag.wrap((
+          <Carousel
+            resetKey={post._id}
+            className="h-full w-full"
+            interval={GRAPHIC_SLIDE_DURATION_MS}
+            playing={slideshowPlaying}
+            slideClassName="h-full"
+            timelineAutoplay
+            onIndexChange={setActiveImageIndex}
+            control={(
+              <>
+                <CarouselNavigationButton
+                  direction="previous"
+                  className="absolute left-[18%] top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/30 text-lg text-white/80 backdrop-blur-md transition hover:bg-black/50 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+                >
+                  <FaChevronLeft />
+                </CarouselNavigationButton>
+                <CarouselNavigationButton
+                  direction="next"
+                  className="absolute right-[8%] top-1/2 z-30 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/30 text-lg text-white/80 backdrop-blur-md transition hover:bg-black/50 hover:text-white focus-visible:outline-2 focus-visible:outline-white"
+                >
+                  <FaChevronRight />
+                </CarouselNavigationButton>
+                <CarouselTimelineControl className="pointer-events-none fixed inset-x-0 bottom-12 z-60 px-3" />
+              </>
           )}
-        >
-          {images.map((image, index) => (
-            <div key={image._id || `${post._id}-${index}`} className="flex h-full w-full items-center justify-center px-24 max-lg:px-3 py-8 max-lg:py-4">
-              <img
-                src={image.url}
-                alt={`${description || 'Graphic post'} ${index + 1} of ${images.length}`}
-                className="h-full w-full object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.32)]"
-                draggable={false}
-              />
-            </div>
+          >
+            {images.map((image, index) => (
+              <div key={image._id || `${post._id}-${index}`} className="flex h-full w-full items-center justify-center px-24 max-lg:px-3 py-8 max-lg:py-4">
+                <img
+                  src={image.url}
+                  alt={`${description || 'Graphic post'} ${index + 1} of ${images.length}`}
+                  className="h-full w-full object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.32)]"
+                  draggable={false}
+                />
+              </div>
           ))}
-        </Carousel>
+          </Carousel>
+        ), 'flex items-center justify-center')}
         {!slideshowPlaying && images.length > 1 ? (
           <button
             type="button"
@@ -466,13 +575,14 @@ function VideoPostDetail({
   mode,
   creatorId,
   hasMoreAhead,
+  originPost,
   targetCommentId = null,
   targetCommentFallbackId = null,
   closeOnVideoModeBack = false,
   closeOnAvatarClick = false,
   onInteractionChange,
   recommendationSessionId
-}: PostDetailModalProps & PanelTabControl & SequenceControl) {
+}: PostDetailModalProps & PanelTabControl & SequenceControl & BackOriginControl) {
   const videoRef = useRef<VideoPlayerRef>(null);
   const videoModeOriginPostRef = useRef(post);
   const setDetailPanelTab = onDetailPanelTabChange;
@@ -509,6 +619,7 @@ function VideoPostDetail({
   const {
     creatorPosts: creatorVideos,
     previousPost,
+    nextPost,
     canNext,
     navigate,
     handleWheel
@@ -520,6 +631,10 @@ function VideoPostDetail({
     hasMoreAhead,
     onNavigate
   });
+  const stageRef = useRef<HTMLElement>(null);
+  const drag = usePopupDrag({
+    stageRef, previousPost, nextPost, canNext, navigate, enabled: mode !== 'disabled'
+  });
 
   const closeDetail = useCallback(() => {
     const currentTime = videoRef.current?.getVideoElement()?.currentTime;
@@ -527,22 +642,21 @@ function VideoPostDetail({
     onClose();
   }, [onClose, onPlaybackTimeChange]);
 
-  const backOrCloseDetail = useCallback(() => {
-    if (videoModeActive) {
-      if (closeOnVideoModeBack) {
-        closeDetail();
-        return;
-      }
-      // Leaving the grid closes the panel and returns to the post it was
-      // opened from. Closing the panel *is* leaving creator mode — the mode is
-      // derived from it — so there is nothing else to reset.
-      setDetailPanelTab(null);
-      const originPost = videoModeOriginPostRef.current;
-      if (originPost?._id !== post._id) onNavigate(originPost);
-      return;
-    }
-    closeDetail();
-  }, [closeDetail, closeOnVideoModeBack, onNavigate, post._id, setDetailPanelTab, videoModeActive]);
+  /*
+    The same control the graphic layout uses. It used to live only here, which
+    is why an image post never got a Back button.
+  */
+  const backControl = usePostDetailBackControl({
+    mode,
+    detailPanelTab,
+    onDetailPanelTabChange: setDetailPanelTab,
+    post,
+    originPost,
+    onNavigate,
+    onClose: closeDetail,
+    closeOnVideoModeBack
+  });
+  const backOrCloseDetail = backControl.activate;
 
   const handleVideoModeActiveChange = useCallback((active: boolean) => {
     if (active && !videoModeActive) videoModeOriginPostRef.current = post;
@@ -564,7 +678,9 @@ function VideoPostDetail({
 
   return (
     <div
+      data-post-detail-popup="video"
       onWheel={handleWheel}
+      {...drag.handlers}
       style={{
         /*
           Declared on the overlay root, not only inside `PostVideoStage`.
@@ -576,16 +692,20 @@ function VideoPostDetail({
         '--post-video-detail-panel-width': 'calc(100% * var(--post-detail-panel-ratio, 0.285714))',
         right: 'var(--message-workspace-width, 0px)'
       } as CSSProperties}
-      className="fixed inset-y-0 left-0 z-120 overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
+      /*
+        `touch-pan-x` is not decoration: the drag handlers are on this root, and
+        with the default `touch-action: auto` the browser claims a vertical
+        touch for scrolling and cancels the pointer stream before a single
+        `pointermove` is delivered. Measured — the video popup accepted no
+        upward drag at all until this was declared, while the graphic layout
+        (which already had it) worked.
+      */
+      className="fixed inset-y-0 left-0 z-120 touch-pan-x overflow-hidden bg-black text-white transition-[right] duration-200 ease-out motion-reduce:transition-none"
     >
-      <button
-        type="button"
-        onClick={backOrCloseDetail}
+      <PostDetailBackButton
+        control={backControl}
         className="absolute left-8 max-lg:left-2 top-9 max-lg:top-2 z-50 flex h-16 w-16 max-lg:h-9 max-lg:w-9 cursor-pointer items-center justify-center rounded-full border border-white/15 text-2xl max-lg:text-base bg-black/20 text-white/75 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        aria-label={videoModeActive ? 'Exit creator videos' : 'Close video'}
-      >
-        {videoModeActive ? <FaChevronLeft /> : <FaTimes />}
-      </button>
+      />
 
       <div className="absolute left-32 top-11 z-50 hidden h-10 w-72 items-center rounded-xl border border-white/25 bg-white/5 px-4 text-sm text-white/70 backdrop-blur-md lg:flex">
         <span className="truncate">{description}</span>
@@ -612,6 +732,13 @@ function VideoPostDetail({
       <PostVideoStage
         key={post._id}
         post={post}
+        /*
+          Only the player card and the action rail travel with the drag; the tab
+          panel `PostVideoStage` renders below them stays anchored, which is why
+          the popup wraps from inside the stage and the feeds wrap from outside.
+        */
+        stageRef={stageRef}
+        wrapStage={drag.wrap}
         playerId={`post-detail-${post._id}`}
         playerRef={videoRef}
         initialTime={initialTime}
@@ -704,11 +831,41 @@ export default function PostDetailModal(props: PostDetailModalProps) {
    * Held inside a layout, the captured creator was destroyed exactly when the
    * viewer stepped across a media-type boundary — the one moment it matters.
    */
+  /*
+   * Typing a comment or scrubbing the seek bar disables navigation, in the
+   * popup exactly as on the inline stage: both use the arrow keys or a
+   * vertical-ish drag over the media, and losing the post mid-gesture loses
+   * what the viewer was doing.
+   */
+  const inputActive = useNavigationInputActive();
   const { mode, creatorId } = usePostDetailMode({
     post: props.post,
     panelTab: detailPanelTab,
-    source: props.source
+    source: props.source,
+    inputActive
   });
+
+  /*
+    Tell the surface which list currently owns navigation.
+
+    The surface mounts the detail recommendation session, and that session must
+    freeze while the Videos tab is driving — otherwise a creator post looks to
+    it like a brand-new open and it reseeds, discarding the history the viewer
+    built before entering the tab.
+  */
+  const onModeChange = props.onNavigationModeChange;
+  useEffect(() => {
+    onModeChange?.(mode);
+  }, [mode, onModeChange]);
+
+  /*
+    Where Back returns to, remembered here for the same reason the panel tab is:
+    it has to survive the photo/video layout swap. Held inside a layout it was
+    re-seeded with the creator post the viewer had just opened, so Back left
+    them exactly where they already were — but only when the media type changed,
+    which is what made it look like a photo-only defect.
+  */
+  const originPost = usePostDetailBackOrigin(mode, props.post);
 
   const sequenceControl = {
     mode,
@@ -727,10 +884,12 @@ export default function PostDetailModal(props: PostDetailModalProps) {
         detailPanelTab={detailPanelTab}
         onDetailPanelTabChange={setDetailPanelTab}
         {...sequenceControl}
+        originPost={originPost}
         targetCommentId={props.targetCommentId}
         targetCommentFallbackId={props.targetCommentFallbackId}
         onInteractionChange={props.onInteractionChange}
         recommendationSessionId={props.recommendationSessionId}
+        closeOnVideoModeBack={props.closeOnVideoModeBack}
       />
     );
   }
@@ -741,6 +900,7 @@ export default function PostDetailModal(props: PostDetailModalProps) {
       detailPanelTab={detailPanelTab}
       onDetailPanelTabChange={setDetailPanelTab}
       {...sequenceControl}
+      originPost={originPost}
     />
   );
 }

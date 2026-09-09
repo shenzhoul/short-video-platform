@@ -46,10 +46,10 @@ describe('usePostDetailMode', () => {
     expect(result.current.creatorId).toBe(IRIS);
   });
 
-  it('is locked mode for any other open tab', () => {
+  it('is disabled for any other open tab', () => {
     ['details', 'comments', 'related', 'ask-ai'].forEach((tab) => {
       const { result } = renderMode({ post: make('v1', IRIS), panelTab: tab, source: 'home-feed' });
-      expect(result.current.mode).toBe('locked');
+      expect(result.current.mode).toBe('disabled');
       expect(result.current.creatorId).toBeNull();
     });
   });
@@ -110,10 +110,10 @@ describe('usePostDetailMode', () => {
     };
 
     step('videos', 'creator', IRIS); // recommendation -> creator
-    step('details', 'locked', null); // creator -> locked
-    step('videos', 'creator', IRIS); // locked -> creator
+    step('details', 'disabled', null); // creator -> disabled
+    step('videos', 'creator', IRIS); // disabled -> creator
     step(null, 'recommendation', null); // creator -> recommendation
-    step('comments', 'locked', null); // recommendation -> locked
-    step(null, 'recommendation', null); // locked -> recommendation
+    step('comments', 'disabled', null); // recommendation -> disabled
+    step(null, 'recommendation', null); // disabled -> recommendation
   });
 });

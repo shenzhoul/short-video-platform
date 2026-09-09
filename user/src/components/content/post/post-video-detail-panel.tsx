@@ -254,7 +254,7 @@ export default function PostVideoDetailPanel({
 
   return (
     <aside
-      className="absolute inset-y-0 z-70 flex flex-col justify-between overflow-hidden border-l border-white/10 bg-[#191a23] text-white shadow-[-24px_0_60px_rgba(0,0,0,.22)]"
+      className="@container/detailpanel absolute inset-y-0 z-70 flex flex-col justify-between overflow-hidden border-l border-white/10 bg-[#191a23] text-white shadow-[-24px_0_60px_rgba(0,0,0,.22)]"
       style={{ right: rightOffset, width: 'var(--post-video-detail-panel-width, 28.5714%)' }}
       onWheel={(event) => event.stopPropagation()}
     >
@@ -272,7 +272,7 @@ export default function PostVideoDetailPanel({
               aria-label={tab.label}
               title={tab.label}
               data-panel-tab={activeTab === tab.key ? 'active' : undefined}
-              className={`relative flex h-15 max-lg:h-9 shrink-0 whitespace-nowrap items-center justify-center border-b-[3px] max-lg:border-b-2 max-lg:px-0 text-[16px] max-lg:text-[7px] min-[420px]:max-lg:text-[8px] font-normal leading-14.25 max-lg:leading-9 transition-colors cursor-pointer text-white/45 hover:text-white/90 hover:border-white/5 ${activeTab === tab.key
+              className={`relative flex h-15 max-lg:h-9 shrink-0 whitespace-nowrap items-center justify-center border-b-[3px] max-lg:border-b-2 max-lg:px-0 text-[16px] @max-[10.5rem]/detailpanel:text-[7px] @max-[8.6rem]/detailpanel:text-[6px] max-lg:text-[8px] font-normal leading-14.25 max-lg:leading-9 transition-colors cursor-pointer text-white/45 hover:text-white/90 hover:border-white/5 ${activeTab === tab.key
                 ? 'border-[#ff2c55]! text-white! cursor-default!'
                 : 'border-transparent text-white/60'
                 }`}

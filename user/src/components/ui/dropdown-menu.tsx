@@ -73,13 +73,38 @@ const Dropdown: FC<DropdownProps> = ({
     }
   }, [closeDropdown]);
 
+  /*
+    Escape is listened for on the document, not on the wrapper.
+
+    The wrapper's `onKeyDown` below only fires while focus is inside the
+    dropdown's own subtree — and a `triggerMode="hover"` menu is opened by a
+    pointer and never takes focus at all. The account menu therefore ignored
+    Escape entirely: measured at 440x956, Escape left the panel open while an
+    outside click closed it. The wrapper handler stays for the focused case; a
+    close is idempotent, so both firing is harmless.
+
+    Closing here is immediate even in hover mode. The 160ms grace exists so the
+    pointer can travel from the trigger to the panel; pressing Escape is an
+    explicit dismissal and should not wait for it.
+  */
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !isOpen) return;
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setOpen(false);
+  }, [isOpen, setOpen]);
+
   useEffect(() => {
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
-  }, [handleClickOutside]);
+  }, [handleClickOutside, handleEscape]);
 
   const positionClass = {
     left: 'left-0',

@@ -12,7 +12,7 @@ import { usePostDetailSequence } from './use-post-detail-sequence';
  *
  * ```
  * Videos tab OPEN    -> mode 'creator'        -> next/previous walk that creator
- * any other tab OPEN -> mode 'locked'         -> next/previous do nothing
+ * any other tab OPEN -> mode 'disabled'         -> next/previous do nothing
  * no tab OPEN        -> mode 'recommendation' -> next/previous walk the feed given to the modal
  * ```
  *
@@ -91,9 +91,9 @@ describe('usePostDetailMode', () => {
     expect(mode.creatorId).toBe('creator-a');
   });
 
-  it('is locked for any other tab', () => {
+  it('is disabled for any other tab', () => {
     render(<Probe openPost={post('r1', 'creator-a')} panelTab="comments" />);
-    expect(mode).toEqual({ mode: 'locked', creatorId: null });
+    expect(mode).toEqual({ mode: 'disabled', creatorId: null });
   });
 
   it('returns to recommendation and drops the creator the moment Videos closes', () => {

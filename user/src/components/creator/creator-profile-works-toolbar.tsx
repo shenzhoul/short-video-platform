@@ -75,29 +75,58 @@ export default function CreatorProfileWorksToolbar({
     <div className={`sticky top-14 max-lg:top-8 z-50 transition-colors ${scrollStage >= 2 ? 'bg-(--page-bg) pt-2 max-lg:pt-1' : ''}`}>
       <div className='flex w-full relative items-center mx-auto'>
         <div className='w-full h-9 max-lg:h-7 flex relative items-center justify-between gap-2 mx-0 my-2.75 max-lg:my-1'>
-          <div ref={tabStripRef} className='flex h-14 max-lg:h-7 min-w-0 flex-1 relative box-border max-lg:overflow-x-auto max-lg:overflow-y-hidden max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden'>
-            <div className='shrink-0 relative outline-none whitespace-nowrap'>
+          {/*
+            The main tabs fit; they do not scroll.
+
+            They used to be a horizontal scroller, which put "Collection" half
+            off the edge and needed a fade to explain itself. The reference
+            shows all of them at once, so the strip is `overflow-hidden` and the
+            tabs share the width: each may shrink and ellipsizes its own label
+            rather than pushing the strip wider. The full label stays in the
+            accessible name and the `title`, so the visual truncation loses
+            nothing.
+          */}
+          <div
+            ref={tabStripRef}
+            data-profile-tab-strip
+            className='flex h-14 max-lg:h-7 min-w-0 flex-1 relative box-border overflow-hidden'
+          >
+            <div className='shrink-0 max-lg:shrink max-lg:min-w-0 max-lg:flex-1 relative outline-none whitespace-nowrap max-lg:flex max-lg:items-center'>
               <Tabs tabs={profileTabs} value={activeTab} onChange={onTabChange}>
                 {({ getTabProps, isActive }) => (
                   <>
                     {profileTabs.map((tab) => (
                       <div
-                        className={`inline-block mr-6 max-lg:mr-3 text-[16px] py-3 max-lg:py-1.5 px-0 float-left ${isActive(tab) ? 'border-b-[3px] border-solid border-[rgba(254,44,85,1)] text-(--text-strong)' : 'text-(--text-muted) hover:text-(--text) hover:border-b-[3px] hover:border-solid hover:border-(--border-faint)'}`}
+                        className={`inline-block mr-6 max-lg:mr-2 max-lg:last:mr-0 max-lg:min-w-0 text-[16px] py-3 max-lg:py-1.5 px-0 float-left max-lg:float-none ${isActive(tab)
+                          ? 'max-lg:shrink-0 border-b-[3px] border-solid border-[rgba(254,44,85,1)] text-(--text-strong)'
+                          : 'max-lg:flex-1 max-lg:basis-0 text-(--text-muted) hover:text-(--text) hover:border-b-[3px] hover:border-solid hover:border-(--border-faint)'}`}
                         key={tab.key}
                         data-profile-tab={isActive(tab) ? 'active' : undefined}
+                        // The visual label may be clipped at a compact width;
+                        // the accessible name and the tooltip always carry the
+                        // whole thing, including the count.
+                        aria-label={[
+                          tab.label,
+                          typeof tab.count === 'number' ? String(tab.count) : null,
+                          // The padlock is dropped from the compact row to buy
+                          // its tab ~11px of a 35px share, so the name has to
+                          // carry what the glyph was saying.
+                          tab.locked ? '(locked)' : null
+                        ].filter(Boolean).join(' ')}
+                        title={tab.label}
                         {...getTabProps(tab)}
                       >
-                        <div className='flex cursor-pointer mr-0 items-center'>
-                          <h2 className='font-semibold flex items-center'>
-                            <span className='mr-1.5 max-lg:mr-1 text-lg max-lg:text-[12px] leading-6.5 max-lg:leading-4'>
+                        <div className='flex cursor-pointer mr-0 min-w-0 items-center'>
+                          <h2 className='font-semibold flex min-w-0 items-center'>
+                            <span className='mr-1.5 max-lg:mr-0.5 min-w-0 truncate text-lg max-lg:text-[11px] leading-6.5 max-lg:leading-4'>
                               {tab.label}
                             </span>
                             {typeof tab.count === 'number' ? (
-                              <span className='text-lg max-lg:text-[12px] leading-6.5 max-lg:leading-4'>{tab.count}</span>
+                              <span className='shrink-0 text-lg max-lg:text-[11px] leading-6.5 max-lg:leading-4'>{tab.count}</span>
                             ) : null}
                           </h2>
                           {tab.locked ? (
-                            <LockIcon className='text-lg max-lg:text-[11px]' />
+                            <LockIcon className='shrink-0 text-lg max-lg:hidden' />
                           ) : null}
                         </div>
                       </div>
@@ -119,12 +148,21 @@ export default function CreatorProfileWorksToolbar({
           <div className='h-12.5` mb-1.5 flex items-center' />
           {canEditProfile ? (
             <div className='h-12.5` mb-1.5 flex shrink-0 items-center'>
+              {/*
+                Counted in the tabs' width budget, so it takes the compact
+                short label with the full name kept accessible. "Batch
+                management" is ~108px at 10px against ~42px for "Manage", which
+                is the difference between the tab strip fitting and not.
+              */}
               <button
                 type='button'
                 onClick={onToggleBatchMode}
+                aria-label={batchMode ? 'Exit management' : 'Batch management'}
+                title={batchMode ? 'Exit management' : 'Batch management'}
                 className='min-w-28 max-lg:min-w-0 h-7 max-lg:h-5 shrink-0 cursor-pointer whitespace-nowrap px-3 max-lg:px-1.5 text-(--text-soft) bg-(--surface-muted) rounded-lg text-center text-[13px] max-lg:text-[10px] leading-7 max-lg:leading-5 transition hover:text-(--text-strong) hover:bg-(--active-bg)'
               >
-                {batchMode ? 'Exit management' : 'Batch management'}
+                <span className='max-lg:hidden'>{batchMode ? 'Exit management' : 'Batch management'}</span>
+                <span className='lg:hidden'>{batchMode ? 'Exit' : 'Manage'}</span>
               </button>
             </div>
           ) : null}
@@ -132,31 +170,45 @@ export default function CreatorProfileWorksToolbar({
       </div>
       <div className='relative'>
         <div className='w-full'>
-          <div className='h-11 max-lg:h-auto p-0 min-h-10 max-lg:min-h-0 flex items-center w-full'>
-            <div className={`h-11 max-lg:h-7 w-full flex items-center justify-between gap-2 ${batchMode ? 'rounded-lg bg-(--surface-muted) px-3' : ''}`}>
+          {/*
+            With the compact search hidden, a tab that also has no filters (the
+            liked tab passes an empty list) would leave an empty toolbar band.
+            The row is dropped entirely in that case rather than collapsed to
+            zero height, so nothing reserves space and nothing is focusable
+            inside it.
+          */}
+          <div className={`h-11 max-lg:h-auto p-0 min-h-10 max-lg:min-h-0 flex items-center w-full ${!batchMode && !filterTabs.length ? 'max-lg:hidden' : ''}`}>
+            <div className={`h-11 max-lg:h-7 w-full min-w-0 flex items-center justify-between gap-2 max-lg:gap-1.5 ${batchMode ? 'rounded-lg bg-(--surface-muted) px-3 max-lg:px-1.5' : ''}`}>
               {batchMode ? (
-                <div className='flex h-9 items-center gap-4 text-[13px] text-(--text-muted)'>
+                <div
+                  data-batch-toolbar
+                  className='flex h-9 max-lg:h-7 min-w-0 flex-1 items-center gap-4 max-lg:gap-2 text-[13px] max-lg:text-[10px] text-(--text-muted) max-lg:overflow-x-auto max-lg:whitespace-nowrap max-lg:[scrollbar-width:none] max-lg:[&::-webkit-scrollbar]:hidden'
+                >
                   <button
                     type='button'
                     onClick={onToggleSelectAll}
-                    className='flex cursor-pointer items-center gap-2 text-(--text) hover:text-(--text-strong)'
+                    className='flex shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1 text-(--text) hover:text-(--text-strong)'
                   >
-                    <span className={`flex h-4 w-4 items-center justify-center rounded ${allSelected || partiallySelected ? 'bg-[#ff2c55] text-white' : 'border border-(--border-strong)'}`}>
+                    <span className={`flex h-4 w-4 max-lg:h-3 max-lg:w-3 shrink-0 items-center justify-center rounded ${allSelected || partiallySelected ? 'bg-[#ff2c55] text-white' : 'border border-(--border-strong)'}`}>
                       {allSelected ? <FiCheck className='text-[11px]' /> : null}
                       {partiallySelected ? <span className='block h-0.5 w-2 rounded-full bg-white' /> : null}
                     </span>
                     <span>{allSelected ? 'Cancel select all' : 'Select all'}</span>
                   </button>
-                  <span className='h-4 border-l border-(--divider-strong)' />
-                  <span>{selectedCount} {selectedCount === 1 ? 'work' : 'works'} selected</span>
-                  <span className='h-4 border-l border-(--divider-strong)' />
+                  <span className='h-4 max-lg:h-3 shrink-0 border-l border-(--divider-strong)' />
+                  {/*
+                    The count is the one thing that must always be readable, so
+                    it keeps its word at every width — it just stops wrapping.
+                  */}
+                  <span className='shrink-0'>{selectedCount} {selectedCount === 1 ? 'work' : 'works'} selected</span>
+                  <span className='h-4 max-lg:h-3 shrink-0 border-l border-(--divider-strong)' />
                   <button
                     type='button'
                     disabled={!selectedCount || isProcessing}
                     onClick={onExecuteSelected}
-                    className='flex cursor-pointer items-center gap-1.5 text-(--text-muted) transition hover:text-[#ff2c55] disabled:cursor-not-allowed disabled:opacity-40'
+                    className='flex shrink-0 cursor-pointer items-center gap-1.5 max-lg:gap-1 text-(--text-muted) transition hover:text-[#ff2c55] disabled:cursor-not-allowed disabled:opacity-40'
                   >
-                    <FiTrash2 />
+                    <FiTrash2 className='shrink-0' />
                     <span>
                       {isProcessing
                         ? managementVariant === 'delete' ? 'Deleting...' : 'Removing...'
@@ -167,11 +219,12 @@ export default function CreatorProfileWorksToolbar({
                     <button
                       type='button'
                       disabled
-                      className='flex items-center gap-1.5 text-(--text-disabled)'
+                      className='flex shrink-0 items-center gap-1.5 max-lg:gap-1 text-(--text-disabled)'
                       title='Permission settings will be available later'
                     >
-                      <LockIcon className='text-sm' />
-                      <span>Permission settings</span>
+                      <LockIcon className='text-sm max-lg:text-[11px] shrink-0' />
+                      <span className='max-lg:hidden'>Permission settings</span>
+                      <span className='lg:hidden'>Permissions</span>
                     </button>
                   ) : null}
                 </div>
@@ -201,22 +254,25 @@ export default function CreatorProfileWorksToolbar({
                   ) : null}
                 </div>
               )}
-              <div className='h-full flex shrink-0 items-center relative'>
-                <div className='w-34.5 max-lg:w-auto h-9 flex relative items-center justify-end'>
-                  <label className='flex w-full justify-center  items-center cursor-text text-(--text-subtle) transition hover:text-(--text-soft)'>
+              <div className='h-full flex shrink-0 items-center relative max-lg:hidden'>
+                <div className='w-34.5 max-lg:w-auto h-9 max-lg:h-7 flex relative items-center justify-end'>
+                  <label
+                    className='flex w-full justify-center items-center cursor-text text-(--text-subtle) transition hover:text-(--text-soft)'
+                    aria-label={managementVariant === 'delete' ? 'Search for work' : 'Search liked'}
+                  >
                     <SearchIcon className='mt-0.75 shrink-0 text-2xl max-lg:text-base' />
-                    <span className='ml-1.5 block whitespace-nowrap text-[13px] max-lg:text-[12px] font-medium leading-4.25 hover:border-b hover:border-solid hover:border-(--text-soft)'>
+                    <span className={`ml-1.5 max-lg:ml-1 block whitespace-nowrap text-[13px] max-lg:text-[10px] font-medium leading-4.25 hover:border-b hover:border-solid hover:border-(--text-soft) ${batchMode ? 'max-lg:hidden' : ''}`}>
                       {managementVariant === 'delete' ? 'Search for work' : 'Search liked'}
                     </span>
                   </label>
                 </div>
                 {managementVariant === 'delete' ? (
                   <>
-                    <div className='mx-3 max-lg:mx-1.5 h-3 shrink-0 border-l-(--divider-strong) border-b-0 border-l border-solid inline-block align-middle' />
-                    <div className='cursor-pointer flex relative shrink-0 items-center whitespace-nowrap ml-0 text-(--text-subtle) max-lg:text-[12px]'>
-                      <FiCalendar className='mr-1 text-[13px]' />
+                    <div className={`mx-3 max-lg:mx-1.5 h-3 shrink-0 border-l-(--divider-strong) border-b-0 border-l border-solid inline-block align-middle ${batchMode ? 'max-lg:hidden' : ''}`} />
+                    <div className={`cursor-pointer flex relative shrink-0 items-center whitespace-nowrap ml-0 text-(--text-subtle) max-lg:text-[10px] ${batchMode ? 'max-lg:hidden' : ''}`}>
+                      <FiCalendar className='mr-1 max-lg:mr-0.5 text-[13px] max-lg:text-[11px]' />
                       <span>Date filtering</span>
-                      <FiChevronDown className='ml-1 text-[14px]' />
+                      <FiChevronDown className='ml-1 max-lg:ml-0.5 text-[14px] max-lg:text-[11px]' />
                     </div>
                   </>
                 ) : null}

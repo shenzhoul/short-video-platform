@@ -54,25 +54,35 @@ describe('useRecommendationPhotoDwell', () => {
     expect(mockEnqueue.mock.calls[0][0].postId).toBe('post-1');
 
     mockEnqueue.mockClear();
-    act(() => { jest.advanceTimersByTime(1000); });
     const { unmount } = render(<Probe postId="post-2" />);
+    act(() => { jest.advanceTimersByTime(1000); });
     unmount();
-    // The rerendered instance's own unmount also flushes post-2's dwell.
+    // The new exposure reports its own dwell, once.
     expect(mockEnqueue.mock.calls.some((c) => c[0].postId === 'post-2')).toBe(true);
+    expect(mockEnqueue.mock.calls.filter((c) => c[0].postId === 'post-2')).toHaveLength(1);
   });
 
-  it('flushes when the tab goes hidden and keeps accumulating if it becomes visible again', () => {
-    render(<Probe />);
+  it('banks dwell when the tab goes hidden without emitting, and reports once for the exposure', () => {
+    const { unmount } = render(<Probe />);
     act(() => { jest.advanceTimersByTime(1500); });
     act(() => { setVisibility('hidden'); });
 
-    expect(mockEnqueue).toHaveBeenCalledTimes(1);
-    expect(mockEnqueue.mock.calls[0][0].dwellMs).toBeGreaterThanOrEqual(1400);
+    // Hiding is not the end of the exposure. Emitting here *and* on unmount is
+    // what sent two `photo_dwell` events for one identity — 9 of the 19 real
+    // duplicate-key rejections in the review API's log.
+    expect(mockEnqueue).not.toHaveBeenCalled();
 
+    act(() => { jest.advanceTimersByTime(5000); });  // time away, not dwell
     act(() => { setVisibility('visible'); });
     act(() => { jest.advanceTimersByTime(1000); });
-    // Still mounted on the same post — no forced flush yet, just resumed accumulation.
+    expect(mockEnqueue).not.toHaveBeenCalled();
+
+    unmount();
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    const { dwellMs } = mockEnqueue.mock.calls[0][0];
+    // Both visible spans, and none of the hidden one.
+    expect(dwellMs).toBeGreaterThanOrEqual(2400);
+    expect(dwellMs).toBeLessThan(5000);
   });
 
   it('clamps an absurdly long dwell (e.g. a tab left open) to the configured maximum', () => {

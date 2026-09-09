@@ -218,7 +218,47 @@ export const CHAIN_POLICY = {
 /** Post Detail recommendation-session policy (Home / notification / direct-link anchors). */
 export const DETAIL_SESSION_POLICY = {
   ttlSeconds: 30 * 60,
-  maxItems: 60
+  maxItems: 60,
+  /**
+   * How many eligible posts the detail engine retrieves before scoring.
+   *
+   * It was 30, sorted by recency — and because the session seed only jitters a
+   * score by `SESSION_JITTER_MAGNITUDE` (0.03), the top of that ranking was the
+   * same post for every session on the same catalogue. Two unrelated popups
+   * therefore replayed an identical A-B-C. A wider pool is what gives the
+   * seeded selection below something to choose between; it is still bounded so
+   * retrieval stays one indexed query.
+   */
+  candidatePoolSize: 200,
+  /**
+   * How many top-scored candidates the seeded draw can reach.
+   *
+   * A window of 8 with a uniform draw was measured over five fresh guest
+   * sessions x ten steps: the fifty positions were filled by a small recurring
+   * group, because every step re-drew from the same eight highest-scored posts.
+   * Reordering one small group is not variation.
+   *
+   * Measured over five seeded sessions x ten steps against a 120-post ranking,
+   * counting distinct posts across all fifty positions:
+   *
+   *   window 40, decay 1.0  -> 27 distinct   (head:tail 60:1)
+   *   window 40, decay 0.7  -> 31 distinct   (head:tail 13:1)
+   *   window 60, decay 0.7  -> 34 distinct   (head:tail 25:1)
+   *
+   * 60/0.7 is chosen because widening the window improves coverage *and*
+   * restores head preference — a wider window spreads the same decay curve, so
+   * rank 0 keeps a 25x advantage over the last rank while fifty positions reach
+   * 34 distinct posts.
+   */
+  selectionWindow: 60,
+  /**
+   * Rank-weight decay for the seeded draw: `weight(i) = 1 / (i + 1) ** alpha`.
+   *
+   * 0.7 rather than the plain harmonic 1.0: at 1.0 the head is so dominant that
+   * fifty positions covered only 27 distinct posts. Raising it concentrates on
+   * the head, lowering it flattens toward a uniform shuffle of the window.
+   */
+  selectionRankDecay: 0.7
 } as const;
 
 /**

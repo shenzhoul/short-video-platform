@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash, randomUUID } from 'crypto';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ObjectId } from 'mongodb';
@@ -23,6 +24,117 @@ import {
 import { RecommendationEventItemPayload } from 'src/payloads/content/post/recommendation-event.payload';
 import { FollowService } from 'src/services/community/follow';
 import { RecommendationAffinityService } from './recommendation-affinity.service';
+
+/**
+ * Name of the unique index that implements replay protection.
+ *
+ * A collision on *this* index is the dedupe doing its job, not a failure. Any
+ * other duplicate key is a real conflict and must still be reported.
+ */
+const DEDUPE_INDEX = 'uq_recommendation_event_dedupe';
+
+/** One write error out of an unordered bulk insert, in either driver shape. */
+export interface BulkWriteErrorLike {
+  code?: number;
+  keyPattern?: Record<string, unknown>;
+  errmsg?: string;
+  err?: { code?: number; keyPattern?: Record<string, unknown>; errmsg?: string };
+}
+
+/**
+ * Whether a write error is the replay-protection index rejecting a duplicate.
+ *
+ * Checked by `keyPattern.dedupeKey` — and by the index name when the driver
+ * supplies only a message — rather than by `code === 11000` alone, so a
+ * collision on some *other* unique index is never silently swallowed as an
+ * expected no-op. That is the failure mode `.agents/rules/api.md` warns about.
+ */
+export function isDedupeCollision(error: BulkWriteErrorLike): boolean {
+  const detail = error?.err ?? error;
+  if (detail?.code !== 11000) return false;
+  if (detail.keyPattern && Object.prototype.hasOwnProperty.call(detail.keyPattern, 'dedupeKey')) return true;
+  // Older drivers report only the message; fall back to the index name, never
+  // to the bare code.
+  return typeof detail.errmsg === 'string' && detail.errmsg.includes(DEDUPE_INDEX);
+}
+
+/**
+ * Split an unordered bulk-write rejection into "the dedupe index refused a
+ * replay" and everything else.
+ *
+ * `insertMany(..., { ordered: false })` rejects if *any* document failed, so a
+ * single expected replay used to be reported as "partial failures" at WARN,
+ * with the full dedupe key. On a live feed that is one warning per concurrent
+ * duplicate — the log in this repo showed several per minute, all of them the
+ * system working correctly.
+ */
+export function partitionWriteErrors(error: any): { deduped: number; other: BulkWriteErrorLike[] } {
+  const writeErrors: BulkWriteErrorLike[] = Array.isArray(error?.writeErrors)
+    ? error.writeErrors
+    : (error?.code === 11000 || error?.err?.code === 11000 ? [error] : []);
+  if (!writeErrors.length) return { deduped: 0, other: [error] };
+
+  const other = writeErrors.filter((entry) => !isDedupeCollision(entry));
+  return { deduped: writeErrors.length - other.length, other };
+}
+
+/** A short, stable, non-reversible tag for a value that must never be logged. */
+export function shortHash(value: string | null | undefined): string {
+  if (!value) return 'none';
+  return createHash('sha256').update(String(value)).digest('hex').slice(0, 8);
+}
+
+/**
+ * Metadata for one prepared insert, held at exactly the index the document
+ * occupies in the `insertMany` array.
+ *
+ * This is the whole point: Mongo reports a rejection as `writeErrors[].index`
+ * into the array we submitted, so the only reliable way back to *what* was
+ * rejected is an array we built alongside it. Recovering it from the error
+ * instead does not work — `keyValue` is populated by some driver paths and not
+ * others, which is why every collision in the review log read as `#unknown`
+ * despite the event type being known.
+ */
+export interface PreparedInsertMeta {
+  operationIndex: number;
+  eventType: string;
+  dedupeKeyHash: string;
+  sessionIdHash: string;
+  postId: string;
+  exposureIdHash: string;
+  batchId: string;
+  requestId: string;
+  path: 'insert' | 'update';
+}
+
+/**
+ * A short, non-sensitive description of which events collided.
+ *
+ * Every field is either an id that is already public (the post) or a hash, so
+ * a subject id, a token or a whole dedupe key is never written. `index` maps
+ * into `meta`, which was built beside `insertDocs`; the error's own `keyValue`
+ * is only a fallback for the case where Mongo rejected something we did not
+ * prepare, which would itself be a bug worth seeing.
+ */
+function summariseDedupeCollisions(error: any, meta: PreparedInsertMeta[]): string {
+  const writeErrors: any[] = Array.isArray(error?.writeErrors) ? error.writeErrors : [error];
+  const parts = writeErrors.slice(0, 5).map((entry) => {
+    const detail = entry?.err ?? entry;
+    const index = typeof detail?.index === 'number' ? detail.index : null;
+    const row = index !== null ? meta[index] : null;
+    if (row) {
+      return `${row.eventType}#${row.dedupeKeyHash}`
+        + ` op=${row.operationIndex} post=${row.postId} session=${row.sessionIdHash}`
+        + ` exposure=${row.exposureIdHash} batch=${row.batchId} req=${row.requestId} path=${row.path}`;
+    }
+    // No prepared row for this index: say so explicitly rather than printing
+    // `unknown`, which reads like a missing event type rather than a missing
+    // mapping.
+    const fallbackKey = detail?.keyValue?.dedupeKey;
+    return `unmapped-operation#${shortHash(fallbackKey)} op=${index === null ? 'none' : index}`;
+  });
+  return parts.length ? `[${parts.join(' | ')}]` : '';
+}
 
 /** Event types deduped per (session, post, type) — one exposure, one count, retries are no-ops. */
 const DEDUPED_EVENT_TYPES = new Set<RecommendationEventType>([
@@ -429,7 +541,54 @@ export class RecommendationEventService {
       });
     const rejected = items.length - withDedupeKeys.length;
 
-    const candidateKeys = withDedupeKeys.map((e) => e.dedupeKey).filter(Boolean) as string[];
+    /*
+     * One identity, one write — decided before anything is prepared.
+     *
+     * `existingByKey` below answers "is this already stored", which says
+     * nothing about two copies arriving together in *this* request. Both then
+     * passed the pre-check, both became inserts, and the unique index rejected
+     * the second: that is the whole of the duplicate traffic observed on the
+     * review API, across `photo_dwell`, `final_watch` and `detail_open`.
+     *
+     * For an updatable type the *last* copy is kept, because these are
+     * monotonic corrections — a `final_watch` at 8s supersedes the same
+     * exposure's 5s, and the server still clamps and merges it afterwards. For
+     * every other type the first is kept and later copies are no-ops, which is
+     * what "a retry keeps the same identity" means.
+     */
+    const withinBatchDuplicates = new Map<string, number>();
+    const collapsed: typeof withDedupeKeys = [];
+    const positionByKey = new Map<string, number>();
+    withDedupeKeys.forEach((entry) => {
+      const { dedupeKey, item } = entry;
+      if (!dedupeKey) {
+        collapsed.push(entry);
+        return;
+      }
+      const seenAt = positionByKey.get(dedupeKey);
+      if (seenAt === undefined) {
+        positionByKey.set(dedupeKey, collapsed.length);
+        collapsed.push(entry);
+        return;
+      }
+      withinBatchDuplicates.set(dedupeKey, (withinBatchDuplicates.get(dedupeKey) || 0) + 1);
+      if (UPDATABLE_EVENT_TYPES.has(item.eventType)) collapsed[seenAt] = entry;
+    });
+
+    const withinBatchCollapsed = Array.from(withinBatchDuplicates.values()).reduce((a, b) => a + b, 0);
+    if (withinBatchDuplicates.size) {
+      const collapsedCount = withinBatchCollapsed;
+      const sample = Array.from(withinBatchDuplicates.keys()).slice(0, 5).map((key) => {
+        const owner = withDedupeKeys.find((e) => e.dedupeKey === key)!;
+        return `${owner.item.eventType}#${shortHash(key)} post=${owner.item.postId} session=${shortHash(owner.item.sessionId)}`;
+      });
+      this.logger.debug(
+        `Recommendation events collapsed ${collapsedCount} duplicate(s) within one request `
+        + `[${sample.join(' | ')}]`
+      );
+    }
+
+    const candidateKeys = collapsed.map((e) => e.dedupeKey).filter(Boolean) as string[];
     const existingByKey = candidateKeys.length
       ? new Map((await this.eventModel
         .find({ dedupeKey: { $in: candidateKeys } })
@@ -443,13 +602,13 @@ export class RecommendationEventService {
     // Seeds the replay anti-spam cap from *persisted* history (not just this
     // batch), grouped by (session, post), so splitting seek-spam across
     // several requests cannot get around `maxReplaysCountedPerExposure`
-    // (rules/instructions §1.3). ` ` is used as the join separator
+    // (rules/instructions §1.3). `\u0000` is used as the join separator
     // since `sessionId` is an opaque client/Redis-generated string that is
     // not guaranteed free of `:`.
-    const replayKeyFor = (sessionId: string, postId: string): string => `${sessionId} ${postId}`;
+    const replayKeyFor = (sessionId: string, postId: string): string => `${sessionId}\u0000${postId}`;
     const replayCounts = new Map<string, number>();
     const replayPairs = new Map<string, { sessionId: string; postId: ObjectId }>();
-    withDedupeKeys.forEach(({ item }) => {
+    collapsed.forEach(({ item }) => {
       if (item.eventType !== RECOMMENDATION_EVENT_TYPES.REPLAY) return;
       replayPairs.set(replayKeyFor(item.sessionId, item.postId), { sessionId: item.sessionId, postId: new ObjectId(item.postId) });
     });
@@ -475,7 +634,7 @@ export class RecommendationEventService {
     // (see `dedupeKeyFor`'s COMMENT branch).
     const commentCounts = new Map<string, number>();
     const commentPostIds = Array.from(new Set(
-      withDedupeKeys
+      collapsed
         .filter(({ item }) => item.eventType === RECOMMENDATION_EVENT_TYPES.COMMENT)
         .map(({ item }) => item.postId)
     ));
@@ -499,14 +658,30 @@ export class RecommendationEventService {
     const statOps: any[] = [];
     const affinityWrites: Promise<void>[] = [];
     const insertDocs: Partial<RecommendationEvent>[] = [];
+    /*
+     * Built in lockstep with `insertDocs`, so `writeErrors[].index` resolves to
+     * the event that was actually rejected. Nothing here is recoverable from
+     * the Mongo error: `keyValue` is populated on some driver paths and not
+     * others, which is exactly why every collision in the review log printed
+     * `#unknown` while the event type was known all along.
+     */
+    const insertMeta: PreparedInsertMeta[] = [];
+    /*
+     * One id for this request and one for this batch. They are the same value
+     * today — a request carries one batch — but they are reported separately
+     * because a future chunked flush would make them differ, and a trace that
+     * cannot tell them apart is not a trace.
+     */
+    const requestId = randomUUID().slice(0, 8);
+    const batchId = requestId;
     const updateOps: any[] = [];
     const seenPostIds: string[] = [];
     const now = new Date();
     const expiresAt = new Date(now.getTime() + RECOMMENDATION_EVENT_POLICY.rawEventTtlDays * 24 * 60 * 60 * 1000);
-    let deduped = 0;
+    let deduped = withinBatchCollapsed;
     let accepted = 0;
 
-    withDedupeKeys.forEach(({ item, dedupeKey }) => {
+    collapsed.forEach(({ item, dedupeKey }) => {
       const post = postMap.get(item.postId)!;
       const { watchMs, durationMs, watchRatio } = this.clampWatch(item, post.canonicalDurationMs);
       const existing = dedupeKey ? existingByKey.get(dedupeKey) || null : null;
@@ -681,6 +856,19 @@ export class RecommendationEventService {
           }
         });
       } else {
+        insertMeta.push({
+          operationIndex: insertDocs.length,
+          eventType: item.eventType,
+          dedupeKeyHash: shortHash(dedupeKey),
+          // Never the session id itself: it is a Redis key segment.
+          sessionIdHash: shortHash(item.sessionId),
+          // A post id is already public in every URL, so it is logged plainly.
+          postId: item.postId,
+          exposureIdHash: shortHash(dedupeKey ? `${item.sessionId}:${item.postId}` : null),
+          batchId,
+          requestId,
+          path: 'insert'
+        });
         insertDocs.push({
           userId: actor.userId ? new ObjectId(actor.userId) : null,
           anonymousId: actor.userId ? null : actor.anonymousId || null,
@@ -704,18 +892,59 @@ export class RecommendationEventService {
     writes.push(...affinityWrites);
     if (updateOps.length) {
       writes.push(this.eventModel.bulkWrite(updateOps, { ordered: false }).catch((error: any) => {
-        this.logger.warn(`Recommendation event correction had partial failures: ${error.message}`);
+        const { deduped: replays, other } = partitionWriteErrors(error);
+        if (replays) {
+          this.logger.debug(`Recommendation event correction skipped ${replays} duplicate(s) (replay protection)`);
+        }
+        if (other.length) {
+          this.logger.warn(
+            `Recommendation event correction had ${other.length} unexpected failure(s): `
+            + `${other.map((entry) => entry?.err?.errmsg || entry?.errmsg || (entry as any)?.message).join('; ')}`
+          );
+        }
       }));
     }
     if (insertDocs.length) {
       writes.push(
         this.eventModel.insertMany(insertDocs, { ordered: false }).catch((error: any) => {
-          // Best-effort audit log: a rare race against another concurrent
-          // duplicate insert throws here even though the dedupe pre-check
-          // passed, but the stat/affinity effects above have already been
-          // decided from that pre-check and are not rolled back — this queue is
-          // an audit trail, not the source of truth for the aggregates.
-          this.logger.warn(`Recommendation raw event insert had partial failures: ${error.message}`);
+          /*
+           * A race against another concurrent insert of the same event throws
+           * here even though the dedupe pre-check passed. That is the unique
+           * index doing exactly what it exists for, so it is not a warning —
+           * it is the expected outcome of two requests arriving together, and
+           * the row that won is the one we wanted. The stat/affinity effects
+           * above were already decided from the pre-check and are not rolled
+           * back; this collection is an audit trail, not the source of truth
+           * for the aggregates.
+           *
+           * Anything that is *not* a dedupe collision is still a real failure
+           * and keeps its warning.
+           */
+          const { deduped: replays, other } = partitionWriteErrors(error);
+          if (replays) {
+            /*
+             * Bounded diagnostic: enough identity to classify a collision
+             * without logging the dedupe key itself.
+             *
+             * The key is `<subject>:<session>:<post>:<eventType>` and the
+             * subject half is an account or guest id, so it is hashed. The
+             * event types and the count are what say whether a repeat is a
+             * `final_watch` correction, a retried batch, or two collectors
+             * emitting one exposure — which a bare "skipped N duplicates"
+             * could never distinguish.
+             */
+            const detail = summariseDedupeCollisions(error, insertMeta);
+            this.logger.debug(
+              `Recommendation raw event insert skipped ${replays} duplicate${replays === 1 ? '' : 's'} `
+              + `(replay protection)${detail ? ` ${detail}` : ''}`
+            );
+          }
+          if (other.length) {
+            this.logger.warn(
+              `Recommendation raw event insert had ${other.length} unexpected failure(s): `
+              + `${other.map((entry) => entry?.err?.errmsg || entry?.errmsg || (entry as any)?.message).join('; ')}`
+            );
+          }
         })
       );
     }

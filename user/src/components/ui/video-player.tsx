@@ -46,6 +46,14 @@ interface VideoPlayerProps {
   onEnded?: () => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   onVolumeChange?: (volume: number, muted: boolean) => void;
+  /**
+   * Called when an autoplay attempt is refused, with the DOM exception's name.
+   *
+   * Exists so the rejection is never merely swallowed: `NotAllowedError` is the
+   * browser's autoplay policy and is expected, anything else is not, and the
+   * difference has to be observable from outside the player.
+   */
+  onAutoplayRejected?: (name: string, message: string) => void;
   onError?: (error: any) => void;
   onReady?: (videoElement: HTMLVideoElement) => void;
   onPictureInPictureOpen?: () => void;
@@ -90,6 +98,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   initialTime = 0,
   isActiveSlide = true,
   autoplayOnActive = false,
+  onAutoplayRejected,
   onPlay,
   onPause,
   onEnded,
@@ -304,30 +313,90 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     }
   }, [isActiveSlide, autoplayOnActive, isIntersecting]);
 
-  // Handle autoplay when slide becomes active
+  /*
+   * Start playback once the element is genuinely ready and the slide is active.
+   *
+   * ## The alternating first-open failure this replaced
+   *
+   * The previous version claimed the attempt *before* making it: it wrote the
+   * `id:src` latch, then scheduled `play()` behind a 300ms `setTimeout`. Any
+   * re-run of the effect inside that window — `isIntersecting` settling, the
+   * `userInteracted` reset, a re-render from the view-count patch — ran the
+   * cleanup and cancelled the timer, while the latch stayed set. The re-run
+   * then matched the latch and returned early, so that post never played at
+   * all. Closing and reopening remounted the player with a fresh ref, which
+   * played; the open after that raced again. That is the open/no-open/open
+   * alternation, and it is why it looked like a timing problem rather than a
+   * lifecycle one.
+   *
+   * Two changes: the latch is claimed at the moment the attempt is actually
+   * made, so a cancelled attempt leaves nothing behind; and readiness is waited
+   * for by listening to the element rather than by guessing 300ms.
+   */
   useEffect(() => {
-    if (!videoElementRef.current || !isIntersecting || !isActiveSlide || !autoplayOnActive || userInteracted) return;
+    if (!isIntersecting || !isActiveSlide || !autoplayOnActive || userInteracted) return;
+    const videoElement = videoElementRef.current;
+    if (!videoElement) return;
 
     const autoplayKey = `${id}:${src}`;
     if (autoplayAttemptKeyRef.current === autoplayKey) return;
-    autoplayAttemptKeyRef.current = autoplayKey;
 
-    const timer = setTimeout(async () => {
-      const videoElement = videoElementRef.current;
-      if (!videoElement || !videoElement.paused) return;
+    let cancelled = false;
 
+    const attempt = async () => {
+      if (cancelled) return;
+      const element = videoElementRef.current;
+      if (!element || !element.paused) return;
+      // Claimed here, not at schedule time: an attempt that never ran must not
+      // stop the next one.
+      autoplayAttemptKeyRef.current = autoplayKey;
+
+      /*
+       * Muted, because that is this app's autoplay policy and the only thing
+       * browsers allow without a gesture. The transport still shows the muted
+       * state, so the viewer can turn sound on with one tap.
+       */
+      element.muted = true;
+      setIsMuted(true);
+      setVolume(0);
       try {
-        videoElement.muted = true;
-        setIsMuted(true);
-        setVolume(0);
-        await videoElement.play();
-      } catch {
-        // If autoplay fails, leave the player ready for manual playback.
+        await element.play();
+      } catch (error: any) {
+        /*
+         * Never swallowed. `NotAllowedError` is a policy decision by the
+         * browser and the centre play affordance is the correct answer to it;
+         * anything else is a real failure worth seeing. Either way the latch is
+         * released so a later activation can try again.
+         */
+        autoplayAttemptKeyRef.current = null;
+        onAutoplayRejected?.(error?.name || 'Error', error?.message || String(error));
+        if (process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.warn(`[video-player] autoplay rejected for ${id}: ${error?.name}: ${error?.message}`);
+        }
       }
-    }, 300);
+    };
 
-    return () => clearTimeout(timer);
-  }, [isActiveSlide, autoplayOnActive, isIntersecting, userInteracted, id, src]);
+    // HAVE_CURRENT_DATA or better means there is a frame to show and `play()`
+    // will not stall on the network.
+    if (videoElement.readyState >= 2) {
+      void attempt();
+      return () => {
+ cancelled = true;
+};
+    }
+
+    const onReady = () => {
+ void attempt();
+};
+    videoElement.addEventListener('loadeddata', onReady);
+    videoElement.addEventListener('canplay', onReady);
+    return () => {
+      cancelled = true;
+      videoElement.removeEventListener('loadeddata', onReady);
+      videoElement.removeEventListener('canplay', onReady);
+    };
+  }, [isActiveSlide, autoplayOnActive, isIntersecting, userInteracted, id, src, onAutoplayRejected]);
 
   // Handle viewport intersection (auto pause when out of view)
   useEffect(() => {
@@ -625,6 +694,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         <button
           type="button"
           onClick={handlePlayPauseClick}
+          data-swipe-passthrough
           className="absolute inset-0 z-15 flex cursor-pointer items-center justify-center bg-transparent"
           aria-label={isPlaying ? 'Pause video' : 'Play video'}
         >
@@ -656,7 +726,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       ) : null}
       {controls && !isCurrentPictureInPicture ? (
         <div
-          className={`absolute inset-x-0 bottom-0 z-50 bg-linear-to-t from-black/95 via-black/70 to-transparent px-3 pb-2 pt-7 text-white transition-opacity duration-300 sm:px-4 ${alwaysShowControls || showControls || !isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          className={`absolute inset-x-0 bottom-0 z-50 bg-linear-to-t from-black/95 via-black/70 to-transparent px-3 pb-2 max-lg:pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-7 max-lg:pt-5 text-white transition-opacity duration-300 sm:px-4 ${alwaysShowControls || showControls || !isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         >
           <div className="absolute left-4 right-4 top-2">
             <input
@@ -666,6 +736,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               step="0.1"
               value={progress}
               aria-label="Seek video"
+              /* Holding this must not change the post: scrubbing is a
+                 vertical-ish drag straight over the media, and the swipe and
+                 wheel handlers would otherwise read it as "go to the next
+                 post". Read by `useNavigationInputActive`. */
+              data-navigation-hold="true"
               onMouseDown={() => setIsSeeking(true)}
               onMouseUp={() => setIsSeeking(false)}
               onTouchStart={() => setIsSeeking(true)}
@@ -688,7 +763,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               >
                 {isPlaying ? <PauseIcon className='text-3xl max-lg:text-2xl' /> : <PlayIcon className='text-3xl max-lg:text-2xl' />}
               </button>
-              <div className="min-w-21.5 max-lg:min-w-15 truncate whitespace-nowrap text-xs max-lg:text-[10px] font-semibold text-white">
+              {/*
+                The timecode is the first thing to go on a narrow player: the
+                seek bar directly above it already shows position, and keeping
+                it pushed the mute and fullscreen buttons underneath it.
+                `playerstage` is declared by `PostVideoStage`; where there is no
+                such container (PiP, the popup player) this never matches.
+              */}
+              <div className="@max-[9rem]/playerstage:hidden min-w-21.5 max-lg:min-w-15 truncate whitespace-nowrap text-xs max-lg:text-[10px] font-semibold text-white">
                 {`${videoDuration(currentTime)} / ${videoDuration(duration)}`}
               </div>
             </div>
@@ -701,13 +783,31 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               >
                 <AddToWatchLaterIcon className='text-3xl max-lg:text-xl' />
               </button>
+              {/*
+                Picture-in-Picture is a desktop affordance and is removed
+                outright below `lg`, on every surface that mounts this player.
+
+                `max-lg:hidden` is `display: none`, which is what makes this a
+                removal rather than a disguise: a `display: none` control is not
+                painted, not hit-testable, not focusable, not in the tab order
+                and not in the accessibility tree. That is verified rather than
+                assumed — `browser-verify/40-player-transport-controls.js`
+                walks the real tab order, calls `.focus()` on it and hit-tests
+                its coordinates at three compact viewports.
+
+                Deliberately CSS and not a JavaScript breakpoint: this player is
+                server-rendered on For You and Following, and a `useIsMobile()`
+                gate would render the desktop control and snap it away after
+                hydration. The browser's PiP API is untouched — only this
+                control is hidden, and the desktop control keeps working.
+              */}
               <button
                 type="button"
                 onClick={togglePictureInPicture}
-                className="inline-flex h-8 w-8 max-lg:h-6 max-lg:w-6 items-center justify-center rounded-full text-base hover:bg-white/15"
+                className="inline-flex h-8 w-8 max-lg:hidden items-center justify-center rounded-full text-base hover:bg-white/15"
                 aria-label="Picture in picture"
               >
-                <PiPIcon className='text-3xl max-lg:text-xl' />
+                <PiPIcon className='text-3xl' />
               </button>
               {showVolumeSlider ? (
                 <VideoVolumeControl

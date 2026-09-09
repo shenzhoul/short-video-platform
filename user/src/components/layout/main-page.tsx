@@ -1,5 +1,6 @@
 'use client';
 
+import { useVisualViewportHeight } from '@hooks/use-visual-viewport-height';
 import { ReactNode } from 'react';
 
 /**
@@ -26,6 +27,13 @@ export default function MainPageSession({
 }: {
   children: ReactNode;
 }) {
+  /*
+    Both shells (`MainThemeLayout`, `CreatorThemeLayout`) render this column, so
+    correcting `--app-viewport-height` here covers every surface that sizes a
+    full-height stage from it — and does it once rather than per feed.
+  */
+  useVisualViewportHeight();
+
   return (
     <div className='w-[calc(100%-var(--app-shell-nav-width)-var(--message-workspace-width,0px))] pt-(--app-header-height) min-h-0 max-xl:h-(--app-viewport-height) xl:h-screen flex flex-col transition-[width] duration-200 ease-out motion-reduce:transition-none'>
       {children}

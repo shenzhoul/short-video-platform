@@ -314,6 +314,36 @@ body {
 }
 
 /**
+ * Opting a single scroller out of the global bar.
+ *
+ * ## Why a class here and not a Tailwind utility
+ *
+ * `[scrollbar-width:none]` and `[&::-webkit-scrollbar]:hidden` are **inert**
+ * against the rules above, and had been wherever they were used. Tailwind 4's
+ * `@import "tailwindcss"` emits every utility inside `@layer utilities`, and the
+ * `*` rules in this file are **unlayered** — and unlayered author styles beat
+ * *any* author layer no matter how specific the layered selector is. So the
+ * generated `.\[scrollbar-width\:none\]{scrollbar-width:none}` never applied,
+ * and `getComputedStyle` on the Home category strip reported `thin`.
+ *
+ * This rule is unlayered too, so it competes with `*` on ordinary specificity
+ * (0,1,0 against 0,0,0) and wins. Scoped deliberately: it hides one strip's
+ * bar, not every scrollbar in the app.
+ *
+ * Scrolling itself is untouched — `overflow-x` still allows it, so touch drag,
+ * shift-wheel, trackpad and keyboard all behave exactly as before. Only the
+ * painted bar is gone.
+ */
+.category-scroller {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.category-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/**
  * Height of the fixed application header.
  *
  * A token rather than a repeated literal because three things have to agree on
@@ -391,6 +421,18 @@ body {
    * not leave the shell taller than what is actually on screen — with `100vh`
    * the bottom of a fixed rail and the last row of an internally scrolling
    * panel sit under the browser chrome and cannot be reached.
+   */
+  /*
+   * The visible height of the app shell.
+   *
+   * `100dvh` is the CSS answer and the value the server renders with, so a
+   * no-JS or pre-hydration paint is already correct. It is not always the
+   * *true* answer: a browser that reports the large viewport for `dvh` while a
+   * bottom toolbar is on screen leaves the shell taller than what can be seen,
+   * and the last row of a full-height stage — the transport bar — falls under
+   * that toolbar. `useVisualViewportHeight` overwrites this with
+   * `visualViewport.height` whenever the two disagree, which is the only value
+   * that means "what the viewer can actually see".
    */
   --app-viewport-height: 100dvh;
 
@@ -527,18 +569,53 @@ body {
  * row was measured against.
  */
 @media (max-width: 1023px) {
-  html[data-message-open='true'] {
-    --post-detail-panel-ratio: 0.5;
-  }
-
   /*
-   * The tab row was sized against a 167px panel; with messages open the panel
-   * is 155px and the five labels fit only by squeezing the gaps to zero. One
-   * step smaller keeps them separated and still never scrolling.
+   * With a messages column present the detail panel is a fraction of what is
+   * left, so a 0.38 share would be 92px — narrower than its own tab row. The
+   * reference gives the reading panels the room and lets the media become a
+   * strip: 0.62 of the remainder reproduces its 72/156/180 proportions.
    */
-  html[data-message-open='true'] nav[aria-label='Video details'] button {
-    font-size: 7px;
+  html[data-message-open='true'] {
+    --post-detail-panel-ratio: 0.62;
   }
+}
+
+/*
+  Following allocates four columns, not three.
+
+  Measured off `douyin-following-comments-reference.png`: of that capture's
+  467px of app width, the primary rail takes ~37px, the creator rail ~93px, the
+  media strip ~111px and the comments panel ~226px -- the panel is 48% of the
+  whole app and 52% of everything after the primary rail. Ours was 100.3px
+  (26%), which is why the shared tab strip had to be crushed to 6px and still
+  ran the five labels together with a 0px gap.
+
+  The ratio is applied to the stage `section`, which is what is left after the
+  creator rail, so it has to differ by rail state to keep the panel itself at
+  one width (~206px at a 440px viewport):
+
+    expanded   section = 440 - 48 - 88 = 304   ->  0.678 * 304 = 206
+    collapsed  section = 440 - 48 - 28 = 364   ->  0.566 * 364 = 206
+
+  The media strip absorbs the difference, which is the right way round: it is
+  the column that benefits from collapsing the rail, and the panel is the column
+  whose contents (a five-tab strip and a comment thread) have a floor.
+
+  Scoped to `[data-feed-surface='following']` and set on the stage `section` --
+  a nearer ancestor than `html`, so it also wins over the message-open value
+  below without needing to out-specify it. For You, Friends and the detail popup
+  keep the accepted 0.38 untouched.
+
+  It stops at 599px, not at the 1023px compact breakpoint. The creator rail is a
+  fixed 88px, so it is a large share of a phone's content and a small one of a
+  tablet's -- at 768px the same 0.678 gave the panel 428px, over half the
+  viewport for a reading column, while the accepted 0.38 there is already
+  correct (240px). The override exists for the band where four columns are
+  genuinely tight, which is the band the references were captured in.
+*/
+@media (max-width: 599px) {
+  [data-feed-surface='following'][data-creator-rail='expanded'] { --post-detail-panel-ratio: 0.678; }
+  [data-feed-surface='following'][data-creator-rail='collapsed'] { --post-detail-panel-ratio: 0.566; }
 }
 
 

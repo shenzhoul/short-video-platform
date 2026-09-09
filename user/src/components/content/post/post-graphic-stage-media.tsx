@@ -88,6 +88,7 @@ export default function PostGraphicStageMedia({ post, active = true }: PostGraph
         <button
           type="button"
           onClick={() => setPlaying((current) => !current)}
+          data-swipe-passthrough
           className="absolute inset-0 z-20 cursor-pointer bg-transparent"
           aria-label={slideshowPlaying ? 'Pause image slideshow' : 'Play image slideshow'}
         >

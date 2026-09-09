@@ -207,7 +207,21 @@ export default function CreatorProfileHeader({
         narrowed column so none of them can end up beneath the panel.
       */}
       <div className='w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
-        <div className='pointer-events-none relative z-60 -mt-40 max-lg:-mt-9 max-w-380 w-full flex max-lg:flex-col max-lg:items-start mx-auto mb-5.25 max-lg:mb-2 max-lg:px-2'>
+        {/*
+          Avatar and identity sit side by side at every width.
+
+          This was `max-lg:flex-col`, which stacked them — so the creator name,
+          the counters and the metadata each became a full-width row *below* the
+          avatar and the hero grew far taller than the reference. `flex-wrap` is
+          what keeps the restructure to one line of CSS: the avatar and the
+          identity block are auto-width and share row one, while the actions
+          column below is `w-full` at this breakpoint and therefore wraps onto
+          its own line by itself.
+        */}
+        <div
+          data-profile-hero
+          className='pointer-events-none relative z-60 -mt-40 max-lg:-mt-9 max-w-380 w-full flex max-lg:flex-wrap max-lg:items-start mx-auto mb-5.25 max-lg:mb-1.5 max-lg:px-2.5'
+        >
           <div className='w-28 max-lg:w-14 flex-none'>
             <button
               type="button"
@@ -218,20 +232,26 @@ export default function CreatorProfileHeader({
               <img src={resolveAvatarUrl(previewAvatar)} className='rounded-full w-full h-full object-cover block relative border-none' />
             </button>
           </div>
-          <div className='min-h-30 max-lg:min-h-0 w-full min-w-0 flex-1 flex-wrap flex items-center content-center ml-8 max-lg:ml-0 max-lg:mt-1.5'>
-            <div className='flex relative w-full'>
-              <h1 className='m-0 text-xl max-lg:text-[15px] leading-7 max-lg:leading-5 pointer-events-auto'>
-                <span className='block max-w-75 max-lg:max-w-[calc(100vw-7rem)] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl max-lg:text-[15px] font-medium leading-7 max-lg:leading-5'>
+          <div
+            data-profile-identity
+            className='min-h-30 max-lg:min-h-0 w-full max-lg:w-auto min-w-0 flex-1 flex-wrap flex items-center max-lg:items-start content-center max-lg:content-start ml-8 max-lg:ml-2.5 max-lg:mt-0'
+          >
+            <div data-profile-name className='flex relative w-full min-w-0 items-center'>
+              <h1 className='m-0 min-w-0 text-xl max-lg:text-[15px] leading-7 max-lg:leading-5 pointer-events-auto'>
+                <span className='block max-w-75 max-lg:max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl max-lg:text-[15px] font-medium leading-7 max-lg:leading-5'>
                   {previewName}
                 </span>
               </h1>
               {canEditProfile ? (
-                <span className='pointer-events-auto cursor-pointer py-0.5' onClick={onOpenEdit}>
+                <span className='pointer-events-auto shrink-0 cursor-pointer py-0.5' onClick={onOpenEdit}>
                   <EditIcon className='text-2xl max-lg:text-base text-(--text-muted)' />
                 </span>
             ) : null}
             </div>
-            <div className='w-full mt-1 max-lg:mt-0.5 flex flex-wrap gap-y-1 max-lg:gap-y-0.5'>
+            <div
+              data-profile-counters
+              className='w-full mt-1 max-lg:mt-0.5 flex flex-wrap max-lg:flex-nowrap max-lg:items-center gap-y-1 max-lg:gap-y-0 max-lg:whitespace-nowrap'
+            >
               <button
                 type="button"
                 className='pointer-events-auto flex items-center cursor-pointer after:content-[] after:inline-block after:w-0 after:h-4 max-lg:after:h-3 after:mx-4 max-lg:after:mx-2 after:border-l after:border-[#363741]'
@@ -257,7 +277,7 @@ export default function CreatorProfileHeader({
                 </div>
               </button>
               <div className='flex items-center pointer-events-auto'>
-                <div className='mr-1.5 text-sm leading-5.5 text-(--text-muted)'>
+                <div className='mr-1.5 max-lg:mr-1 text-sm max-lg:text-[11px] leading-5.5 max-lg:leading-4 text-(--text-muted)'>
                   Received praise
                 </div>
                 <div className='text-[16px] max-lg:text-[11px] leading-6 max-lg:leading-4 text-(--text)'>
@@ -265,18 +285,21 @@ export default function CreatorProfileHeader({
                 </div>
               </div>
             </div>
-            <p className='pointer-events-auto w-full h-5 max-lg:h-auto flex max-lg:flex-wrap max-lg:gap-y-0.5 items-center mt-3 max-lg:mt-1'>
-              <span className='mr-5 max-lg:mr-2 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
+            <p
+              data-profile-metadata
+              className='pointer-events-auto w-full min-w-0 h-5 max-lg:h-auto flex max-lg:flex-wrap max-lg:gap-x-1.5 max-lg:gap-y-0.5 items-center mt-3 max-lg:mt-1'
+            >
+              <span className='mr-5 max-lg:mr-0 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4 text-(--text-muted)'>
                 Douyin ID: {creator.username}
               </span>
-              <span className='mr-5 max-lg:mr-2 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
+              <span className='mr-5 max-lg:mr-0 text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4 text-(--text-muted)'>
                 IP location: Guangdong
               </span>
-              <span className='h-5 max-lg:h-4 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
+              <span className='h-5 max-lg:h-4 shrink-0 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
                 <MaleIcon className='text-xs mr-1' /> 28 years old
               </span>
-              <span className='h-5 max-lg:h-4 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
-                Guangdong Â· Shenzhen
+              <span className='h-5 max-lg:h-4 shrink-0 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[10px] leading-5 max-lg:leading-4'>
+                Guangdong · Shenzhen
               </span>
             </p>
             <CreatorProfileBio bio={previewBio} />

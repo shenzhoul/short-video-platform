@@ -47,6 +47,7 @@ Load only the skills relevant to the task:
   - `.agents/skills/file-service-integration/SKILL.md`
   - `.agents/skills/media-response-standardization/SKILL.md`
   - `.agents/skills/feed-infinite-scroll/SKILL.md`
+- Post feed navigation — one `resolveNavigationContext` for wheel/touch/keys/popup, creator-scoped Videos tab, and the drag-follow-finger stage: `.agents/skills/post-feed-navigation/SKILL.md`
   - `.agents/skills/recommendation-engine/SKILL.md`
   - `.agents/skills/following-feed/SKILL.md`
   - `.agents/skills/notification-system/SKILL.md`

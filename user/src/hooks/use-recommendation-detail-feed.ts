@@ -26,6 +26,21 @@ const PREFETCH_AHEAD = 3;
 interface UseRecommendationDetailFeedOptions {
   /** True for a non-feed-scoped, non-creator-scoped open — Home grid clicks and `modal_id` deep links. */
   enabled: boolean;
+  /**
+   * The popup has handed navigation to another list — the Videos tab's creator
+   * posts — so this session must hold completely still.
+   *
+   * Without it, stepping onto a creator post looked like "an unknown post is
+   * open", which is this hook's signal to start a *new* detail session. That
+   * threw away the history the viewer had built: `P0 -> P1`, open Videos, walk
+   * the creator's posts, press Back, and Previous could no longer reach `P0`
+   * because `feedPosts` had been reseeded to `[C1]` and then to `[P1]`.
+   *
+   * Creator navigation is not this session's business. Frozen, it keeps its
+   * session id, its array and its known-id set untouched, so leaving Videos
+   * lands back inside the history that was already there.
+   */
+  frozen?: boolean;
   /** The post currently shown in the modal (changes as the viewer navigates, not just on open). */
   currentPost: IPost | null;
 }
@@ -73,7 +88,7 @@ export interface RecommendationDetailFeed {
  * instead of latching.
  */
 export function useRecommendationDetailFeed({
-  enabled, currentPost
+  enabled, currentPost, frozen = false
 }: UseRecommendationDetailFeedOptions): RecommendationDetailFeed {
   const [feedPosts, setFeedPosts] = useState<IPost[]>([]);
   // A ref would not do here: setting it does not trigger a re-render, so the
@@ -114,6 +129,12 @@ export function useRecommendationDetailFeed({
       return;
     }
     if (knownIdsRef.current.has(currentPostId)) return; // Already part of this session.
+    /*
+     * Creator mode is showing a post this session has never served, and that is
+     * expected — it belongs to the creator's list, not to this one. Reseeding
+     * here is what destroyed the detail history on entering the Videos tab.
+     */
+    if (frozen) return;
 
     const generation = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = generation;
@@ -138,20 +159,20 @@ export function useRecommendationDetailFeed({
     // patch (a view count, a like) while naming the same post, and reacting to
     // that identity change is what used to restart the session mid-sequence.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, currentPostId]);
+  }, [enabled, currentPostId, frozen]);
 
   // Keep the server's session cursor in sync with local "previous" navigation
   // so a later `next` resumes from the right position instead of re-appending
   // from the old cursor.
   useEffect(() => {
-    if (!enabled || !currentPostId || !sessionId) return;
+    if (!enabled || frozen || !currentPostId || !sessionId) return;
     const index = feedPosts.findIndex((post) => post._id === currentPostId);
     if (index < 0) return;
     if (index < lastIndexRef.current) {
       void stepPostDetailRecommendationPrevious(sessionId, getRecommendationAnonymousId() || undefined).catch(() => { });
     }
     lastIndexRef.current = index;
-  }, [enabled, currentPostId, feedPosts, sessionId]);
+  }, [enabled, frozen, currentPostId, feedPosts, sessionId]);
 
   /**
    * Appends one post to the session, returning false when the server has none
@@ -192,7 +213,9 @@ export function useRecommendationDetailFeed({
   // post's *id* and the loaded length, both plain values, so an interaction
   // patch cannot restart or cancel it.
   useEffect(() => {
-    if (!enabled || !currentPostId || !sessionId || exhausted) return;
+    // Frozen: creator mode is driving, and refilling this session against a
+    // post it does not own would append the wrong neighbours.
+    if (!enabled || frozen || !currentPostId || !sessionId || exhausted) return;
     const index = feedPosts.findIndex((post) => post._id === currentPostId);
     if (index < 0) return;
     const ahead = feedPosts.length - 1 - index;
@@ -217,7 +240,7 @@ export function useRecommendationDetailFeed({
     })();
     // Re-runs on every append (`feedPosts.length` grows) until the buffer is
     // full, which is what fills the gap without a loop of its own.
-  }, [enabled, currentPostId, sessionId, exhausted, feedPosts, fetchOneMore]);
+  }, [enabled, frozen, currentPostId, sessionId, exhausted, feedPosts, fetchOneMore]);
 
   const currentIndex = currentPostId ? feedPosts.findIndex((post) => post._id === currentPostId) : -1;
   const loadedNextExists = currentIndex >= 0 && currentIndex < feedPosts.length - 1;

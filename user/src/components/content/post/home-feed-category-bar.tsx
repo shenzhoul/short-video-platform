@@ -46,7 +46,7 @@ export default function HomeFeedCategoryBar({
   return (
     <div className="relative z-40 bg-(--header-bg) px-4 max-lg:px-2">
       <div className="flex h-12 max-lg:h-8 items-center gap-2 max-lg:gap-1">
-        <div ref={categoryRef} onScroll={updateButtons} className="flex h-full min-w-0 flex-1 items-center gap-7 max-lg:gap-3.5 max-lg:text-[11px] overflow-x-auto whitespace-nowrap text-base font-medium text-(--text-soft) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div ref={categoryRef} onScroll={updateButtons} className="flex h-full min-w-0 flex-1 items-center gap-7 max-lg:gap-3.5 max-lg:text-[11px] category-scroller overflow-x-auto whitespace-nowrap text-base font-medium text-(--text-soft)">
           {categories.map((category) => {
             const isActive = category.key === activeTopicKey;
             return (

@@ -133,17 +133,30 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
       trigger={trigger}
       triggerMode="hover"
       width={334}
-      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none max-w-[calc(100vw-16px)]"
+      /*
+        Two caps, and the smaller wins.
+
+        `max-w-[19rem]` is the compact panel itself — 304px, so the menu still
+        reads as a panel anchored to the avatar rather than a sheet covering the
+        page. The viewport cap is written against `--app-shell-nav-width`, the
+        one owner of the rail's width, so the panel can never start left of the
+        rail whatever the viewport is. The old `calc(100vw-16px)` measured
+        against the whole viewport and therefore allowed exactly that.
+      */
+      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none max-lg:max-w-[19rem] max-w-[calc(100vw-var(--app-shell-nav-width)-1rem)]"
     >
-      <div className="max-h-[calc(var(--app-viewport-height)-72px)] overflow-y-auto p-3 scrollbar-custom">
-        <div className="flex items-center gap-3 px-1 pb-3">
-          <span className="flex h-13 w-13 overflow-hidden rounded-full bg-(--surface-soft)">
+      <div
+        data-account-menu
+        className="max-h-[calc(var(--app-viewport-height)-72px)] max-lg:max-h-[calc(var(--app-viewport-height)-3rem)] overflow-y-auto p-3 max-lg:p-2 scrollbar-custom"
+      >
+        <div className="flex items-center gap-3 max-lg:gap-2 px-1 max-lg:px-0.5 pb-3 max-lg:pb-2">
+          <span className="flex h-13 w-13 max-lg:h-9 max-lg:w-9 shrink-0 overflow-hidden rounded-full bg-(--surface-soft)">
             <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
           </span>
           <div className="min-w-0">
-            <div className="mb-2 truncate text-sm font-semibold text-(--text-strong)">{displayName}</div>
+            <div className="mb-2 max-lg:mb-1 truncate text-sm max-lg:text-[12px] font-semibold text-(--text-strong)">{displayName}</div>
             {loggedIn ? (
-              <div className="flex items-center gap-3 text-sm text-(--text-soft)">
+              <div className="flex items-center gap-3 max-lg:gap-2 text-sm max-lg:text-[11px] text-(--text-soft)">
                 <button
                   type="button"
                   aria-label={`Show the ${followingCount} accounts you follow`}
@@ -175,70 +188,70 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 max-lg:space-y-1.5">
           <button
             type="button"
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('liked')}
           >
-            <span className="flex items-center gap-2"><LikeIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.liked : 'My liking'}</span>
-            <span className="flex items-center text-sm font-semibold text-(--text-strong)">
-              {loggedIn ? <LikedPostCount enabled={loggedIn} /> : ''} <ArrowRightIcon className='text-xl opacity-45' />
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><LikeIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.liked : 'My liking'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">
+              {loggedIn ? <LikedPostCount enabled={loggedIn} /> : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' />
             </span>
           </button>
           <button
             type="button"
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('My collection is coming soon')}
           >
-            <span className="flex items-center gap-2"><CollectIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.collection : 'My collection.'}</span>
-            <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><CollectIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.collection : 'My collection.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch history is coming soon')}
           >
-            <span className="flex items-center gap-2"><HistoryIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchHistory : 'Look at history.'}</span>
-            <span className="flex items-center text-xs font-semibold text-(--text-strong)">{loggedIn ? 'Within 30 days' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><HistoryIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchHistory : 'Look at history.'}</span>
+            <span className="flex shrink-0 items-center text-xs max-lg:text-[10px] font-semibold text-(--text-strong)">{loggedIn ? 'Within 30 days' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch later is coming soon')}
           >
-            <span className="flex items-center gap-2"><WatchLaterIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchLater : 'See again later.'}</span>
-            <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><WatchLaterIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchLater : 'See again later.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 text-sm font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('works')}
           >
-            <span className="flex items-center gap-2"><PostIcon className="text-2xl" /> {loggedIn ? PROFILE_COLLECTION_LABELS.work : 'My work.'}</span>
-            <span className="flex items-center text-sm font-semibold text-(--text-strong)">{loggedIn ? postCount : ''} <ArrowRightIcon className='text-xl opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><PostIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.work : 'My work.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? postCount : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
           </button>
         </div>
 
-        <div className="mt-3 space-y-1 border-t border-(--divider) pt-3">
-          <button type="button" className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
-            <AppointmentIcon className="text-[26px]" />
+        <div className="mt-3 max-lg:mt-2 space-y-1 border-t border-(--divider) pt-3 max-lg:pt-2">
+          <button type="button" className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center gap-2 max-lg:gap-1.5 rounded-lg px-3 max-lg:px-2 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
+            <AppointmentIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
             {loggedIn ? PROFILE_COLLECTION_LABELS.appointment : 'My appointment.'}
           </button>
-          <button type="button" className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
-            <OrderIcon className="text-[26px]" />
+          <button type="button" className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center gap-2 max-lg:gap-1.5 rounded-lg px-3 max-lg:px-2 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
+            <OrderIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
             {loggedIn ? 'My order' : 'My orders.'}
           </button>
         </div>
 
         {loggedIn ? (
-          <div className="mt-3 flex items-center justify-between border-t border-(--divider) px-3 pt-3">
+          <div className="mt-3 max-lg:mt-2 flex items-center justify-between gap-2 border-t border-(--divider) px-3 max-lg:px-2 pt-3 max-lg:pt-2">
             <button
               type="button"
               // Disabled while the sign-out is in flight; `useLogout` also
               // de-duplicates, so a double click cannot revoke twice.
               disabled={loggingOut}
-              className="flex h-9 cursor-pointer items-center gap-2 text-left text-sm font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 max-lg:h-7 shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1.5 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 if (!loggedIn) {
                   openAuthModal();
@@ -249,10 +262,10 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
                 void logout();
               }}
             >
-              <LogoutIcon className="text-[26px]" />
+              <LogoutIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
               {loggingOut ? 'Logging out…' : 'Logged out'}
             </button>
-            <div className="flex items-center gap-2 text-xs font-semibold text-(--text-soft)">
+            <div className="flex shrink-0 items-center gap-2 max-lg:gap-1 text-xs max-lg:text-[10px] font-semibold text-(--text-soft)">
               <span>Save login</span>
               <ToggleSwitch aria-label="Save login" />
             </div>

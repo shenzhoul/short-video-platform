@@ -536,3 +536,79 @@ Filed as `.agents/bug-tracker/` — read those before extending this area furthe
   allocation strategy — **not** as "invisible in production", which has not been measured against a
   realistic creator distribution. `api/scripts/audit-feed-diversity.js` is the harness: it separates
   in-batch adjacency from batch-boundary adjacency and reports which batch each breach is in.
+
+## One Exposure, One Event — And The Index Is Not Where You Find Out
+
+A paired production-build review API logged 19 duplicate-key rejections over 74
+minutes of ordinary use: 9 `photo_dwell`, 7 `final_watch`, 3 `detail_open`. The
+unique index was working; what was wrong is that the events were emitted and
+submitted at all.
+
+### Three emitters, one mistake
+
+| type | what produced the second copy |
+|---|---|
+| `photo_dwell` | the visibility handler emitted its slice **and** the unmount cleanup emitted another — one exposure, two records |
+| `final_watch` | `pause` flushed, playback resumed, unmount flushed again — a *correction*, sent as a second insert |
+| `detail_open` | the popup's layout swap (photo ↔ video) remounts the hook, and returning to a post via Back re-announced an exposure that had never ended |
+
+The shared rule: **an exposure's identity is `(session, post, type)`, and a
+mount is not an exposure.** Guard on the exposure key, not on the component
+lifecycle — `reportedExposureRef`, `sentRef`, an accumulator — so a remount, a
+hide/return cycle or a second handler is a no-op rather than a second record.
+Dwell in particular *accumulates* across hide/return and reports once, which
+also makes the number that reaches the server the whole dwell rather than its
+last fragment.
+
+### A pre-check that reads the database cannot see the batch it is in
+
+`recordEvents` looked up `dedupeKey` against stored rows, which answers "is this
+already persisted" and says nothing about two copies arriving in the *same
+request*. Both passed, both became inserts, and Mongo rejected the second. Every
+collision in that log was this.
+
+The batch is now collapsed before anything is prepared: first-wins for a
+non-updatable type (a retry keeps its identity), **last**-wins for `final_watch`
+and `photo_dwell` (a monotonic correction supersedes), and the collapsed copies
+are still counted in `deduped` so `accepted + deduped + rejected` still accounts
+for everything the caller sent. This is not suppression — the identity, the
+index and the semantics are unchanged; one identity now produces one write.
+
+### `writeErrors[].index` is the only reliable way back to what was rejected
+
+Every one of those collisions logged as `#unknown`, because the hash was
+recovered from the Mongo error's `keyValue` — which some driver paths populate
+and some do not. The event type was known the whole time; the key was not.
+
+Build a metadata array **in lockstep with `insertDocs`** (`PreparedInsertMeta`:
+operation index, event type, dedupe-key hash, session hash, post id, exposure
+hash, batch id, request id, path) and resolve `writeErrors[].index` into it.
+Never parse the error message, and never fall back to `keyPattern` for identity.
+When an index maps to nothing, say `unmapped-operation` — "unknown" reads as a
+missing event type when the real problem is a missing mapping.
+
+Log hashes, never the values: the dedupe key contains the subject id and the
+session id is a Redis key segment. A post id is already public and is logged
+plainly so a trace can be followed.
+
+### A retry is not free just because it is safe
+
+The client queue requeued on **any** rejected `fetch`. A lost response is not a
+failed write: the server may well have committed the batch, so the retry is a
+resend, and the dedupe key makes it *safe* rather than *absent*. Retry only
+transport-level failures — where no `status` came back — and never requeue a
+`keepalive` unload flush, which the browser keeps alive precisely so it can be
+delivered. `flushOnUnload` also sets the `flushing` flag now, so an interval
+flush cannot start a second overlapping batch behind it.
+
+### Cover
+
+- `api/src/services/content/recommendation/recommendation-event-collision-diagnostics.spec.ts`
+  — hashing, collision classification, operation-index mapping (including the
+  driver shape with no `keyValue`), and the collapse as a pure function.
+- `user/src/hooks/recommendation-exposure-identity.spec.tsx` — one dwell per
+  exposure across hide/return cycles, and a genuinely new exposure still
+  reporting.
+- `user/browser-verify/42-event-duplicate-soak.js` — ten minutes of ordinary
+  review traffic with every batch correlated to the server's verdict, grouped by
+  event type, exposure and flush trigger.

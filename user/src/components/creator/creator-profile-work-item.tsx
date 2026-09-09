@@ -154,10 +154,11 @@ function CreatorProfileWorkItem({
               type='button'
               aria-label={selected ? 'Deselect post' : 'Select post'}
               aria-pressed={selected}
+              data-batch-checkbox
               onClick={() => onToggleSelection(post._id)}
-              className={`absolute right-2 top-2 z-40 flex h-5 w-5 cursor-pointer items-center justify-center rounded border text-white transition ${selected ? 'border-[#ff2c55] bg-[#ff2c55]' : 'border-white/70 bg-black/25 hover:bg-black/45'}`}
+              className={`absolute right-2 max-lg:right-1.5 top-2 max-lg:top-1.5 z-40 flex h-5 w-5 max-lg:h-4 max-lg:w-4 cursor-pointer items-center justify-center rounded max-lg:rounded-[3px] border text-white transition ${selected ? 'border-[#ff2c55] bg-[#ff2c55]' : 'border-white/70 bg-black/25 hover:bg-black/45'}`}
             >
-              {selected ? <FiCheck className='text-[12px]' /> : null}
+              {selected ? <FiCheck className='text-[12px] max-lg:text-[10px]' /> : null}
             </button>
           ) : null}
           <div className="absolute bottom-0 h-12 w-full bg-[linear-gradient(transparent_0%,rgba(0,0,0,0.5)_100%)] opacity-100" />
@@ -206,7 +207,7 @@ function CreatorProfileWorkItem({
           ) : null}
         </div>
       </a>
-      <p className="mt-2 h-[22px] overflow-hidden text-sm font-medium leading-[22px] text-(--text) line-clamp-1 transition-[margin] duration-350">
+      <p className="mt-2 max-lg:mt-1.5 h-[22px] max-lg:h-[26px] overflow-hidden text-sm max-lg:text-[10px] font-medium leading-[22px] max-lg:leading-[13px] text-(--text) line-clamp-1 max-lg:line-clamp-2 transition-[margin] duration-350">
         {post.text}
       </p>
     </li>

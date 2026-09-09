@@ -4,6 +4,7 @@ import { MAX_RENDERED_FEED_POSTS } from '@hooks/use-feed-chain-page';
 import { useHomeFeedInfiniteScroll } from '@hooks/use-home-feed-infinite-scroll';
 import { useHomeFeedPlayback } from '@hooks/use-home-feed-playback';
 import { useIsMobile } from '@hooks/use-mobile';
+import type { PostDetailMode } from '@hooks/use-post-detail-mode';
 import { isTopicKeyRetired, usePostTopicsCatalogue } from '@hooks/use-post-topics';
 import { useRecommendationDetailFeed } from '@hooks/use-recommendation-detail-feed';
 import Link from 'next/link';
@@ -104,14 +105,32 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
 
   const [hoveredCompactPostId, setHoveredCompactPostId] = useState<string | null>(null);
   const playback = useHomeFeedPlayback(posts, updatePostInteraction);
-  // Post Detail's next/previous for a Home/direct-link open follows the
-  // recommendation detail session, not grid order (rules/instructions §5.1,
-  // §5.3) — `for-you`/`following-feed`/creator-scoped sources never reach
-  // here, so this is unconditionally the right sequence for whatever modal
-  // Home ever opens.
+
+  /*
+   * Post Detail navigates its **own** recommendation session, not Home's.
+   *
+   * These are three independent engines and merging them is a product change,
+   * not a bug fix: Home ranks a browse, For You ranks by watch/interest
+   * behaviour, and the detail viewer runs an anchor-based session of its own so
+   * "next" is a fresh recommendation rather than the card that happened to sit
+   * below the one you tapped. A previous pass coupled this to Home's ordered
+   * ids and cursor; that is reverted here.
+   *
+   * `useRecommendationDetailFeed` owns that session for every modal Home opens
+   * — grid clicks and `modal_id` deep links alike (rules/instructions §5.1,
+   * §5.3). `for-you`, `following-feed` and creator-scoped sources never reach
+   * here.
+   */
+  /*
+    While the popup's Videos tab is driving, the detail session holds still —
+    see `useRecommendationDetailFeed`'s `frozen`. Creator posts are not part of
+    this session and must not be mistaken for a new open.
+  */
+  const [detailNavigationMode, setDetailNavigationMode] = useState<PostDetailMode>('recommendation');
   const detailFeed = useRecommendationDetailFeed({
     enabled: Boolean(playback.detailPost),
-    currentPost: playback.detailPost
+    currentPost: playback.detailPost,
+    frozen: detailNavigationMode === 'creator'
   });
 
   // With a category selected the bar must stay mounted, otherwise an empty category leaves the user
@@ -259,6 +278,7 @@ export default function HomeFeed({ initialData }: HomeFeedProps) {
           onPlaybackTimeChange={(currentTime) => {
             if (playback.detailPost?._id === posts[0]?._id) playback.updateFeaturedPlaybackTime(currentTime);
           }}
+          onNavigationModeChange={setDetailNavigationMode}
           onClose={playback.closeDetailPost}
           onNavigate={playback.navigateDetailPost}
           onInteractionChange={playback.handleInteractionChange}

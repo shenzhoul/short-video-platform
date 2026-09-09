@@ -238,7 +238,12 @@ function HomeFeedCard({
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {!isProfileVariant ? (
-                  <button type="button" onClick={playback.openPip} className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-black/25 text-sm text-white transition hover:bg-white/15" aria-label="Picture in picture">
+                  /* Hidden below `lg` for the same reason as the player's own
+                     control — see `video-player.tsx`. This row only appears
+                     during a hover preview, which a touch device never
+                     produces, but the control must not be reachable at a
+                     compact width by any route. */
+                  <button type="button" onClick={playback.openPip} className="flex h-6 w-6 max-lg:hidden cursor-pointer items-center justify-center rounded-full bg-black/25 text-sm text-white transition hover:bg-white/15" aria-label="Picture in picture">
                     <PiPIcon className="text-3xl" />
                   </button>
                 ) : null}

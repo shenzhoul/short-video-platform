@@ -113,3 +113,99 @@ describe('recommendation event queue', () => {
     expect(mockRecordRecommendationEvents).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * One identity is queued once.
+ *
+ * Two copies of one identity in a single batch are two inserts that collide on
+ * the server's unique index. Measured over ten minutes of ordinary review
+ * traffic before this: 21 such pairs, overwhelmingly `final_watch` from a pause
+ * flush and an unmount flush landing in one flush window.
+ */
+describe('queue coalescing', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    __resetRecommendationEventQueueForTests();
+    mockRecordRecommendationEvents.mockReset();
+    mockRecordRecommendationEvents.mockResolvedValue({ accepted: 1, deduped: 0, rejected: 0 });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  const sent = () => (mockRecordRecommendationEvents.mock.calls[0]?.[0] ?? []) as any[];
+
+  it('replaces a queued final_watch with the later, larger correction', async () => {
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 5000
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 8000
+    } as any);
+
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0].watchMs).toBe(8000);
+  });
+
+  it('keeps the first emission of a once-only type and drops the repeat', async () => {
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'detail_open', source: 'post-detail'
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'detail_open', source: 'post-detail'
+    } as any);
+
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(sent()).toHaveLength(1);
+    expect(sent()[0].eventType).toBe('detail_open');
+  });
+
+  it('leaves distinct identities alone', async () => {
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 1
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p2', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 1
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's2', eventType: 'final_watch', source: 'post-detail', watchMs: 1
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'photo_dwell', source: 'post-detail', dwellMs: 1
+    } as any);
+
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(sent()).toHaveLength(4);
+  });
+
+  it('a coalesced batch carries no repeated identity at all', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      enqueueRecommendationEvent({
+        postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: i * 1000
+      } as any);
+      enqueueRecommendationEvent({
+        postId: 'p1', sessionId: 's1', eventType: 'photo_dwell', source: 'post-detail', dwellMs: i * 100
+      } as any);
+    }
+
+    await jest.advanceTimersByTimeAsync(4000);
+    const identities = sent().map((e) => `${e.sessionId}:${e.postId}:${e.eventType}`);
+    expect(new Set(identities).size).toBe(identities.length);
+    expect(sent()).toHaveLength(2);
+  });
+
+  it('coalescing preserves queue order', async () => {
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 1000
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p2', sessionId: 's1', eventType: 'impression', source: 'home-feed'
+    } as any);
+    enqueueRecommendationEvent({
+      postId: 'p1', sessionId: 's1', eventType: 'final_watch', source: 'post-detail', watchMs: 9000
+    } as any);
+
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(sent().map((e) => e.postId)).toEqual(['p1', 'p2']);
+    expect(sent()[0].watchMs).toBe(9000);
+  });
+});

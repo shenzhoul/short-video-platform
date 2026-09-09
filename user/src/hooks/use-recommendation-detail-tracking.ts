@@ -1,7 +1,7 @@
 'use client';
 
 import { IPost } from '@interfaces/post';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { enqueueRecommendationEvent, RecommendationEventSource } from '../lib/recommendation-event-queue';
 import { PostDetailSource } from './use-post-detail-sequence';
@@ -31,13 +31,32 @@ interface UseRecommendationDetailTrackingOptions {
 export function useRecommendationDetailTracking({ post, source, sessionId }: UseRecommendationDetailTrackingOptions) {
   const recoSource: RecommendationEventSource = source === 'for-you' ? 'for-you' : 'post-detail';
 
+  /*
+   * One `detail_open` per genuine exposure, not per mount.
+   *
+   * This hook is called by both popup layouts, so stepping between a photo and
+   * a video unmounts one and mounts the other — and returning to a post the
+   * viewer already had open (Back out of the creator grid) remounts it with the
+   * same session and the same post. The effect then re-fired for an identity
+   * that had already been reported, and the duplicate landed in the same batch
+   * as the original often enough to be rejected by the unique index rather than
+   * absorbed by the server's pre-check.
+   *
+   * The exposure key is what changes, not the mount, so it is what the guard
+   * remembers. A genuinely new exposure — a different post, or the same post in
+   * a new recommendation session — has a different key and reports normally.
+   */
+  const reportedExposureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!sessionId) return;
+    const exposureKey = `${sessionId}:${post._id}`;
+    if (reportedExposureRef.current === exposureKey) return;
+    reportedExposureRef.current = exposureKey;
     enqueueRecommendationEvent({
       postId: post._id, sessionId, eventType: 'detail_open', source: recoSource
     });
     // Intentionally keyed on the post/session pair only — refiring on every
-    // render would spam the queue, and the server dedupes a genuine retry.
+    // render would spam the queue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post._id, sessionId]);
 

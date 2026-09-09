@@ -46,7 +46,7 @@ export default async function MainThemeLayout({ children }: Layout) {
       which is what lets a feed, a detail panel and a message panel each own
       their own scroller instead of growing the document.
     */
-    <div className="min-h-screen bg-(--page-bg) flex flex-col overflow-hidden max-xl:h-(--app-viewport-height)">
+    <div className="xl:min-h-screen bg-(--page-bg) flex flex-col overflow-hidden max-xl:h-(--app-viewport-height)">
       <div className={`flex gap-0 flex-1 max-xl:min-h-0 ${serverUser ? 'xl:overflow-y-auto' : ''}`}>
         <div className="relative">
           <LeftNavigation serverUser={serverUser} />

@@ -39,6 +39,19 @@ description: One-way creator follow relationships and the authenticated Douyin C
 12. Limit creator-list sorting to recent and earliest relationship order. The more affordance opens the creator action modal; copying the Douyin ID and cancelling the relationship must work without reloading the page.
 13. Match popup-PiP state by `pictureInPicturePayload.videoId`, not by the page-specific player instance ID, so the originating Following stage renders the shared `Currently playing` state.
 
+## Compact layout
+
+Following is the only feed that divides **four** columns, and the compact
+allocation is owned by `.agents/skills/responsive-shell/SKILL.md` — read that
+section before changing the creator rail's width, the panel share, or anything
+in `following-creators-rail.tsx` at `max-lg:`. In short: the expanded rail is
+88px with its own 9-10px type, the detail panel holds ~206px whether the rail is
+expanded or collapsed, and the media strip absorbs the difference.
+
+Navigation on this surface follows the same matrix every other post surface
+does — see `.agents/skills/post-feed-navigation/SKILL.md`. It used to have no
+gating at all and closed the panel on the way past to hide the mismatch.
+
 ## Verification
 
 - Test first follow, repeated follow, concurrent duplicate follow, self-follow, first unfollow, and repeated unfollow.

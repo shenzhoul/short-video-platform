@@ -1,21 +1,17 @@
 'use client';
 
 import { IPost } from '@interfaces/post';
+import { PostNavigationContext, resolveNavigationContext } from '@lib/post-navigation-context';
 import { useEffect, useRef, useState } from 'react';
 
 import { PostDetailSource } from './use-post-detail-sequence';
 
 /**
  * Which list owns "current post", "next", "previous" and prefetch — exactly
- * one at a time.
- *
- * | mode           | sequence owner                  | may change creator | scroll moves post |
- * |----------------|---------------------------------|--------------------|-------------------|
- * | recommendation | the recommendation session      | yes                | yes               |
- * | creator        | one creator's posts             | no                 | yes               |
- * | locked         | nothing                         | n/a                | no                |
+ * one at a time. See `resolveNavigationContext`, which is the definition; this
+ * alias exists so the popup's long-standing name keeps working.
  */
-export type PostDetailMode = 'recommendation' | 'creator' | 'locked';
+export type PostDetailMode = PostNavigationContext;
 
 export interface PostDetailModeState {
   mode: PostDetailMode;
@@ -31,12 +27,6 @@ export interface PostDetailModeState {
   creatorId: string | null;
 }
 
-/** Sources whose sequence is one creator's posts however the panel is set. */
-const CREATOR_SCOPED_SOURCES: PostDetailSource[] = ['profile-videos', 'creator-videos-tab'];
-
-/** The one panel tab that navigates; every other open tab locks navigation. */
-const CREATOR_TAB = 'videos';
-
 interface UsePostDetailModeOptions {
   /** The post currently open. */
   post: IPost;
@@ -44,6 +34,10 @@ interface UsePostDetailModeOptions {
   panelTab: string | null;
   /** Where the modal was opened from. */
   source?: PostDetailSource;
+  /** A text field has focus, or a pointer is held on a seek bar or a scroller. */
+  inputActive?: boolean;
+  /** The Messages workspace is open beside the stage. */
+  messagesOpen?: boolean;
 }
 
 /**
@@ -64,10 +58,10 @@ interface UsePostDetailModeOptions {
  * creator matters most.
  */
 export function usePostDetailMode({
-  post, panelTab, source
+  post, panelTab, source, inputActive = false, messagesOpen = false
 }: UsePostDetailModeOptions): PostDetailModeState {
-  const sourceIsCreatorScoped = source ? CREATOR_SCOPED_SOURCES.includes(source) : false;
-  const inCreatorMode = sourceIsCreatorScoped || panelTab === CREATOR_TAB;
+  const context = resolveNavigationContext({ panelTab, source, inputActive, messagesOpen });
+  const inCreatorMode = context === 'creator';
 
   const [creatorId, setCreatorId] = useState<string | null>(
     inCreatorMode ? post.user?._id || null : null
@@ -93,6 +87,5 @@ export function usePostDetailMode({
     : null;
 
   if (inCreatorMode) return { mode: 'creator', creatorId: resolvedCreatorId };
-  if (panelTab) return { mode: 'locked', creatorId: null };
-  return { mode: 'recommendation', creatorId: null };
+  return { mode: context, creatorId: null };
 }

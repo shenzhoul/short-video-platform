@@ -322,6 +322,20 @@ interface PostVideoStageProps {
   onTotalCommentChange?: (total: number) => void;
   /** Forwarded to the detail panel; fires only on a real comment creation by this viewer. */
   onCommentCreate?: (comment: IComment) => void;
+  /**
+   * Wrap the moving part of the stage — the player card and the action rail —
+   * without wrapping the detail panel.
+   *
+   * The popup drags the post and leaves its shell anchored: the close button,
+   * the message button and the tab panel must not travel with the media. The
+   * feeds wrap the whole stage from outside instead, because there the panel
+   * *is* part of what slides. One hook and one viewport component either way;
+   * only the level differs, and it differs because the two surfaces disagree
+   * about what the panel belongs to.
+   */
+  wrapStage?: (stage: ReactNode) => ReactNode;
+  /** The stage root, so a caller can measure the unit its drag is expressed in. */
+  stageRef?: Ref<HTMLElement>;
   /** Remove rounded corners — use for full-screen modal mode */
   disableRounding?: boolean;
   /** Controlled PiP state from a parent feed's usePipFeedSync. Omit to have this stage track it on its own (read-only). */
@@ -356,6 +370,8 @@ export default function PostVideoStage({
   onSelectCreatorVideo = () => undefined,
   onTotalCommentChange,
   onCommentCreate,
+  wrapStage,
+  stageRef,
   disableRounding = false,
   popupPipState: controlledPopupPipState
 }: PostVideoStageProps) {
@@ -455,25 +471,38 @@ export default function PostVideoStage({
     setTotalComment(post.totalComment || 0);
   }, [post._id, post.totalComment]);
 
-  return (
-    <PostVideoDetailContext.Provider value={detailContext}>
-      <section
-        className={`relative h-full min-h-0 w-full overflow-hidden ${className}`}
-        style={layoutStyle}
+  /*
+   * The part of the stage that a drag moves: the player card and whatever the
+   * caller drew over it (the action rail). The detail panel below is
+   * deliberately outside, so a popup drag leaves its tabs anchored.
+   */
+  const movingStage = (
+    <>
+      <div
+          /*
+            A container, so what the player draws over itself responds to the
+            width the player actually got rather than to the viewport.
+
+            The two are not the same question. At a 440px viewport with the
+            Following creator rail expanded and the comments panel open, the
+            player is 98px wide -- the caption reserves 58px for the action rail
+            and had 40px left, so "@Tomas Berg . Sep 3" wrapped over four lines
+            straight through the like and comment icons, and the transport bar's
+            timecode collided with the mute button. A viewport breakpoint cannot
+            tell that case apart from the full-width one beside it.
+          */
+        className={`@container/playerstage relative h-full min-h-0 overflow-hidden transition-[width] duration-300 ${roundedClass} bg-black shadow-[0_24px_70px_rgba(0,0,0,.32)]`}
+        style={{ width: 'var(--post-video-player-width)' }}
       >
         <div
-          className={`relative h-full min-h-0 overflow-hidden transition-[width] duration-300 ${roundedClass} bg-black shadow-[0_24px_70px_rgba(0,0,0,.32)]`}
-          style={{ width: 'var(--post-video-player-width)' }}
-        >
-          <div
-            className="pointer-events-none absolute inset-0 max-lg:hidden scale-110 bg-cover bg-center opacity-70 blur-3xl"
-            style={{ backgroundImage: `url(${mediaUrl})` }}
-            aria-hidden
-          />
+          className="pointer-events-none absolute inset-0 max-lg:hidden scale-110 bg-cover bg-center opacity-70 blur-3xl"
+          style={{ backgroundImage: `url(${mediaUrl})` }}
+          aria-hidden
+        />
 
-          <div className="pointer-events-none absolute inset-0 max-lg:hidden bg-black/35" aria-hidden />
+        <div className="pointer-events-none absolute inset-0 max-lg:hidden bg-black/35" aria-hidden />
 
-          {/*
+        {/*
             The media element is chosen from what the post actually holds, not
             from which surface is drawing it.
 
@@ -488,23 +517,23 @@ export default function PostVideoStage({
             is the defect, and the console warning is only how it announced
             itself.
           */}
-          {videoSrc ? (
-            <VideoPlayer
-              ref={playerRef}
-              id={playerId}
-              src={videoSrc}
-              poster={mediaUrl}
-              muted
-              controls
-              preload="auto"
-              isActiveSlide={isActiveSlide}
-              autoplayOnActive={!isCurrentPopup}
-              alwaysShowControls
-              initialTime={initialTime}
-              showFullscreenControl
-              showVolumeSlider
-              showCenterPlayButton
-              forceBackgroundBlur
+        {videoSrc ? (
+          <VideoPlayer
+            ref={playerRef}
+            id={playerId}
+            src={videoSrc}
+            poster={mediaUrl}
+            muted
+            controls
+            preload="auto"
+            isActiveSlide={isActiveSlide}
+            autoplayOnActive={!isCurrentPopup}
+            alwaysShowControls
+            initialTime={initialTime}
+            showFullscreenControl
+            showVolumeSlider
+            showCenterPlayButton
+            forceBackgroundBlur
               /*
                 A full playback stage contains the frame; it never crops to
                 fill. `auto` resolved to `object-cover` for any **landscape**
@@ -520,39 +549,56 @@ export default function PostVideoStage({
                 `creator-profile-work-item`, where cropping to a fixed tile is
                 the intent.
               */
-              objectFit="contain"
-              pictureInPicturePayload={popupPayload || undefined}
-              onPictureInPictureOpen={onPictureInPictureOpen}
-              onTimeUpdate={onTimeUpdate}
-              onPause={onPause}
-              onEnded={onEnded}
-              className={`h-full min-h-0! ${roundedClass}`}
-              classVideo=""
-              suppressPictureInPictureOverlay
-            />
+            objectFit="contain"
+            pictureInPicturePayload={popupPayload || undefined}
+            onPictureInPictureOpen={onPictureInPictureOpen}
+            onTimeUpdate={onTimeUpdate}
+            onPause={onPause}
+            onEnded={onEnded}
+            className={`h-full min-h-0! ${roundedClass}`}
+            classVideo=""
+            suppressPictureInPictureOverlay
+          />
           ) : (
             <PostGraphicStageMedia post={post} active={isActiveSlide ? !isCurrentPopup : null} />
           )}
-          {detailPanelTab !== 'details' ? (
-            <div className="pointer-events-none absolute bottom-16 max-lg:bottom-14 left-4 max-lg:left-2 z-40 max-w-[min(760px,calc(100%-112px))] max-lg:max-w-[calc(100%-58px)] pr-8 max-lg:pr-1 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,.75)]">
-              <div className="mb-2 max-lg:mb-0.5 text-lg max-lg:text-[10px] max-lg:leading-[14px] font-bold">
-                @{creatorName}{timeText ? <span className="ml-2 max-lg:ml-1 text-base max-lg:text-[9px] font-semibold text-white/85">· {timeText}</span> : null}
-              </div>
-              {description ? (
-                <PostDetailDescription
-                  key={post._id}
-                  text={description}
-                  onOpenDetails={() => setDetailPanelTab('details')}
-                  className="pointer-events-auto"
-                />
-              ) : null}
-              <button type="button" className="pointer-events-auto mt-3 max-lg:mt-1 inline-flex cursor-pointer items-center rounded-lg max-lg:rounded max-lg:leading-[13px] bg-white/16 px-4 max-lg:px-1.5 py-2 max-lg:py-0.5 text-sm max-lg:text-[9px] font-semibold text-white backdrop-blur transition hover:bg-white/24">
-                Collection · {collectionLabel}
-              </button>
+        {detailPanelTab !== 'details' ? (
+            /*
+              Below 9rem of player there is no caption -- the same words are one
+              tap away under Details, and the panel showing them is already open
+              beside it. Drawing them in the 40px the action rail leaves is not
+              a smaller caption, it is an unreadable one on top of the controls.
+            */
+          <div className="@max-[9rem]/playerstage:hidden pointer-events-none absolute bottom-20 max-lg:bottom-[76px] left-4 max-lg:left-2 z-40 max-w-[min(760px,calc(100%-112px))] max-lg:max-w-[calc(100%-58px)] pr-8 max-lg:pr-1 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,.75)]">
+            <div className="mb-2 max-lg:mb-0.5 text-lg max-lg:text-[10px] max-lg:leading-[14px] font-bold">
+              @{creatorName}{timeText ? <span className="ml-2 max-lg:ml-1 text-base max-lg:text-[9px] font-semibold text-white/85">· {timeText}</span> : null}
             </div>
+            {description ? (
+              <PostDetailDescription
+                key={post._id}
+                text={description}
+                onOpenDetails={() => setDetailPanelTab('details')}
+                className="pointer-events-auto"
+              />
+              ) : null}
+            <button type="button" className="pointer-events-auto mt-3 max-lg:mt-1 inline-flex cursor-pointer items-center rounded-lg max-lg:rounded max-lg:leading-[13px] bg-white/16 px-4 max-lg:px-1.5 py-2 max-lg:py-0.5 text-sm max-lg:text-[9px] font-semibold text-white backdrop-blur transition hover:bg-white/24">
+              Collection · {collectionLabel}
+            </button>
+          </div>
           ) : null}
-        </div>
-        {children}
+      </div>
+      {children}
+    </>
+  );
+
+  return (
+    <PostVideoDetailContext.Provider value={detailContext}>
+      <section
+        ref={stageRef}
+        className={`relative h-full min-h-0 w-full overflow-hidden ${className}`}
+        style={layoutStyle}
+      >
+        {wrapStage ? wrapStage(movingStage) : movingStage}
         {isCurrentPopup ? (
           <div className="absolute inset-0 z-60 flex flex-col items-center justify-center gap-5 bg-black text-center text-white w-[calc(100%-var(--feed-nav-gutter,68px))]">
             <p className="text-base font-medium text-white/70">Playing in Picture-in-Picture</p>

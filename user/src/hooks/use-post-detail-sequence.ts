@@ -126,7 +126,7 @@ export function usePostDetailSequence({
   // the arrows go quiet rather than moving a list the viewer cannot see.
   const navigationPosts = creatorScope
     ? creatorScopedPosts
-    : mode === 'locked'
+    : mode === 'disabled'
       ? []
       : navigableFeedPosts;
 
@@ -139,7 +139,7 @@ export function usePostDetailSequence({
     // the open post, because the hook places it there.
     fallbackIndex: mode === 'recommendation' ? feedIndexRef.current : -1,
     // Only the recommendation session refills; a creator list pages instead,
-    // and a locked panel navigates nothing.
+    // and a disabled context navigates nothing.
     hasMoreAhead: mode === 'recommendation' && hasMoreAhead
   });
 

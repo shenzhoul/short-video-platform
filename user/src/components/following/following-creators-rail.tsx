@@ -15,6 +15,16 @@ interface FollowingCreatorsRailProps {
   /** Heading above the list. Defaults to the following-page wording. */
   title?: string;
   activeCreatorId?: string;
+  /**
+   * Whether the rail is showing names.
+   *
+   * Owned by the feed rather than by the rail, because it decides the column
+   * allocation for the whole row: the detail panel has to hold its measured
+   * width whatever the rail is doing, and the stage cannot read a boolean that
+   * lives inside its sibling.
+   */
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
   onSelectCreator: (creatorId: string) => void;
   onUnfollowCreator: (creatorId: string) => Promise<void>;
 }
@@ -25,9 +35,9 @@ const SORT_OPTIONS: Array<{ label: string; value: FollowingSort }> = [
 ];
 
 export default function FollowingCreatorsRail({
-  creators, activeCreatorId, onSelectCreator, onUnfollowCreator, title = 'My following'
+  creators, activeCreatorId, expanded, onExpandedChange, onSelectCreator, onUnfollowCreator,
+  title = 'My following'
 }: FollowingCreatorsRailProps) {
-  const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<FollowingSort>('recent');
   const [actionCreator, setActionCreator] = useState<IUser | null>(null);
@@ -50,15 +60,22 @@ export default function FollowingCreatorsRail({
         the reference: 28px collapsed (a 20px avatar plus its gutters), never a
         labelled rail. The 56px it used to be cost the media stage a fifth of
         its width for a column that shows nothing but circles.
+
+        Expanded it is 88px (`w-22`), measured off
+        `douyin-following-expanded-reference.png`: ~93px of that capture's 467px
+        of app width, scaled to our 440px viewport. It was 128px -- a third of
+        the whole content area -- and every element inside it still carried its
+        desktop type, so the header row ("List" plus the sort control)
+        overflowed and was clipped by the media column beside it.
       */
-      className={`relative z-50 h-full shrink-0 border-r border-(--border-faint) text-(--text-strong) transition-[width] duration-200 ${expanded ? 'w-52 max-lg:w-32' : 'w-18 max-lg:w-7'}`}
+      className={`relative z-50 h-full shrink-0 border-r border-(--border-faint) text-(--text-strong) transition-[width] duration-200 ${expanded ? 'w-52 max-lg:w-22' : 'w-18 max-lg:w-7'}`}
     >
       <div className="flex h-full min-h-0 flex-col py-3 max-lg:py-1">
-        <div className="mb-2 max-lg:mb-1 flex h-8 max-lg:h-5 shrink-0 items-center justify-between px-3 max-lg:px-0">
+        <div className="mb-2 max-lg:mb-1 flex h-8 max-lg:h-5 shrink-0 items-center justify-between gap-1 px-3 max-lg:px-1">
           <button
             type="button"
-            onClick={() => setExpanded(current => !current)}
-            className={`flex h-8 max-lg:h-5 cursor-pointer items-center rounded-lg text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55] ${expanded ? 'gap-1 px-1.5 text-sm font-semibold' : 'mx-auto w-9 max-lg:w-full justify-center'}`}
+            onClick={() => onExpandedChange(!expanded)}
+            className={`flex h-8 max-lg:h-5 cursor-pointer items-center rounded-lg text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55] ${expanded ? 'gap-1 px-1.5 max-lg:gap-0.5 max-lg:px-0 text-sm max-lg:text-[9px] font-semibold' : 'mx-auto w-9 max-lg:w-full justify-center'}`}
             aria-label={expanded ? 'Collapse following list' : 'Expand following list'}
             aria-expanded={expanded}
           >
@@ -76,11 +93,18 @@ export default function FollowingCreatorsRail({
               trigger={(
                 <button
                   type="button"
-                  className="flex h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 text-[13px] text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55]"
+                  className="flex h-8 max-lg:h-5 cursor-pointer items-center gap-1 max-lg:gap-0.5 rounded-lg px-1.5 max-lg:px-0 text-[13px] max-lg:text-[9px] text-(--text-muted) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55]"
                   aria-label={`Sort following list: ${selectedSortLabel}`}
                 >
-                  <span className="max-w-25 truncate">{selectedSortLabel}</span>
-                  <SortIcon className="shrink-0 text-lg" />
+                  {/*
+                    Compact, the sort control is its icon alone. "Recently"
+                    truncated to "Recen..." and still pushed the icon under the
+                    media column's edge; the accessible name on the button
+                    carries the current value, and the menu shows both options.
+                    A caption may be hidden -- a control may not.
+                  */}
+                  <span className="max-w-25 truncate max-lg:hidden">{selectedSortLabel}</span>
+                  <SortIcon className="shrink-0 text-lg max-lg:text-[11px]" />
                 </button>
               )}
             >
@@ -103,22 +127,22 @@ export default function FollowingCreatorsRail({
         <div className={`mb-2 max-lg:mb-1 shrink-0 ${expanded ? 'px-3 max-lg:px-1' : 'px-4 max-lg:px-1'}`}>
           <label
             className="flex h-9 max-lg:h-5 cursor-text items-center rounded-xl max-lg:rounded-md border border-(--border-soft) bg-(--surface-muted) text-(--text-muted) transition hover:border-(--divider-strong) focus-within:border-(--divider-strong)"
-            onClick={() => setExpanded(true)}
+            onClick={() => onExpandedChange(true)}
           >
-            <SearchIcon className={`shrink-0 text-2xl max-lg:text-[13px] ${expanded ? 'ml-2' : 'mx-auto'}`} />
+            <SearchIcon className={`shrink-0 text-2xl max-lg:text-[11px] ${expanded ? 'ml-2 max-lg:ml-1' : 'mx-auto'}`} />
             {expanded ? (
               <input
                 value={query}
                 onChange={event => setQuery(event.target.value)}
                 placeholder="Search following"
-                className="h-full min-w-0 flex-1 bg-transparent px-1.5 pr-3 text-[13px] text-(--text-strong) outline-none placeholder:text-(--text-faint)"
+                className="h-full min-w-0 flex-1 bg-transparent px-1.5 max-lg:px-1 pr-3 max-lg:pr-1 text-[13px] max-lg:text-[9px] text-(--text-strong) outline-none placeholder:text-(--text-faint)"
               />
             ) : null}
           </label>
         </div>
 
         {expanded ? (
-          <p className="mb-1 h-8 shrink-0 px-4 py-1.5 text-sm font-semibold text-(--text-muted)">
+          <p className="mb-1 max-lg:mb-0.5 h-8 max-lg:h-4 shrink-0 px-4 max-lg:px-1 py-1.5 max-lg:py-0 text-sm max-lg:text-[9px] max-lg:leading-4 font-semibold text-(--text-muted)">
             {title} ({creators.length})
           </p>
         ) : null}
@@ -132,7 +156,7 @@ export default function FollowingCreatorsRail({
               return (
                 <li key={creator._id} className="w-full">
                   <div
-                    className={`group flex h-12 max-lg:h-7 w-full items-center rounded-xl max-lg:rounded-lg transition hover:bg-(--hover-bg) focus-within:bg-(--hover-bg) ${expanded ? 'px-3 max-lg:px-1' : 'justify-center px-0'} ${isActive ? 'bg-(--active-bg)' : ''}`}
+                    className={`group relative flex h-12 max-lg:h-7 w-full items-center rounded-xl max-lg:rounded-lg transition hover:bg-(--hover-bg) focus-within:bg-(--hover-bg) ${expanded ? 'px-3 max-lg:px-1' : 'justify-center px-0'} ${isActive ? 'bg-(--active-bg)' : ''}`}
                   >
                     <button
                       type="button"
@@ -145,7 +169,7 @@ export default function FollowingCreatorsRail({
                       </span>
 
                       {expanded ? (
-                        <span className="ml-2 min-w-0 flex-1 truncate text-left text-[13px] font-normal text-(--text)">
+                        <span className="ml-2 max-lg:ml-1 min-w-0 flex-1 truncate text-left text-[13px] max-lg:text-[10px] font-normal text-(--text)">
                           {creatorName}
                         </span>
                       ) : null}
@@ -154,10 +178,17 @@ export default function FollowingCreatorsRail({
                       <button
                         type="button"
                         onClick={() => setActionCreator(creator)}
-                        className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-(--text-muted) opacity-0 transition hover:text-(--text-strong) focus:opacity-100 focus-visible:outline-2 focus-visible:outline-[#fe2c55] group-hover:opacity-100 group-focus-within:opacity-100"
+                        /*
+                          Compact, this floats over the row's right edge instead
+                          of sitting in the flex line. It is hidden until hover,
+                          but `opacity-0` still reserves its 32px -- a third of
+                          an 88px rail permanently spent on a control that is
+                          not visible, taken straight out of the name.
+                        */
+                        className="ml-1 max-lg:ml-0 flex h-8 w-8 max-lg:h-5 max-lg:w-5 shrink-0 cursor-pointer items-center justify-center rounded-lg max-lg:absolute max-lg:right-0 max-lg:bg-(--surface) text-(--text-muted) opacity-0 transition hover:text-(--text-strong) focus:opacity-100 focus-visible:outline-2 focus-visible:outline-[#fe2c55] group-hover:opacity-100 group-focus-within:opacity-100"
                         aria-label={`More actions for ${creatorName}`}
                       >
-                        <MoreIcon className="text-xl" />
+                        <MoreIcon className="text-xl max-lg:text-[13px]" />
                       </button>
                     ) : null}
                   </div>

@@ -34,28 +34,59 @@ export function useRecommendationPhotoDwell({
   enabled, postId, sessionId, source
 }: UseRecommendationPhotoDwellOptions): void {
   const startedAtRef = useRef<number | null>(null);
+  /** Dwell banked across hide/return cycles within one exposure. */
+  const accumulatedRef = useRef(0);
+  /** One exposure emits one `photo_dwell`, however many times flush is called. */
+  const sentRef = useRef(false);
   const exposureKey = enabled && sessionId && postId ? `${sessionId}:${postId}` : null;
 
   useEffect(() => {
     if (!exposureKey) return undefined;
+    // A new exposure starts a new accumulation and may emit again.
+    accumulatedRef.current = 0;
+    sentRef.current = false;
     startedAtRef.current = Date.now();
 
+    /*
+     * Dwell is *cumulative for one exposure*, and it is emitted once.
+     *
+     * It used to be sent from both the visibility handler and the unmount
+     * cleanup, each carrying its own slice. Hiding the tab and then closing the
+     * post produced two `photo_dwell` events for one exposure — same identity,
+     * same batch — which is what the unique index was rejecting on the review
+     * API. Accumulating instead means a hide/return cycle adds to the total
+     * rather than sending a second record of it, and the number that reaches
+     * the server is the whole dwell rather than the last fragment of it.
+     */
     const flush = () => {
       const startedAt = startedAtRef.current;
-      if (startedAt === null) return;
-      const dwellMs = Math.min(MAX_DWELL_MS, Math.max(0, Date.now() - startedAt));
-      startedAtRef.current = null;
+      if (startedAt !== null) {
+        accumulatedRef.current += Math.max(0, Date.now() - startedAt);
+        startedAtRef.current = null;
+      }
+      if (sentRef.current) return;
+      const dwellMs = Math.min(MAX_DWELL_MS, Math.max(0, accumulatedRef.current));
+      if (dwellMs <= 0) return;
+      sentRef.current = true;
       enqueueRecommendationEvent({
         postId: postId!, sessionId: sessionId!, eventType: 'photo_dwell', source, dwellMs
       });
     };
 
+    /** Banks the time spent so far without ending the exposure. */
+    const pause = () => {
+      const startedAt = startedAtRef.current;
+      if (startedAt === null) return;
+      accumulatedRef.current += Math.max(0, Date.now() - startedAt);
+      startedAtRef.current = null;
+    };
+
     const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'hidden') return;
-      flush();
-      // A visible tab still counts as continuing to dwell if the person
-      // returns to it without switching posts.
-      startedAtRef.current = Date.now();
+      // Hiding the tab banks the elapsed time; it does not end the exposure and
+      // must not emit. Returning resumes the same accumulation, so a person who
+      // switches away and back is one dwell, not two.
+      if (document.visibilityState === 'hidden') pause();
+      else if (startedAtRef.current === null && !sentRef.current) startedAtRef.current = Date.now();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 

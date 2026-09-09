@@ -39,6 +39,7 @@ Load the matching repo skill before changing specialized areas:
 - System settings and configuration: `.agents/skills/system-settings/SKILL.md`
 - Socket flows: `.agents/skills/websocket-integration/SKILL.md`
 - Feed infinite scroll (home + creator posts): `.agents/skills/feed-infinite-scroll/SKILL.md`
+- Post feed navigation — one `resolveNavigationContext` for wheel/touch/keys/popup, creator-scoped Videos tab, and the drag-follow-finger stage: `.agents/skills/post-feed-navigation/SKILL.md`
 - Home/For You recommendation ranking, candidate sources, scoring, diversity, Redis feed sessions, and recommendation event tracking: `.agents/skills/recommendation-engine/SKILL.md`
 - One-way creator follows and the authenticated following feed: `.agents/skills/following-feed/SKILL.md`
 - Interaction notifications (like/comment/reply/share/follow), realtime delivery, and the header panel: `.agents/skills/notification-system/SKILL.md`

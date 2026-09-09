@@ -251,7 +251,7 @@ describe('post detail sequence', () => {
     const { result } = renderSequence({
       post: openPhoto,
       feedPosts: [openPhoto, make('feed2', {}, OTHER)],
-      mode: 'locked',
+      mode: 'disabled',
       creatorId: null,
       onNavigate: jest.fn()
     });
@@ -375,7 +375,7 @@ describe('post detail sequence — mode transitions', () => {
     const { result } = renderSequence({
       post: open,
       feedPosts: [open, make('feed2', {}, OTHER)],
-      mode: 'locked',
+      mode: 'disabled',
       creatorId: null,
       onNavigate: jest.fn()
     });

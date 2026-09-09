@@ -272,7 +272,14 @@ export default function CreatorProfilePage({
                             gives (100% - 5x16px)/6, which is exactly the
                             `calc(16.66% - 13.34px)` the tiles carried.
                           */}
-                          <ul className="grid w-full grid-cols-3 gap-x-4 gap-y-4 max-lg:gap-x-2.5 max-lg:gap-y-3 lg:grid-cols-6 leading-0">
+                          {/*
+                            One gap value, not two. The compact grid used
+                            `gap-x-2.5 gap-y-3` — 10px across, 12px down — which
+                            reads as a misalignment rather than a rhythm at
+                            three columns. `gap-2.5` is the same 10px in both
+                            directions, and the tile width is unchanged.
+                          */}
+                          <ul className="grid w-full grid-cols-3 gap-4 max-lg:gap-2.5 lg:grid-cols-6 leading-0">
                             {posts.map((post) => (
                               <CreatorProfileWorkItem
                                 key={post._id}

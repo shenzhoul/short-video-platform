@@ -40,7 +40,7 @@ export const MESSAGE_WORKSPACE_WIDTH = 356;
  * three columns, and this is the third one: the same width as the detail panel,
  * so the two read as a pair and the media keeps the remainder.
  */
-export const MESSAGE_WORKSPACE_COMPACT_WIDTH = 130;
+export const MESSAGE_WORKSPACE_COMPACT_WIDTH = 150;
 
 /**
  * Viewport below which the workspace stops taking layout width and floats over
@@ -95,6 +95,16 @@ interface MessageWorkspaceContextValue {
    * the wrong mode.
    */
   claimFullscreenPlacement: () => () => void;
+  /**
+   * Claim a reflowed column while a surface that lays itself out in columns is
+   * mounted, without claiming fullscreen placement.
+   *
+   * Post detail covers the header and claims `fullscreen`. For You keeps the
+   * header and the rail but still wants the workspace beside the media rather
+   * than on top of it, so it needs the *reflow* without the placement. Counted
+   * for the same reason `claimFullscreenPlacement` is.
+   */
+  claimColumnPlacement: () => () => void;
 }
 
 const MessageWorkspaceContext = createContext<MessageWorkspaceContextValue | null>(null);
@@ -122,6 +132,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
   // How many covering surfaces are currently mounted. Counted rather than a
   // boolean so two of them cannot fight over the flag on unmount.
   const [fullscreenClaims, setFullscreenClaims] = useState(0);
+  const [columnClaims, setColumnClaims] = useState(0);
 
   // Whether the viewport alone is wide enough to give the panel its own column.
   // Watched rather than read once, so dragging a window narrow switches it to an
@@ -147,7 +158,14 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
    * on top of a 440px post and hid it completely.
    */
   const fullscreen = fullscreenClaims > 0;
-  const inline = wideEnough || fullscreen;
+  /**
+   * Any surface that lays itself out in columns reflows, at every width — a
+   * fullscreen one (post detail) or one that merely asked (For You). Only an
+   * ordinary page still overlays below 1280px, where subtracting a column would
+   * leave no usable feed.
+   */
+  const reflows = fullscreen || columnClaims > 0;
+  const inline = wideEnough || reflows;
   const inlineWidth = wideEnough ? MESSAGE_WORKSPACE_WIDTH : MESSAGE_WORKSPACE_COMPACT_WIDTH;
 
   /**
@@ -221,6 +239,11 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
     return () => setFullscreenClaims((count) => Math.max(0, count - 1));
   }, []);
 
+  const claimColumnPlacement = useCallback(() => {
+    setColumnClaims((count) => count + 1);
+    return () => setColumnClaims((count) => Math.max(0, count - 1));
+  }, []);
+
   const placement: MessageWorkspacePlacement = fullscreen ? 'fullscreen' : 'shell';
 
   const value = useMemo<MessageWorkspaceContextValue>(() => ({
@@ -229,6 +252,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
     activeConversationId,
     inline,
     placement,
+    claimColumnPlacement,
     openWorkspace,
     closeWorkspace,
     toggleWorkspace,
@@ -236,7 +260,7 @@ export function MessageWorkspaceProvider({ children }: { children: React.ReactNo
     backToList,
     claimFullscreenPlacement
   }), [
-    open, view, activeConversationId, inline, placement,
+    open, view, activeConversationId, inline, placement, claimColumnPlacement,
     openWorkspace, closeWorkspace, toggleWorkspace, openConversation, backToList,
     claimFullscreenPlacement
   ]);

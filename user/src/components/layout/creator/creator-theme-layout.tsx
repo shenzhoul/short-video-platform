@@ -30,7 +30,7 @@ export default async function CreatorThemeLayout({ children }: Layout) {
       below `lg` — which is what this did — would leave the creator screens with
       an empty gutter where the navigation used to be.
     */
-    <div className="min-h-screen bg-(--page-bg) flex flex-col overflow-hidden max-xl:h-(--app-viewport-height)">
+    <div className="xl:min-h-screen bg-(--page-bg) flex flex-col overflow-hidden max-xl:h-(--app-viewport-height)">
       <div className={`min-h-0 flex gap-0 flex-1 ${serverUser ? 'xl:overflow-y-auto' : ''}`}>
         <div className="relative">
           <CreatorNavigation />

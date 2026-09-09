@@ -18,27 +18,47 @@ import path from 'path';
 const SOURCE = fs.readFileSync(path.join(__dirname, 'for-you-feed.tsx'), 'utf8');
 
 describe('For You navigation modes', () => {
-  it('decides once whether the feed owns navigation', () => {
-    expect(SOURCE).toMatch(/const feedNavigationEnabled = !detailPanelTab/);
+  it('resolves the context with the one shared resolver rather than its own booleans', () => {
+    // `feedNavigationEnabled = !detailPanelTab` is what this replaced. It made
+    // the Videos tab disable navigation here while the popup stepped through
+    // the same grid — two surfaces, one grid, two answers to "next".
+    expect(SOURCE).not.toMatch(/feedNavigationEnabled/);
+    expect(SOURCE).toMatch(/usePostDetailMode\(\{/);
+    expect(SOURCE).toMatch(/panelTab: detailPanelTab/);
+    expect(SOURCE).toMatch(/source: 'for-you'/);
   });
 
-  it('gates both arrows on it, so an open panel cannot move the feed', () => {
-    expect(SOURCE).toMatch(/const canPrevious = feedNavigationEnabled && /);
-    expect(SOURCE).toMatch(/const canNext = feedNavigationEnabled && /);
+  it('feeds the resolver the two conditions that outrank everything else', () => {
+    expect(SOURCE).toMatch(/const inputActive = useNavigationInputActive\(stageContainerRef\)/);
+    expect(SOURCE).toMatch(/inputActive,/);
+    expect(SOURCE).toMatch(/messagesOpen/);
   });
 
-  it('gates the navigate handler too — the wheel and the keyboard use it, not the buttons', () => {
-    const start = SOURCE.indexOf('const navigate = useCallback');
-    expect(start).toBeGreaterThan(-1);
-    const body = SOURCE.slice(start, SOURCE.indexOf('}, [', start));
-    expect(body).toMatch(/if \(!feedNavigationEnabled\) return;/);
+  it('drives every input from the shared sequence controller, not a local index step', () => {
+    expect(SOURCE).toMatch(/const sequence = usePostDetailSequence\(\{/);
+    expect(SOURCE).toMatch(/const navigate = sequence\.navigate/);
+    expect(SOURCE).toMatch(/const canPrevious = Boolean\(sequence\.previousPost\)/);
+    expect(SOURCE).toMatch(/const canNext = sequence\.canNext/);
+    // wheel, drag and the up/down capsule all read those same two flags.
+    expect(SOURCE).toMatch(/usePostNavigationWheel\(\{\s*canPrevious,\s*canNext,/);
+    expect(SOURCE).toMatch(/usePostDragNavigation\(\{\s*canPrevious,\s*canNext,/);
+    expect(SOURCE).toMatch(/canPrevious=\{canPrevious\}/);
+    expect(SOURCE).toMatch(/canNext=\{canNext\}/);
   });
 
-  it('captures the creator when the grid opens and holds it until it closes', () => {
-    expect(SOURCE).toMatch(/creatorScopeCreatorId/);
-    // The creator list is asked for the captured id, never for whatever post
-    // happens to be current.
-    expect(SOURCE).toMatch(/userId: inCreatorMode \? creatorScopeCreatorId\.current \|\| undefined : undefined/);
+  it('takes the creator grid from the sequence, so the grid and the arrows read one list', () => {
+    expect(SOURCE).toMatch(/const creatorVideos = sequence\.creatorPosts/);
+    // The capture lives in `usePostDetailMode`; nothing here re-derives it.
+    expect(SOURCE).not.toMatch(/creatorScopeCreatorId/);
+    expect(SOURCE).toMatch(/creatorId,/);
+  });
+
+  it('keeps the feed position while creator mode shows a post the feed does not hold', () => {
+    expect(SOURCE).toMatch(/const \[creatorStagePost, setCreatorStagePost\]/);
+    expect(SOURCE).toMatch(/const activePost = creatorStagePost \|\| posts\[currentIndex\]/);
+    // A neighbour that *is* in the feed moves the index, so impressions, watch
+    // tracking and prefetch keep following it.
+    expect(SOURCE).toMatch(/if \(feedIndex >= 0\) \{\s*setCreatorStagePost\(null\);\s*setCurrentIndex\(feedIndex\);/);
   });
 
   it('draws photo posts without a video element, and tells the rail which it is', () => {

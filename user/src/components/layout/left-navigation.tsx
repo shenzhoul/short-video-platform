@@ -71,7 +71,7 @@ export function LeftNavigation({ serverUser }: LeftNavigationProps) {
         it. Both read `--app-shell-nav-width`, so they cannot drift again.
       */}
       <div className='w-(--app-shell-nav-width) h-full shrink-0 transition-[width] duration-200 ease-out motion-reduce:transition-none' />
-      <div className='fixed left-0 top-0 flex h-(--app-viewport-height) w-(--app-shell-nav-width) flex-col bg-(--page-bg) text-(--text-strong) transition-[width] duration-200 ease-out motion-reduce:transition-none z-99'>
+      <div data-app-nav-rail className='fixed left-0 top-0 flex h-(--app-viewport-height) w-(--app-shell-nav-width) flex-col bg-(--page-bg) text-(--text-strong) transition-[width] duration-200 ease-out motion-reduce:transition-none z-99'>
         {/*
           The full wordmark needs room the compact rail does not have, so below
           `lg` it is replaced by the app icon rather than dropped — the rail must

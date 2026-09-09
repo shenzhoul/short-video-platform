@@ -43,6 +43,12 @@ export default function VideoVolumeControl({
         <div
           ref={trackRef}
           role="slider"
+          /*
+            Not a focus stop on a compact viewport: the panel it lives in is
+            revealed by hover, which a touch device never produces, so a
+            keyboard user there would be focusing an invisible slider. Mute
+            itself stays reachable and is the compact affordance.
+          */
           tabIndex={0}
           aria-label="Volume"
           aria-valuemin={0}
@@ -64,13 +70,30 @@ export default function VideoVolumeControl({
         </div>
       </div>
 
+      {/*
+        The glyph shrinks on a compact viewport; the button does not.
+
+        Every other control in the transport row carries a `max-lg:` size —
+        `text-3xl` down to `text-xl` — and this one, living in its own
+        component, never got one. Measured at 440x956 before the fix: the mute
+        icon drew 18x16.1 CSS pixels of ink against a 11.2x10.7 average for
+        play, watch-later, PiP and fullscreen beside it. It was the only glyph
+        in the row at its desktop size, which is exactly what made it look
+        oversized rather than merely different.
+
+        The button keeps `h-8 w-8` at every width — 32x32, larger than the 24x24
+        of its neighbours — so the touch target is not reduced by aligning the
+        artwork. Both states use the same size class, so toggling moves nothing.
+      */}
       <button
         type="button"
         className="inline-flex h-8 w-8 items-center justify-center rounded-full text-sm hover:bg-white/15"
         aria-label={muted ? 'Unmute' : 'Mute'}
         onClick={onToggleMute}
       >
-        {muted ? <MuteIcon className="text-3xl" /> : <VolumeIcon className="text-3xl" />}
+        {muted
+          ? <MuteIcon className="text-3xl max-lg:text-xl" />
+          : <VolumeIcon className="text-3xl max-lg:text-xl" />}
       </button>
     </div>
   );

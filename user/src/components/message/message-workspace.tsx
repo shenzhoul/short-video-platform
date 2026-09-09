@@ -52,7 +52,7 @@ export default function MessageWorkspace() {
    * distinguishes "a column beside a 440px post" from "a column beside a
    * 1920px page", which need very different widths.
    */
-  const compactColumn = inline && placement === 'fullscreen'
+  const compactColumn = inline
     && typeof window !== 'undefined' && window.innerWidth < MESSAGE_WORKSPACE_INLINE_MIN_WIDTH;
 
   const conversation = activeConversationId ? getConversation(activeConversationId) : undefined;

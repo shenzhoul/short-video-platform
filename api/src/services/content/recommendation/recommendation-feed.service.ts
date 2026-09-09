@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { ObjectId } from 'mongodb';
 import {
   CHAIN_POLICY,
+  DETAIL_SESSION_POLICY,
   RECOMMENDATION_FEED_TYPES,
   RECOMMENDATION_SOURCES,
   RecommendationFeedType,
@@ -13,6 +14,7 @@ import {
 import { Post, PostDocument } from 'src/schemas';
 import { STATUS } from 'src/kernel/constants';
 import { UserRelationshipService } from 'src/services/community/relationship/user-relationship.service';
+import { pickWeightedByRank, seededUnitInterval } from './recommendation-hash.util';
 import { RecommendationAffinityService } from './recommendation-affinity.service';
 import { RecommendationCandidateService } from './recommendation-candidate.service';
 import { RecommendationScoringService, ScoredCandidate } from './recommendation-scoring.service';
@@ -532,9 +534,12 @@ export class RecommendationFeedService {
         userId: 1, topicKey: 1, tags: 1, type: 1, mediaTypes: 1, totalLike: 1, totalComment: 1, totalShare: 1, createdAt: 1
       })
       .sort({ createdAt: -1 })
-      .limit(30)
+      .limit(DETAIL_SESSION_POLICY.candidatePoolSize)
       .lean();
 
+    // Nothing eligible left: the session is exhausted. The caller reports this
+    // as "no next", which is what disables the control — never a wrap to the
+    // beginning, which would silently re-serve posts already in `state.items`.
     if (!candidates.length) return null;
 
     const [stats, priors] = await Promise.all([
@@ -552,7 +557,35 @@ export class RecommendationFeedService {
       formatPreferenceScore
     }, stats, priors)).sort((a, b) => b.finalScore - a.finalScore);
 
-    const best = scored[0];
+    /*
+     * Choose from the top of the ranking, seeded by the session — not `scored[0]`.
+     *
+     * `scored[0]` is a *deterministic* function of the catalogue and the
+     * viewer's affinities. The per-session seed only reaches the score through
+     * `sessionJitter`, worth at most 0.03, which is far too little to reorder
+     * the head — so every popup session on the same catalogue served the same
+     * post, then the same second post, and so on. Two unrelated sessions
+     * replayed an identical A-B-C, which is the defect being fixed.
+     *
+     * The seed is `sessionSeed:step`, so:
+     *   - a given session is fully reproducible (the same seed replays the same
+     *     sequence — required for history, pagination and debugging);
+     *   - two sessions diverge from the first step;
+     *   - nothing calls `Math.random()`, which could not be replayed at all.
+     *
+     * The window is the top `selectionWindow` candidates, so the choice is
+     * always among posts the ranking already rated highest. Scoring,
+     * eligibility, blocked creators, already-served exclusion and the video-only
+     * filter are all applied before this point and are unaffected.
+     */
+    const window = scored.slice(0, DETAIL_SESSION_POLICY.selectionWindow);
+    const step = state.items.length;
+    const best = window[pickWeightedByRank(
+      window.length,
+      seededUnitInterval(`${state.sessionSeed}:${step}`),
+      DETAIL_SESSION_POLICY.selectionRankDecay
+    )];
+
     const updated = await this.detailSessionService.appendAndAdvance(sessionId, subjectId, {
       postId: best.post._id.toString(), source: best.source
     });
