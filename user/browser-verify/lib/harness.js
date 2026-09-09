@@ -212,6 +212,25 @@ async function waitForEvent(ctx, eventType, timeoutMs = 20000) {
   return ctx.eventsOfType(eventType);
 }
 
+
+/**
+ * Redirect media requests for the stopped local file-server.
+ *
+ * Some media URLs are stored absolute in Mongo against `localhost:8000`, and
+ * that file-server is no longer running in this environment. Rewriting them in
+ * the *browser context only* keeps the review screenshots faithful without
+ * touching the database, the app, or port 8000 itself. Set `MEDIA_ORIGIN` to
+ * the review file-server; omit it and nothing is rewritten.
+ */
+async function routeMediaOrigin(context) {
+  const target = process.env.MEDIA_ORIGIN;
+  if (!target) return;
+  await context.route('**://localhost:8000/**', (route) => {
+    const url = route.request().url().replace('http://localhost:8000', target);
+    route.continue({ url });
+  });
+}
+
 const results = [];
 function check(label, passed, detail) {
   results.push({ label, passed, detail });
@@ -232,6 +251,7 @@ function summarise(title) {
 
 module.exports = {
   chromium,
+  routeMediaOrigin,
   USER_APP,
   API,
   SHOT_DIR,

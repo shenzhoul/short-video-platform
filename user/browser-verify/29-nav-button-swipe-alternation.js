@@ -15,7 +15,7 @@ const PW = process.env.PLAYWRIGHT_PATH;
 const { chromium } = require(PW);
 const path = require('path');
 const fs = require('fs');
-const { signIn } = require('./lib/harness');
+const { signIn, routeMediaOrigin } = require('./lib/harness');
 
 const USER_APP = process.env.USER_APP || 'http://localhost:8085';
 const SHOTS = path.resolve(__dirname, '..', '..', 'output', 'screenshots');
@@ -86,6 +86,7 @@ async function capsuleState(page, scope) {
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true, deviceScaleFactor: 2 });
+  await routeMediaOrigin(context);
   const page = await context.newPage();
 
   console.log(`\n=== Nav capsule + button/swipe alternation @ ${W}x${H} ===\n`);

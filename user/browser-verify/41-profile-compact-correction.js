@@ -14,7 +14,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const { chromium, USER_APP, signIn, SHOT_DIR } = require('./lib/harness');
+const {
+  chromium, USER_APP, signIn, SHOT_DIR, routeMediaOrigin
+} = require('./lib/harness');
 
 const ACCOUNT = process.env.RECO_ACCOUNT_A || 'maitran.eats@demo.invalid';
 const PROFILE = process.env.PROFILE || 'maitran.eats';
@@ -249,6 +251,7 @@ const report = { phase: PHASE, viewports: {} };
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await routeMediaOrigin(context);
   const page = await context.newPage();
   await signIn({ page }, ACCOUNT);
 

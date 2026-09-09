@@ -29,8 +29,7 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  chromium, USER_APP, SHOT_DIR, signIn, check, summarise
-} = require('./lib/harness');
+  chromium, USER_APP, SHOT_DIR, signIn, check, summarise, routeMediaOrigin } = require('./lib/harness');
 
 const ACCOUNT = process.env.RECO_ACCOUNT_A || 'maitran.eats@demo.invalid';
 const PROFILE = process.env.RECO_PROFILE_A || 'maitran.eats';
@@ -171,6 +170,7 @@ async function navDestinationsVisible(page) {
   fs.mkdirSync(SHOT_DIR, { recursive: true });
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+  await routeMediaOrigin(context);
   const page = await context.newPage();
 
   const consoleErrors = [];

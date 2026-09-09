@@ -25,7 +25,7 @@
  * is stated in terms of the panel tab, and the *layout* that happens to be
  * mounted is recorded only so the report can show both were exercised.
  */
-const { chromium, USER_APP, signIn, SHOT_DIR } = require('./lib/harness');
+const { chromium, USER_APP, signIn, SHOT_DIR, routeMediaOrigin } = require('./lib/harness');
 
 const W = Number(process.env.W || 1440);
 const H = Number(process.env.H || 900);
@@ -265,6 +265,7 @@ async function runTransition(page, baseLayout, creatorKind, candidate = 0) {
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  await routeMediaOrigin(context);
   const page = await context.newPage();
 
   console.log(`\n=== Popup back control: mode decides, not media type @ ${W}x${H} ===`);

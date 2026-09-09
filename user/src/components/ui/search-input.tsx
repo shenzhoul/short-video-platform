@@ -146,7 +146,7 @@ const SearchInput: FC<SearchInputProps> = ({
 
   const getInputClasses = () => {
     if (variant === 'douyin') {
-      return 'z-100 m-0 h-full w-0 grow rounded-l-[12px] border-none bg-transparent px-3 max-lg:px-2 text-[16px] max-lg:text-[11px] font-medium leading-[22px] max-lg:leading-4 text-(--text-soft) caret-[#fe2c55] outline-none placeholder:text-(--text-faint)';
+      return 'z-100 m-0 h-full w-0 grow rounded-l-[12px] border-none bg-transparent px-3 max-lg:px-2 text-[16px] max-lg:text-[10px] font-medium leading-[22px] max-lg:leading-[14px] text-(--text-soft) caret-[#fe2c55] outline-none placeholder:text-(--text-faint)';
     }
 
     if (variant === 'share-popover') {
@@ -185,7 +185,7 @@ const SearchInput: FC<SearchInputProps> = ({
               aria-label="Search"
             >
               <SearchIcon className="text-2xl max-lg:text-sm" />
-              <span className='text-[16px] max-lg:text-[10px] leading-6 max-lg:leading-4'>Search</span>
+              <span className='text-[16px] max-lg:text-[9px] leading-6 max-lg:leading-[14px]'>Search</span>
             </button>
           </div>
         </div>

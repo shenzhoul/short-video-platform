@@ -224,12 +224,25 @@ sudo certbot --nginx -d api.${VM_IP}.sslip.io -d files.${VM_IP}.sslip.io
 ### F. Health over HTTPS
 
 ```bash
-curl -fsS https://api.${VM_IP}.sslip.io/health          # from anywhere
-curl -fsS http://127.0.0.1:8080/health/ready            # on the VM only
-curl -fsS http://127.0.0.1:8000/health/ready            # on the VM only
+# Health is loopback-only for BOTH vhosts. `location /health` in
+# `deploy/nginx/douyin-clone.conf` is `allow 127.0.0.1; deny all;`, and that
+# prefix covers `/health/ready` too — so every health path answers 403 from the
+# internet, by design.
+curl -fsS http://127.0.0.1:8080/health                  # API, on the VM only
+curl -fsS http://127.0.0.1:8080/health/ready            # API, on the VM only
+curl -fsS http://127.0.0.1:8000/health/ready            # file server, on the VM only
+
+# From anywhere, prove the services are up through the paths that ARE public:
+curl -sS -o /dev/null -w '%{http_code}\n' https://app.${VM_IP}.sslip.io/
+curl -sS -o /dev/null -w '%{http_code}\n' 'https://api.${VM_IP}.sslip.io/posts/home-posts?limit=1'
 ```
 
 Readiness is loopback-only in nginx on purpose: it names failing dependencies.
+A 403 on `https://api.<ip>.sslip.io/health` or `/health/ready` is therefore the
+rule working, **not** evidence that the API is down — measured 2026-09-09:
+both health paths 403 from the internet while `/posts/home-posts` answered 200.
+This block previously claimed `/health` was reachable "from anywhere", which
+contradicted the nginx rule and made a correct 403 look like an outage.
 Liveness deliberately checks nothing, so a database blip does not cause a
 restart loop.
 

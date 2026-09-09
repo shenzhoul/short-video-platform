@@ -18,7 +18,7 @@
  */
 const PW = process.env.PLAYWRIGHT_PATH;
 const { chromium } = require(PW);
-const { signIn } = require('./lib/harness');
+const { signIn, routeMediaOrigin } = require('./lib/harness');
 
 const USER_APP = process.env.USER_APP || 'http://localhost:8085';
 const W = Number(process.argv[2] || 440);
@@ -110,6 +110,7 @@ async function popupSession(page, steps) {
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  await routeMediaOrigin(context);
   const page = await context.newPage();
 
   console.log(`\n=== Post Detail owns its recommendation session @ ${W}x${H} ===`);
@@ -137,6 +138,7 @@ async function popupSession(page, steps) {
   for (let i = 0; i < SESSIONS; i += 1) {
     // eslint-disable-next-line no-await-in-loop
     const sessionContext = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  await routeMediaOrigin(sessionContext);
     // eslint-disable-next-line no-await-in-loop
     const sessionPage = await sessionContext.newPage();
     /*
@@ -198,6 +200,7 @@ async function popupSession(page, steps) {
   // --------------------------------------------------- popup history contract
   console.log('\n  --- popup history ---\n');
   const historyContext = await browser.newContext({ viewport: { width: W, height: H }, hasTouch: true });
+  await routeMediaOrigin(historyContext);
   const historyPage = await historyContext.newPage();
   // Guest, for the same reason as above: history needs an unexhausted pool.
   await historyPage.goto(`${USER_APP}/`, { waitUntil: 'networkidle' });

@@ -143,20 +143,20 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
         rail whatever the viewport is. The old `calc(100vw-16px)` measured
         against the whole viewport and therefore allowed exactly that.
       */
-      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none max-lg:max-w-[19rem] max-w-[calc(100vw-var(--app-shell-nav-width)-1rem)]"
+      menuClassName="!rounded-xl !border-none !bg-(--surface-raised) !p-0 !text-(--text-strong) !shadow-none max-lg:max-w-[min(13.5rem,calc(100vw-var(--app-shell-nav-width)-4rem))] max-w-[calc(100vw-var(--app-shell-nav-width)-1rem)]"
     >
       <div
         data-account-menu
-        className="max-h-[calc(var(--app-viewport-height)-72px)] max-lg:max-h-[calc(var(--app-viewport-height)-3rem)] overflow-y-auto p-3 max-lg:p-2 scrollbar-custom"
+        className="max-h-[calc(var(--app-viewport-height)-72px)] max-lg:max-h-[calc(var(--app-viewport-height)-3rem)] overflow-y-auto p-3 max-lg:p-1.5 scrollbar-custom"
       >
-        <div className="flex items-center gap-3 max-lg:gap-2 px-1 max-lg:px-0.5 pb-3 max-lg:pb-2">
-          <span className="flex h-13 w-13 max-lg:h-9 max-lg:w-9 shrink-0 overflow-hidden rounded-full bg-(--surface-soft)">
+        <div className="flex items-center gap-3 max-lg:gap-1.5 px-1 max-lg:px-0.5 pb-3 max-lg:pb-1.5">
+          <span className="flex h-13 w-13 max-lg:h-7 max-lg:w-7 shrink-0 overflow-hidden rounded-full bg-(--surface-soft)">
             <img src={resolveAvatarUrl(user?.avatar)} alt={displayName} className="h-full w-full object-cover" />
           </span>
           <div className="min-w-0">
-            <div className="mb-2 max-lg:mb-1 truncate text-sm max-lg:text-[12px] font-semibold text-(--text-strong)">{displayName}</div>
+            <div className="mb-2 max-lg:mb-0.5 truncate text-sm max-lg:text-[10px] font-semibold text-(--text-strong)">{displayName}</div>
             {loggedIn ? (
-              <div className="flex items-center gap-3 max-lg:gap-2 text-sm max-lg:text-[11px] text-(--text-soft)">
+              <div className="flex items-center gap-3 max-lg:gap-1.5 text-sm max-lg:text-[9px] text-(--text-soft)">
                 <button
                   type="button"
                   aria-label={`Show the ${followingCount} accounts you follow`}
@@ -188,70 +188,70 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
           </div>
         </div>
 
-        <div className="space-y-2 max-lg:space-y-1.5">
+        <div className="space-y-2 max-lg:space-y-1">
           <button
             type="button"
-            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center justify-between rounded-lg max-lg:rounded-md bg-(--surface-soft) px-3 max-lg:px-1.5 text-sm max-lg:text-[10px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('liked')}
           >
-            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><LikeIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.liked : 'My liking'}</span>
-            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">
-              {loggedIn ? <LikedPostCount enabled={loggedIn} /> : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' />
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1 truncate"><LikeIcon className="text-2xl max-lg:text-[13px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.liked : 'My liking'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[10px] font-semibold text-(--text-strong)">
+              {loggedIn ? <LikedPostCount enabled={loggedIn} /> : ''} <ArrowRightIcon className='text-xl max-lg:text-[12px] shrink-0 opacity-45' />
             </span>
           </button>
           <button
             type="button"
-            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center justify-between rounded-lg max-lg:rounded-md bg-(--surface-soft) px-3 max-lg:px-1.5 text-sm max-lg:text-[10px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('My collection is coming soon')}
           >
-            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><CollectIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.collection : 'My collection.'}</span>
-            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1 truncate"><CollectIcon className="text-2xl max-lg:text-[13px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.collection : 'My collection.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[10px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-[12px] shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center justify-between rounded-lg max-lg:rounded-md bg-(--surface-soft) px-3 max-lg:px-1.5 text-sm max-lg:text-[10px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch history is coming soon')}
           >
-            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><HistoryIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchHistory : 'Look at history.'}</span>
-            <span className="flex shrink-0 items-center text-xs max-lg:text-[10px] font-semibold text-(--text-strong)">{loggedIn ? 'Within 30 days' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1 truncate"><HistoryIcon className="text-2xl max-lg:text-[13px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchHistory : 'Look at history.'}</span>
+            <span className="flex shrink-0 items-center text-xs max-lg:text-[9px] font-semibold text-(--text-strong)">{loggedIn ? 'Within 30 days' : ''} <ArrowRightIcon className='text-xl max-lg:text-[12px] shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center justify-between rounded-lg max-lg:rounded-md bg-(--surface-soft) px-3 max-lg:px-1.5 text-sm max-lg:text-[10px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => requireLogin() && toast.info('Watch later is coming soon')}
           >
-            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><WatchLaterIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchLater : 'See again later.'}</span>
-            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1 truncate"><WatchLaterIcon className="text-2xl max-lg:text-[13px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.watchLater : 'See again later.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[10px] font-semibold text-(--text-strong)">{loggedIn ? '0' : ''} <ArrowRightIcon className='text-xl max-lg:text-[12px] shrink-0 opacity-45' /></span>
           </button>
           <button
             type="button"
-            className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center justify-between rounded-lg bg-(--surface-soft) px-3 max-lg:px-2 text-sm max-lg:text-[11px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
+            className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center justify-between rounded-lg max-lg:rounded-md bg-(--surface-soft) px-3 max-lg:px-1.5 text-sm max-lg:text-[10px] font-medium text-(--text-strong) transition hover:bg-(--surface-hover)"
             onClick={() => goToProfileTab('works')}
           >
-            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1.5 truncate"><PostIcon className="text-2xl max-lg:text-[17px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.work : 'My work.'}</span>
-            <span className="flex shrink-0 items-center text-sm max-lg:text-[11px] font-semibold text-(--text-strong)">{loggedIn ? postCount : ''} <ArrowRightIcon className='text-xl max-lg:text-base shrink-0 opacity-45' /></span>
+            <span className="flex min-w-0 items-center gap-2 max-lg:gap-1 truncate"><PostIcon className="text-2xl max-lg:text-[13px] shrink-0" /> {loggedIn ? PROFILE_COLLECTION_LABELS.work : 'My work.'}</span>
+            <span className="flex shrink-0 items-center text-sm max-lg:text-[10px] font-semibold text-(--text-strong)">{loggedIn ? postCount : ''} <ArrowRightIcon className='text-xl max-lg:text-[12px] shrink-0 opacity-45' /></span>
           </button>
         </div>
 
-        <div className="mt-3 max-lg:mt-2 space-y-1 border-t border-(--divider) pt-3 max-lg:pt-2">
-          <button type="button" className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center gap-2 max-lg:gap-1.5 rounded-lg px-3 max-lg:px-2 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
-            <AppointmentIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
+        <div className="mt-3 max-lg:mt-1.5 space-y-1 max-lg:space-y-0.5 border-t border-(--divider) pt-3 max-lg:pt-1.5">
+          <button type="button" className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center gap-2 max-lg:gap-1 rounded-lg max-lg:rounded-md px-3 max-lg:px-1.5 text-left text-sm max-lg:text-[10px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
+            <AppointmentIcon className="text-[26px] max-lg:text-[14px] shrink-0" />
             {loggedIn ? PROFILE_COLLECTION_LABELS.appointment : 'My appointment.'}
           </button>
-          <button type="button" className="flex h-10 max-lg:h-8 w-full cursor-pointer items-center gap-2 max-lg:gap-1.5 rounded-lg px-3 max-lg:px-2 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
-            <OrderIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
+          <button type="button" className="flex h-10 max-lg:h-6 w-full cursor-pointer items-center gap-2 max-lg:gap-1 rounded-lg max-lg:rounded-md px-3 max-lg:px-1.5 text-left text-sm max-lg:text-[10px] font-medium text-(--text-soft) transition hover:bg-(--surface-soft) hover:text-(--text-strong)">
+            <OrderIcon className="text-[26px] max-lg:text-[14px] shrink-0" />
             {loggedIn ? 'My order' : 'My orders.'}
           </button>
         </div>
 
         {loggedIn ? (
-          <div className="mt-3 max-lg:mt-2 flex items-center justify-between gap-2 border-t border-(--divider) px-3 max-lg:px-2 pt-3 max-lg:pt-2">
+          <div className="mt-3 max-lg:mt-1.5 flex items-center justify-between gap-2 max-lg:gap-1 border-t border-(--divider) px-3 max-lg:px-1.5 pt-3 max-lg:pt-1.5">
             <button
               type="button"
               // Disabled while the sign-out is in flight; `useLogout` also
               // de-duplicates, so a double click cannot revoke twice.
               disabled={loggingOut}
-              className="flex h-9 max-lg:h-7 shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1.5 text-left text-sm max-lg:text-[11px] font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-9 max-lg:h-6 shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1 text-left text-sm max-lg:text-[10px] font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => {
                 if (!loggedIn) {
                   openAuthModal();
@@ -262,10 +262,10 @@ export default function UserAccountDropdown({ loggedIn, user }: UserAccountDropd
                 void logout();
               }}
             >
-              <LogoutIcon className="text-[26px] max-lg:text-[18px] shrink-0" />
+              <LogoutIcon className="text-[26px] max-lg:text-[14px] shrink-0" />
               {loggingOut ? 'Logging out…' : 'Logged out'}
             </button>
-            <div className="flex shrink-0 items-center gap-2 max-lg:gap-1 text-xs max-lg:text-[10px] font-semibold text-(--text-soft)">
+            <div className="flex shrink-0 items-center gap-2 max-lg:gap-1 text-xs max-lg:text-[9px] font-semibold text-(--text-soft)">
               <span>Save login</span>
               <ToggleSwitch aria-label="Save login" />
             </div>
