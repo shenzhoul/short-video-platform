@@ -25,5 +25,5 @@ const ICONS: Record<NotificationIconKind, ComponentType<{ className?: string }>>
 export default function NotificationIcon({ kind }: { kind: NotificationIconKind | null }) {
   const Icon = kind ? ICONS[kind] : null;
   if (!Icon) return null;
-  return <Icon className="text-xl" />;
+  return <Icon className="text-xl max-lg:text-[11px]" />;
 }

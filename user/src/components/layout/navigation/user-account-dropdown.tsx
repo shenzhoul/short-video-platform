@@ -313,6 +313,7 @@ function AccountMenu({ loggedIn, user }: UserAccountDropdownProps) {
     <Dropdown
       trigger={trigger}
       triggerMode="hover"
+      group="app-header"
       width={334}
       open={menuOpen}
       onOpenChange={handleMenuOpenChange}
@@ -493,13 +494,17 @@ function AccountMenu({ loggedIn, user }: UserAccountDropdownProps) {
           </div>
 
           {loggedIn ? (
-            <div className="mt-3 max-lg:mt-1.5 flex items-center justify-between gap-2 max-lg:gap-1 border-t border-(--divider) px-3 max-lg:px-1.5 pt-3 max-lg:pt-1.5">
+            <div className="mt-3 max-lg:mt-1 flex items-center justify-between gap-2 max-lg:gap-1 border-t border-(--divider) px-3 max-lg:px-1.5 pt-3 max-lg:pt-1">
+              {/*
+                One compact line on a narrow viewport: logout on the left, the
+                Save login caption and its switch together on the right.
+              */}
               <button
                 type="button"
               // Disabled while the sign-out is in flight; `useLogout` also
               // de-duplicates, so a double click cannot revoke twice.
                 disabled={loggingOut}
-                className="flex h-9 max-lg:h-6 shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1 text-left text-sm max-lg:text-[10px] font-medium text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-9 max-lg:h-5.5 shrink-0 cursor-pointer items-center gap-2 max-lg:gap-1 text-left text-sm max-lg:text-[10px] font-medium whitespace-nowrap text-(--text-soft) transition hover:text-(--text-strong) disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => {
                 if (!loggedIn) {
                   openAuthModal();
@@ -513,7 +518,7 @@ function AccountMenu({ loggedIn, user }: UserAccountDropdownProps) {
                 <LogoutIcon className="text-[26px] max-lg:text-[14px] shrink-0" />
                 {loggingOut ? 'Logging out…' : 'Logged out'}
               </button>
-              <div className="flex shrink-0 items-center gap-2 max-lg:gap-1 text-xs max-lg:text-[9px] font-semibold text-(--text-soft)">
+              <div className="flex shrink-0 items-center gap-2 max-lg:gap-1 whitespace-nowrap text-xs max-lg:text-[9px] font-semibold text-(--text-soft)">
                 <span>Save login</span>
                 <ToggleSwitch aria-label="Save login" />
               </div>

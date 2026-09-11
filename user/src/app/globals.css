@@ -196,24 +196,60 @@ body {
   }
 }
 
+/*
+  The one dropdown surface motion, for every `Dropdown` in the app.
+
+  `data-state` is set by the primitive: `open` plays the enter, `closed` plays
+  the exit while the element is still mounted, and the primitive unmounts it
+  once that exit animation reports finished. `both` fill mode is what keeps the
+  first painted frame at the keyframe's starting values instead of the resting
+  position. `transform-origin` comes from the primitive's `position`.
+
+  The surface animates `transform` and `opacity` on its own element only. Any
+  motion inside a surface (the account menu's strip and row glide) lives on
+  descendants, so the two never compete for the same property. Tailwind 4
+  positioning utilities use the separate `translate` property, which composes
+  with this `transform` rather than being overwritten.
+*/
 .dropdown-menu-motion {
-  animation: dropdown-menu-drop 0.38s cubic-bezier(.2, .72, .18, 1) forwards;
-  transform-origin: top right;
-  will-change: transform;
+  will-change: transform, opacity;
 }
 
-@keyframes dropdown-menu-drop {
+.dropdown-menu-motion[data-state='open'] {
+  animation: dropdown-surface-enter 240ms ease-out both;
+}
+
+.dropdown-menu-motion[data-state='closed'] {
+  animation: dropdown-surface-exit 180ms ease-in both;
+  pointer-events: none;
+}
+
+@keyframes dropdown-surface-enter {
   0% {
-    transform: translateY(-22px);
+    opacity: 0.35;
+    transform: translateY(-12px) scale(0.985);
   }
 
   100% {
-    transform: translateY(0);
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dropdown-surface-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dropdown-menu-motion {
+  .dropdown-menu-motion[data-state] {
     animation: none;
   }
 }

@@ -132,6 +132,7 @@ export default function AppHeader({ serverUser }: AppHeaderProps) {
                     triggerMode="click"
                     position="right"
                     width={180}
+                    group="app-header"
                     open={moreOpen}
                     onOpenChange={setMoreOpen}
                     menuClassName="!z-90 !rounded-xl !border-(--border-faint) !bg-(--surface-raised) !p-1.5 !shadow-(--shadow-popover) max-w-[calc(100vw-24px)]"

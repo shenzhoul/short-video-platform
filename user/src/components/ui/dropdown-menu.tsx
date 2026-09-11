@@ -1,7 +1,9 @@
 'use client';
 
 import clsx from 'clsx';
-import { FC, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  FC, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState
+} from 'react';
 
 interface DropdownItem {
   label: string;
@@ -26,6 +28,40 @@ interface DropdownProps {
    */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Dropdowns that must never be open together. Opening one closes every other
+   * member of the same group at once, without waiting for a hover grace period
+   * — the header's account, notification, message and "More" menus sit next to
+   * each other, and moving the pointer from one trigger to the next used to
+   * leave both panels on screen.
+   */
+  group?: string;
+}
+
+/* One header dropdown at a time: a fan-out, not a store. */
+type GroupListener = (group: string, owner: symbol) => void;
+const groupListeners = new Set<GroupListener>();
+
+const ORIGIN_BY_POSITION = {
+  left: 'top left',
+  center: 'top center',
+  right: 'top right',
+  top: 'top center'
+} as const;
+
+/**
+ * The exit animation the surface is running, if any.
+ *
+ * Read right after the state flips to `closed`: `getAnimations()` flushes style,
+ * so the CSS animation named in `globals.css` already exists. Nothing is
+ * returned where there is nothing to wait for — reduced motion sets `animation:
+ * none`, and jsdom has no Web Animations API — and the surface unmounts at once.
+ */
+function findExitAnimation(surface: HTMLElement | null): Animation | null {
+  if (!surface || typeof surface.getAnimations !== 'function') return null;
+  return surface.getAnimations().find((animation) => (
+    (animation as CSSAnimation).animationName === 'dropdown-surface-exit'
+  )) || null;
 }
 
 const Dropdown: FC<DropdownProps> = ({
@@ -38,25 +74,42 @@ const Dropdown: FC<DropdownProps> = ({
   className,
   menuClassName,
   open,
-  onOpenChange
+  onOpenChange,
+  group
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isControlled = open !== undefined;
   const isOpen = isControlled ? open : uncontrolledOpen;
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerRef = useRef(Symbol('dropdown'));
+
+  /*
+    Whether the surface is in the DOM. It follows `isOpen` on the way in, and
+    trails it on the way out until the exit animation has finished, so closing
+    plays instead of vanishing. Set during render on opening so the very first
+    frame already carries `data-state="open"` and starts from the keyframe's
+    first value, never from the resting position.
+  */
+  const [rendered, setRendered] = useState(isOpen);
+  if (isOpen && !rendered) setRendered(true);
 
   const setOpen = useCallback((next: boolean) => {
     if (!isControlled) setUncontrolledOpen(next);
     onOpenChange?.(next);
   }, [isControlled, onOpenChange]);
 
-  const toggleDropdown = () => setOpen(!isOpen);
-  const openDropdown = () => {
+  const clearCloseTimer = () => {
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current);
       closeTimerRef.current = null;
     }
+  };
+
+  const toggleDropdown = () => setOpen(!isOpen);
+  const openDropdown = () => {
+    clearCloseTimer();
     setOpen(true);
   };
   const closeDropdown = useCallback(() => {
@@ -89,10 +142,7 @@ const Dropdown: FC<DropdownProps> = ({
   */
   const handleEscape = useCallback((event: KeyboardEvent) => {
     if (event.key !== 'Escape' || !isOpen) return;
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
+    clearCloseTimer();
     setOpen(false);
   }, [isOpen, setOpen]);
 
@@ -102,9 +152,55 @@ const Dropdown: FC<DropdownProps> = ({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      clearCloseTimer();
     };
   }, [handleClickOutside, handleEscape]);
+
+  // Another member of the group opened: close now, without the hover grace.
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  useEffect(() => {
+    if (!group) return undefined;
+    const listener: GroupListener = (openedGroup, owner) => {
+      if (openedGroup !== group || owner === ownerRef.current || !isOpenRef.current) return;
+      clearCloseTimer();
+      setOpen(false);
+    };
+    groupListeners.add(listener);
+    return () => {
+      groupListeners.delete(listener);
+    };
+  }, [group, setOpen]);
+
+  useEffect(() => {
+    if (!group || !isOpen) return;
+    [...groupListeners].forEach((listener) => listener(group, ownerRef.current));
+  }, [group, isOpen]);
+
+  /*
+    Unmount once the exit has played. Reopening while it plays keeps the same
+    element and simply switches it back to the enter animation, so a quick
+    close-then-open never flashes an empty frame or a second copy.
+  */
+  useLayoutEffect(() => {
+    if (isOpen || !rendered) return undefined;
+    const exit = findExitAnimation(surfaceRef.current);
+    if (!exit) {
+      setRendered(false);
+      return undefined;
+    }
+    let cancelled = false;
+    exit.finished
+      .then(() => {
+        if (!cancelled && !isOpenRef.current) setRendered(false);
+      })
+      .catch(() => {
+        // Cancelled by a reopen (or an unmount); the open path owns the element now.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, rendered]);
 
   const positionClass = {
     left: 'left-0',
@@ -127,14 +223,17 @@ const Dropdown: FC<DropdownProps> = ({
         {trigger}
       </div>
 
-      {isOpen ? (
+      {rendered ? (
         <div
+          ref={surfaceRef}
+          data-dropdown-surface
+          data-state={isOpen ? 'open' : 'closed'}
           className={clsx(
             'dropdown-menu-motion absolute mt-2 bg-surface rounded-lg shadow-lg z-50 border border-border',
             positionClass,
             menuClassName
           )}
-          style={{ width }}
+          style={{ width, transformOrigin: ORIGIN_BY_POSITION[position] }}
         >
           {children ? (
             children

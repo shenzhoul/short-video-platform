@@ -53,17 +53,17 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
       tabIndex={0}
       onClick={handleActivate}
       onKeyDown={handleKeyDown}
-      className={`group flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition hover:bg-(--hover-bg) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${notification.read ? '' : 'bg-(--surface-soft)'
+      className={`group flex w-full cursor-pointer items-center gap-3 max-lg:gap-2 px-4 max-lg:px-2.5 py-2.5 max-lg:py-1.5 text-left transition hover:bg-(--hover-bg) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${notification.read ? '' : 'bg-(--surface-soft)'
         }`}
     >
-      <div className='relative'>
+      <div className='relative shrink-0'>
         <img
           src={resolveAvatarUrl(notification.actor?.avatar)}
           alt=""
-          className="h-10 w-10 shrink-0 self-start rounded-full object-cover"
+          className="h-10 w-10 max-lg:h-7.5 max-lg:w-7.5 shrink-0 self-start rounded-full object-cover"
         />
         {notification.read ? null : (
-          <span className="absolute top-0 right-0 h-2 w-2 shrink-0 rounded-full bg-[#fe2c55]" aria-label="Unread" />
+          <span className="absolute top-0 right-0 h-2 w-2 max-lg:h-1.5 max-lg:w-1.5 shrink-0 rounded-full bg-[#fe2c55]" aria-label="Unread" />
         )}
         {/*
           The disc is the icon's backing, so it only exists when there is an
@@ -72,7 +72,7 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
         {presentation.icon ? (
           <div
             data-testid="notification-badge"
-            className='w-5.5 h-5.5 rounded-full absolute -bottom-0.75 -right-0.75 bg-[rgba(37,38,50,1)] flex items-center justify-center'
+            className='w-5.5 h-5.5 max-lg:w-3.5 max-lg:h-3.5 rounded-full absolute -bottom-0.75 -right-0.75 max-lg:-bottom-0.5 max-lg:-right-0.5 bg-[rgba(37,38,50,1)] flex items-center justify-center'
           >
             <NotificationIcon kind={presentation.icon} />
           </div>
@@ -80,32 +80,43 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[14px] leading-5 font-medium text-(--text-strong)">
+        <p className="truncate text-[14px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 font-medium text-(--text-strong)">
           {actorName}
         </p>
         {presentation.deletedNotice ? (
           // The interaction still happened, so the row keeps its history and
           // says what became of the content instead of disappearing.
-          <p className="truncate text-[13px] leading-5 text-(--text-muted) italic">
+          <p className="truncate text-[13px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-muted) italic">
             {presentation.deletedNotice}
           </p>
         ) : null}
         {presentation.commentPreview ? (
           // Quoting the comment is what makes the row specific: "mentioned you
           // in a comment" alone gives the reader nothing to recognise.
-          <p className="line-clamp-2 text-[13px] leading-5 text-(--text-strong)">
+          <p className="line-clamp-2 max-lg:line-clamp-1 text-[13px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-strong)">
             {presentation.commentPreview}
           </p>
         ) : null}
-        <p className="truncate text-[13px] leading-5 text-(--text-soft)">
-          {presentation.message}
-        </p>
-        <p className="mt-0.5 text-[12px] leading-4 text-(--text-muted)">
-          {formatActivityTimestamp(notification.lastActivityAt)}
-        </p>
+        {/*
+          Compact: the message and its time share one line, as in the reference,
+          so a row is two lines of text instead of three. From `lg` up the two
+          paragraphs stack exactly as before.
+        */}
+        <div className="max-lg:flex max-lg:min-w-0 max-lg:items-baseline max-lg:gap-1">
+          <p className="truncate max-lg:min-w-0 text-[13px] max-lg:text-[10px] leading-5 max-lg:leading-3.5 text-(--text-soft)">
+            {presentation.message}
+          </p>
+          <p className="mt-0.5 max-lg:mt-0 max-lg:shrink-0 whitespace-nowrap text-[12px] max-lg:text-[8px] leading-4 max-lg:leading-3 text-(--text-muted)">
+            {formatActivityTimestamp(notification.lastActivityAt)}
+          </p>
+        </div>
       </div>
 
-      <div className='flex flex-col'>
+      {/*
+        Compact: thumbnail and row menu sit side by side. Stacked, the 12px menu
+        under the 34px thumbnail set every thumbnail row to 60px.
+      */}
+      <div className='flex flex-col max-lg:flex-row shrink-0 max-lg:items-center max-lg:gap-1'>
         {presentation.showFollowAction && notification.actor?._id && !followState.isOwner ? (
           <button
             type="button"
@@ -115,7 +126,7 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
               void followState.toggleFollow();
             }}
             disabled={followState.following}
-            className={`h-8 shrink-0 cursor-pointer rounded-lg px-3 text-[13px] leading-5 outline-none transition disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
+            className={`h-8 max-lg:h-5 shrink-0 cursor-pointer rounded-lg max-lg:rounded px-3 max-lg:px-1.5 text-[13px] max-lg:text-[9px] leading-5 max-lg:leading-none whitespace-nowrap outline-none transition disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
               ? 'bg-(--btn-bg) text-(--text-muted) hover:bg-(--btn-bg-hover)'
               : 'bg-[#fe2c55] text-white hover:bg-[#e4264e]'
               }`}
@@ -128,7 +139,7 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
           <img
             src={notification.postThumbnail}
             alt=""
-            className="h-11.5 w-8.5 shrink-0 rounded-sm object-cover"
+            className="h-11.5 w-8.5 max-lg:h-8.5 max-lg:w-6.5 shrink-0 rounded-sm object-cover"
           />
         ) : null}
 
@@ -156,9 +167,9 @@ export default function NotificationItem({ notification, onNavigate }: Notificat
                 aria-label="Notification actions"
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
-                className="cursor-pointer rounded p-1 text-(--text-muted) transition hover:text-(--text-strong)"
+                className="cursor-pointer rounded p-1 max-lg:p-0 text-(--text-muted) transition hover:text-(--text-strong)"
               >
-                <FiMoreHorizontal size={16} />
+                <FiMoreHorizontal size={16} className="max-lg:h-3 max-lg:w-3" />
               </button>
             )}
           >

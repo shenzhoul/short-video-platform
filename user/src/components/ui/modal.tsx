@@ -34,6 +34,8 @@ export interface ModalProps {
    * caret rather than the close button.
    */
   initialFocusRef?: RefObject<HTMLElement | null>;
+  /** Extra classes for the close button, for a dialog sized for a compact viewport. */
+  closeButtonClassName?: string;
 }
 
 function ModalComponent({
@@ -53,7 +55,8 @@ function ModalComponent({
   children,
   noPadding,
   ariaLabel,
-  initialFocusRef
+  initialFocusRef,
+  closeButtonClassName = ''
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -189,7 +192,7 @@ function ModalComponent({
         {closable ? (
           <button
             type="button"
-            className="absolute top-2 right-2 cursor-pointer hover:opacity-70 focus:outline-hidden w-[30px] h-[30px] rounded-full z-10 flex justify-center items-center"
+            className={`absolute top-2 right-2 cursor-pointer hover:opacity-70 focus:outline-hidden w-[30px] h-[30px] rounded-full z-10 flex justify-center items-center ${closeButtonClassName}`}
             onClick={() => {
               setIsVisible(false);
               setTimeout(() => onCancel?.(), 200);

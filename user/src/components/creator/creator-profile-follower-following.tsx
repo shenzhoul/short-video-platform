@@ -37,13 +37,13 @@ interface NavigationProps {
 function Navigation({ tabs, getTabProps, isActive }: NavigationProps) {
   return (
     <nav role="tablist" className="relative box-border">
-      <div className="flex h-12 items-stretch gap-8">
+      <div className="flex h-12 max-lg:h-7 items-stretch gap-8 max-lg:gap-4">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             {...getTabProps(tab)}
-            className={`inline-flex h-12 shrink-0 cursor-pointer items-center border-b-[3px] p-0 text-base font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${isActive(tab)
+            className={`inline-flex h-12 max-lg:h-7 shrink-0 cursor-pointer items-center border-b-[3px] max-lg:border-b-2 p-0 text-base max-lg:text-[12px] font-medium leading-none transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55] ${isActive(tab)
               ? 'border-b-[#fe2c55] text-(--text-strong)'
               : 'border-b-transparent text-(--text-muted) hover:text-(--text-strong)'
               }`}
@@ -97,11 +97,11 @@ function FollowListRow({
     : 'Follow';
 
   return (
-    <div>
-      <div className='flex items-center mx-0 my-4.25'>
-        <div className='cursor-pointer'>
+    <div data-follow-list-row>
+      <div className='flex items-center mx-0 my-4.25 max-lg:my-0 max-lg:py-1.5'>
+        <div className='cursor-pointer shrink-0'>
           <Link href={`/${user.username}`} onClick={onNavigate} className='relative bg-transparent'>
-            <span className='bg-transparent w-15 h-15 rounded-full box-border block relative overflow-hidden border border-solid border-(--border-faint)'>
+            <span className='bg-transparent w-15 h-15 max-lg:w-8.5 max-lg:h-8.5 rounded-full box-border block relative overflow-hidden border border-solid border-(--border-faint)'>
               <img
                 src={resolveAvatarUrl(user.avatar)}
                 alt={displayName}
@@ -110,31 +110,31 @@ function FollowListRow({
             </span>
           </Link>
         </div>
-        <div className='w-0 flex-1 mx-3'>
-          <div className='my-1 flex'>
+        <div className='w-0 flex-1 mx-3 max-lg:mx-2'>
+          <div className='my-1 max-lg:my-0 flex'>
             <div className='truncate text-(--text)'>
               <Link href={`/${user.username}`} onClick={onNavigate} className='relative bg-transparent'>
-                <span className='truncate cursor-pointer text-[16px] overflow-hidden leading-6 text-(--text) hover:text-(--text-strong)'>
+                <span className='truncate cursor-pointer text-[16px] max-lg:text-[11px] overflow-hidden leading-6 max-lg:leading-4 text-(--text) hover:text-(--text-strong)'>
                   {displayName}
                 </span>
               </Link>
             </div>
           </div>
           {user.bio ? (
-            <div className='text-(--text) my-1 truncate'>
-              <span className='truncate text-[12px] leading-5 overflow-hidden text-(--text-muted)'>
+            <div className='text-(--text) my-1 max-lg:my-0 truncate'>
+              <span className='truncate text-[12px] max-lg:text-[9px] leading-5 max-lg:leading-3.5 overflow-hidden text-(--text-muted)'>
                 {user.bio}
               </span>
             </div>
           ) : null}
         </div>
-        <div className='flex items-center justify-center'>
+        <div className='flex shrink-0 items-center justify-center max-lg:gap-1'>
           {!followState.isOwner ? (
             <button
               type="button"
               onClick={() => void followState.toggleFollow()}
               disabled={followState.following}
-              className={`h-9 cursor-pointer transition min-w-22 outline-none text-sm leading-5.5 mx-2 px-3 opacity-100 rounded-[10px] disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
+              className={`h-9 max-lg:h-6 cursor-pointer transition min-w-22 max-lg:min-w-13 outline-none text-sm max-lg:text-[10px] leading-5.5 max-lg:leading-none mx-2 max-lg:mx-0 px-3 max-lg:px-2 whitespace-nowrap opacity-100 rounded-[10px] max-lg:rounded-md disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
                 ? 'bg-(--btn-bg) text-(--text-muted) hover:bg-(--btn-bg-hover)'
                 : 'bg-[#fe2c55] text-white hover:bg-[#e4264e]'}`}
             >
@@ -146,7 +146,7 @@ function FollowListRow({
               type="button"
               onClick={() => void removeThisFollower()}
               disabled={removing}
-              className='h-9 cursor-pointer transition hover:bg-(--btn-bg-hover) bg-(--btn-bg) text-(--text-muted) min-w-22 outline-none text-sm leading-5.5 mx-2 px-3 opacity-100 rounded-[10px] disabled:cursor-wait disabled:opacity-60'
+              className='h-9 max-lg:h-6 cursor-pointer transition hover:bg-(--btn-bg-hover) bg-(--btn-bg) text-(--text-muted) min-w-22 max-lg:min-w-13 outline-none text-sm max-lg:text-[10px] leading-5.5 max-lg:leading-none mx-2 max-lg:mx-0 px-3 max-lg:px-2 whitespace-nowrap opacity-100 rounded-[10px] max-lg:rounded-md disabled:cursor-wait disabled:opacity-60'
             >
               Remove
             </button>
@@ -230,7 +230,7 @@ function FollowListPanel({
   };
 
   return (
-    <div className='mt-0 -mx-8.5 -mb-5 py-0 pr-7 pl-10 overflow-x-hidden overflow-y-auto'>
+    <div className='mt-0 -mx-8.5 max-lg:-mx-3.5 -mb-5 max-lg:-mb-3.5 py-0 pr-7 pl-10 max-lg:px-3.5 overflow-x-hidden overflow-y-auto'>
       {visibleUsers.map(user => (
         <FollowListRow
           key={user._id}
@@ -247,19 +247,19 @@ function FollowListPanel({
       ))}
 
       {loading ? (
-        <div className='flex min-h-25 items-center justify-center'>
-          <div className='h-6 w-6 animate-spin rounded-full border-2 border-(--border-faint) border-t-(--text-strong)' />
+        <div className='flex min-h-25 max-lg:min-h-14 items-center justify-center'>
+          <div className='h-6 w-6 max-lg:h-4 max-lg:w-4 animate-spin rounded-full border-2 border-(--border-faint) border-t-(--text-strong)' />
         </div>
       ) : null}
 
       {error ? (
-        <div className='min-h-25 justify-center items-center flex text-xs leading-5 text-[#ff5c5c]'>
+        <div className='min-h-25 max-lg:min-h-14 justify-center items-center flex text-xs max-lg:text-[10px] leading-5 text-[#ff5c5c]'>
           {error}
         </div>
       ) : null}
 
       {isEmpty ? (
-        <div className='min-h-25 justify-center items-center flex text-xs leading-5 text-(--text-faint)'>
+        <div className='min-h-25 max-lg:min-h-14 justify-center items-center flex text-xs max-lg:text-[10px] leading-5 text-(--text-faint)'>
           {keyword
             ? 'No users match your search'
             : type === 'following' ? 'Not following anyone yet' : 'No followers yet'}
@@ -269,7 +269,7 @@ function FollowListPanel({
       <div ref={sentinelRef} className='h-1' aria-hidden />
 
       {!hasMore && !loading && visibleUsers.length > 0 ? (
-        <div className='min-h-25 justify-center items-center flex text-xs leading-5 text-(--text-faint)'>
+        <div className='min-h-25 max-lg:min-h-8 justify-center items-center flex text-xs max-lg:text-[9px] leading-5 text-(--text-faint)'>
           No more for now
         </div>
       ) : null}
@@ -374,10 +374,18 @@ export default function CreatorProfileFollowerFollowing({
       footer={false}
       noPadding
       width={560}
-      className='bg-(--bg-modal) shadow-[0_0_24px_rgba(0,0,0,.1)] rounded-2xl'
+      /*
+        Compact: a 300px dialog that grows with its list, centred on the content
+        column rather than the whole viewport — the left margin of one rail
+        width moves the centre right by half a rail, so the rail does not skew
+        it. The width and height caps read the shell tokens, so it can never run
+        under the rail or the header.
+      */
+      className='bg-(--bg-modal) shadow-[0_0_24px_rgba(0,0,0,.1)] rounded-2xl max-lg:rounded-xl max-lg:!w-[min(18.75rem,calc(100vw-var(--app-shell-nav-width)-1.5rem))] max-lg:ml-(--app-shell-nav-width)'
+      closeButtonClassName='max-lg:top-1.5 max-lg:right-1.5 max-lg:h-6 max-lg:w-6 max-lg:[&_svg]:h-3.5 max-lg:[&_svg]:w-3.5'
     >
-      <div className='h-168 max-h-[calc(100vh-144px)] flex flex-col overflow-hidden'>
-        <div className='flex-1 flex-col flex relative overflow-hidden px-10 py-9'>
+      <div className='h-168 max-h-[calc(100vh-144px)] max-lg:h-auto max-lg:max-h-[min(28rem,calc(var(--app-viewport-height)-var(--app-header-height)-2rem))] flex flex-col overflow-hidden'>
+        <div className='flex-1 min-h-0 flex-col flex relative overflow-hidden px-10 py-9 max-lg:px-3.5 max-lg:py-3'>
           <Tabs tabs={tabs} value={activeTab} onChange={(key) => onActiveTabChange(key)}>
             {({ activeKey, getTabProps, isActive }) => (
               <>
@@ -387,28 +395,28 @@ export default function CreatorProfileFollowerFollowing({
                   isActive={isActive}
                 />
 
-                <div className='flex my-3'>
+                <div className='flex my-3 max-lg:my-2 items-center'>
                   <SearchInput
                     variant='share-popover'
                     placeholder="Search for the user's name or Douyin ID"
                     value={searchTerm}
                     onChange={setSearchTerm}
-                    className={`${activeKey === 'following' ? 'mr-6' : ''}`}
+                    className={`max-lg:h-7 max-lg:px-2 max-lg:rounded-md max-lg:[&_svg]:text-sm max-lg:[&_input]:text-[10px] max-lg:[&_input]:ml-1 ${activeKey === 'following' ? 'mr-6 max-lg:mr-2' : ''}`}
                   />
                   {activeKey === 'following' && (
-                    <div>
+                    <div className="shrink-0">
                       <Dropdown
                         triggerMode="hover"
                         position="right"
                         width={132}
                         className="shrink-0"
-                        menuClassName="!mt-1 !rounded-xl !border-none !bg-(--surface-raised) !p-1.5 !text-(--text-strong) !shadow-[var(--shadow-popover)]"
+                        menuClassName="!mt-1 !rounded-xl !border-none !bg-(--surface-raised) !p-1.5 !text-(--text-strong) !shadow-[var(--shadow-popover)] max-lg:!w-24 max-lg:!p-1"
                         trigger={(
                           <button
                             type="button"
-                            className="flex h-8 cursor-pointer items-center gap-1 rounded-lg px-1.5 text-[13px] text-(--text-strong) transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55]"
+                            className="flex h-8 max-lg:h-7 cursor-pointer items-center gap-1 max-lg:gap-0.5 rounded-lg px-1.5 max-lg:px-1 text-[13px] max-lg:text-[10px] text-(--text-strong) whitespace-nowrap transition hover:bg-(--hover-bg) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#fe2c55]"
                           >
-                            <SortIcon className="shrink-0 text-lg" />
+                            <SortIcon className="shrink-0 text-lg max-lg:text-sm" />
                             <span className="max-w-25 truncate">{selectedSortLabel}</span>
                           </button>
                         )}
@@ -419,7 +427,7 @@ export default function CreatorProfileFollowerFollowing({
                               key={option.value}
                               type="button"
                               onClick={() => setSort(option.value)}
-                              className={`h-10 cursor-pointer rounded-lg px-3 text-left text-[13px] transition hover:bg-(--hover-bg) ${sort === option.value ? 'text-[#fe2c55]' : ''}`}
+                              className={`h-10 max-lg:h-7 cursor-pointer rounded-lg max-lg:rounded-md px-3 max-lg:px-2 text-left text-[13px] max-lg:text-[10px] transition hover:bg-(--hover-bg) ${sort === option.value ? 'text-[#fe2c55]' : ''}`}
                             >
                               {option.label}
                             </button>

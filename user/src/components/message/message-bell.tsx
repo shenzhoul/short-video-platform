@@ -63,6 +63,7 @@ export default function MessageBell({ isLoggedIn }: MessageBellProps) {
       <Dropdown
         triggerMode="hover"
         position="center"
+        group="app-header"
         width={300}
         menuClassName="!z-90 !rounded-xl !border-(--border-faint) !bg-(--surface-raised) !p-0 !shadow-(--shadow-popover) max-w-[calc(100vw-24px)]"
         trigger={(

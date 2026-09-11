@@ -9,15 +9,15 @@ import NotificationItem from './notification-item';
 /** Placeholder rows sized like real ones, so opening the panel does not jump. */
 function NotificationSkeleton() {
   return (
-    <div className="animate-pulse px-4 py-3">
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 shrink-0 rounded-full bg-(--surface-muted)" />
-        <div className="min-w-0 flex-1 space-y-2 py-0.5">
-          <div className="h-3 w-1/3 rounded bg-(--surface-muted)" />
-          <div className="h-3 w-1/2 rounded bg-(--surface-muted)" />
-          <div className="h-2.5 w-12 rounded bg-(--surface-muted)" />
+    <div className="animate-pulse px-4 max-lg:px-2.5 py-3 max-lg:py-1.5">
+      <div className="flex items-start gap-3 max-lg:gap-2">
+        <div className="h-10 w-10 max-lg:h-7.5 max-lg:w-7.5 shrink-0 rounded-full bg-(--surface-muted)" />
+        <div className="min-w-0 flex-1 space-y-2 max-lg:space-y-1 py-0.5">
+          <div className="h-3 max-lg:h-2 w-1/3 rounded bg-(--surface-muted)" />
+          <div className="h-3 max-lg:h-2 w-1/2 rounded bg-(--surface-muted)" />
+          <div className="h-2.5 max-lg:h-1.5 w-12 max-lg:w-8 rounded bg-(--surface-muted)" />
         </div>
-        <div className="h-12 w-9 shrink-0 rounded-sm bg-(--surface-muted)" />
+        <div className="h-12 w-9 max-lg:h-8.5 max-lg:w-6.5 shrink-0 rounded-sm bg-(--surface-muted)" />
       </div>
     </div>
   );
@@ -53,12 +53,12 @@ export default function NotificationList({ onNavigate }: { onNavigate: () => voi
 
   if (error && !notifications.length) {
     return (
-      <div className="px-4 py-10 text-center">
-        <p className="text-[14px] leading-5 text-(--text-soft)">{error}</p>
+      <div className="px-4 py-10 max-lg:px-2.5 max-lg:py-5 text-center">
+        <p className="text-[14px] max-lg:text-[10px] leading-5 max-lg:leading-4 text-(--text-soft)">{error}</p>
         <button
           type="button"
           onClick={retry}
-          className="mt-3 cursor-pointer rounded-lg bg-(--btn-bg) px-4 py-1.5 text-[13px] leading-5 text-(--text-strong) transition hover:bg-(--btn-bg-hover)"
+          className="mt-3 max-lg:mt-2 cursor-pointer rounded-lg max-lg:rounded-md bg-(--btn-bg) px-4 max-lg:px-2.5 py-1.5 max-lg:py-1 text-[13px] max-lg:text-[10px] leading-5 max-lg:leading-4 text-(--text-strong) transition hover:bg-(--btn-bg-hover)"
         >
           Try again
         </button>
@@ -71,7 +71,7 @@ export default function NotificationList({ onNavigate }: { onNavigate: () => voi
       <NoData
         title="No notifications yet"
         description="Likes, comments, mentions and new followers will show up here."
-        className="py-10"
+        className="py-10 max-lg:py-5"
       />
     );
   }

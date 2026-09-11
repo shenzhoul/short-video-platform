@@ -49,11 +49,13 @@ export default function NotificationPanel({ onNavigate }: { onNavigate: () => vo
   }, [markAllRead]);
 
   return (
-    <div className="max-h-175 min-h-134 h-auto overflow-visible rounded-sm">
-      <div className="rounded-2xl overflow-hidden">
+    // Compact: no minimum height — the panel is as tall as its rows, up to a
+    // cap read from the viewport, and the list scrolls inside it.
+    <div className="max-h-175 min-h-134 max-lg:min-h-0 max-lg:max-h-none h-auto overflow-visible rounded-sm">
+      <div className="rounded-2xl max-lg:rounded-lg overflow-hidden">
         <div className="w-full rounded-sm flex relative overflow-hidden items-center flex-col justify-start">
-          <div className="w-full h-13 grow-0 shrink-0 items-center justify-between flex pt-0.5 px-5">
-            <div className="text-(--text) shrink-0 text-[16px] font-medium">
+          <div className="w-full h-13 max-lg:h-8 grow-0 shrink-0 items-center justify-between flex pt-0.5 max-lg:pt-0 px-5 max-lg:px-2.5">
+            <div className="text-(--text) shrink-0 text-[16px] max-lg:text-[11px] font-medium">
               Interactive messages
             </div>
 
@@ -63,12 +65,12 @@ export default function NotificationPanel({ onNavigate }: { onNavigate: () => vo
                   type="button"
                   aria-expanded={filterMenuOpen}
                   aria-haspopup="menu"
-                  className="text-[14px] flex cursor-pointer items-center gap-1 font-medium text-(--text-muted)"
+                  className="text-[14px] max-lg:text-[10px] flex cursor-pointer items-center gap-1 max-lg:gap-0.5 font-medium text-(--text-muted)"
                 >
                   {activeFilter.label}
                   <FiChevronDown
                     aria-hidden="true"
-                    className={`text-[13px] transition-transform ${filterMenuOpen ? 'rotate-180' : ''}`}
+                    className={`text-[13px] max-lg:text-[10px] transition-transform ${filterMenuOpen ? 'rotate-180' : ''}`}
                   />
                 </button>
               )}
@@ -78,7 +80,7 @@ export default function NotificationPanel({ onNavigate }: { onNavigate: () => vo
               open={filterMenuOpen}
               onOpenChange={setFilterMenuOpen}
               className="z-10"
-              menuClassName="!top-9 !mt-0 !overflow-hidden !rounded-lg !border-none !bg-(--surface-raised) !py-2 !shadow-(--shadow-popover)"
+              menuClassName="!top-9 !mt-0 !overflow-hidden !rounded-lg !border-none !bg-(--surface-raised) !py-2 !shadow-(--shadow-popover) max-lg:!top-5 max-lg:!w-22 max-lg:!py-1"
             >
               <div role="menu" aria-label="Filter notifications">
                 {FILTER_OPTIONS.map((option) => {
@@ -93,7 +95,7 @@ export default function NotificationPanel({ onNavigate }: { onNavigate: () => vo
                         setCategoryFilter(option.value);
                         setFilterMenuOpen(false);
                       }}
-                      className={`flex h-12 w-full cursor-pointer items-center px-8 text-left text-[14px] font-medium transition hover:bg-(--hover-bg) ${isActive ? 'text-(--text)' : 'text-(--text-muted)'
+                      className={`flex h-12 max-lg:h-7 w-full cursor-pointer items-center px-8 max-lg:px-3 text-left text-[14px] max-lg:text-[10px] font-medium transition hover:bg-(--hover-bg) ${isActive ? 'text-(--text)' : 'text-(--text-muted)'
                         }`}
                     >
                       {option.label}
@@ -104,7 +106,7 @@ export default function NotificationPanel({ onNavigate }: { onNavigate: () => vo
             </Dropdown>
           </div>
 
-          <div className="min-h-120 max-h-[calc(70vh-56px)] w-full flex flex-col grow shrink relative overflow-y-auto overscroll-contain">
+          <div className="min-h-120 max-h-[calc(70vh-56px)] max-lg:min-h-0 max-lg:max-h-[min(26rem,calc(var(--app-viewport-height)-var(--app-header-height)-4.5rem))] w-full flex flex-col grow shrink relative overflow-y-auto overscroll-contain">
             <NotificationList onNavigate={onNavigate} />
           </div>
         </div>

@@ -95,11 +95,21 @@ export default function CreatorProfileWorksToolbar({
               <Tabs tabs={profileTabs} value={activeTab} onChange={onTabChange}>
                 {({ getTabProps, isActive }) => (
                   <>
+                    {/*
+                      Compact: the active tab keeps its whole label; the others
+                      share what is left but grow no wider than their own label
+                      (`max-w-max`). Without that cap, three short tabs on
+                      another creator's profile were stretched across the row —
+                      "Recommended" took 150px and "I like it" floated in the
+                      middle of the right half. Now they sit packed left with one
+                      gap, and still shrink and ellipsize when seven tabs share an
+                      owner's row.
+                    */}
                     {profileTabs.map((tab) => (
                       <div
-                        className={`inline-block mr-6 max-lg:mr-2 max-lg:last:mr-0 max-lg:min-w-0 text-[16px] py-3 max-lg:py-1.5 px-0 float-left max-lg:float-none ${isActive(tab)
-                          ? 'max-lg:shrink-0 border-b-[3px] border-solid border-[rgba(254,44,85,1)] text-(--text-strong)'
-                          : 'max-lg:flex-1 max-lg:basis-0 text-(--text-muted) hover:text-(--text) hover:border-b-[3px] hover:border-solid hover:border-(--border-faint)'}`}
+                        className={`inline-block mr-6 max-lg:mr-3 max-lg:last:mr-0 max-lg:min-w-0 text-[16px] py-3 max-lg:py-1.5 px-0 float-left max-lg:float-none ${isActive(tab)
+                          ? 'max-lg:shrink-0 border-b-[3px] max-lg:border-b-2 border-solid border-[rgba(254,44,85,1)] text-(--text-strong)'
+                          : 'max-lg:flex-1 max-lg:basis-0 max-lg:max-w-max text-(--text-muted) hover:text-(--text) hover:border-b-[3px] max-lg:hover:border-b-2 hover:border-solid hover:border-(--border-faint)'}`}
                         key={tab.key}
                         data-profile-tab={isActive(tab) ? 'active' : undefined}
                         // The visual label may be clipped at a compact width;
@@ -237,7 +247,7 @@ export default function CreatorProfileWorksToolbar({
                           <>
                             {filterTabs.map((filter) => (
                               <div
-                                className={`mr-2.5 max-lg:mr-0 shrink-0 outline-none rounded-md py-0.75 max-lg:py-0 px-3 max-lg:px-1.5 relative inline-block text-[14px] max-lg:text-[10px] leading-5 max-lg:leading-4 float-left max-lg:float-none ${isActive(filter) ? 'text-[rgba(254,44,85,1)] bg-[rgba(254,44,85,.12)]' : 'bg-(--active-bg) text-(--text-muted) cursor-pointer hover:text-(--text-strong)'}`}
+                                className={`mr-2.5 max-lg:mr-0 shrink-0 outline-none rounded-md max-lg:rounded py-0.75 max-lg:py-0.5 px-3 max-lg:px-2 relative inline-block text-[14px] max-lg:text-[10px] leading-5 max-lg:leading-4 float-left max-lg:float-none ${isActive(filter) ? 'text-[rgba(254,44,85,1)] bg-[rgba(254,44,85,.12)]' : 'bg-(--active-bg) text-(--text-muted) cursor-pointer hover:text-(--text-strong)'}`}
                                 key={filter.key}
                                 {...getTabProps(filter)}
                               >

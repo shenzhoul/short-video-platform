@@ -27,6 +27,7 @@
 import SidebarBottom from '@components/layout/sidebar-bottom';
 import { useLogout } from '@hooks/use-logout';
 import { IUser } from '@interfaces/user';
+import { useMainThemeLayout } from '@providers/main-layout.provider';
 import { useProfile } from '@providers/profile.provider';
 import Link from 'next/link';
 import { useCallback, useMemo } from 'react';
@@ -41,6 +42,8 @@ interface LeftNavigationProps {
 
 export function LeftNavigation({ serverUser }: LeftNavigationProps) {
   const { current: clientUser, fetching } = useProfile();
+  const { publicSettings } = useMainThemeLayout();
+  const siteName = publicSettings?.siteName || 'Douyin-clone';
 
   // While fetching, prefer serverUser. After load, prefer clientUser if it exists
   const user = fetching ? (serverUser || clientUser) : (clientUser || serverUser);
@@ -74,16 +77,27 @@ export function LeftNavigation({ serverUser }: LeftNavigationProps) {
       <div data-app-nav-rail className='fixed left-0 top-0 flex h-(--app-viewport-height) w-(--app-shell-nav-width) flex-col bg-(--page-bg) text-(--text-strong) transition-[width] duration-200 ease-out motion-reduce:transition-none z-99'>
         {/*
           The full wordmark needs room the compact rail does not have, so below
-          `lg` it is replaced by the app icon rather than dropped — the rail must
-          still lead back to the home feed.
+          `lg` it is replaced by the app mark rather than dropped — the rail must
+          still lead back to the home feed. The mark fills the band beside the
+          header, as in the reference, so it lines up with the header's icons
+          and "Get APP" starts where the header ends.
         */}
         <div className='max-lg:hidden flex justify-center'><Logo /></div>
+        <Link
+          href="/"
+          data-app-rail-logo
+          aria-label={siteName}
+          title={siteName}
+          className='lg:hidden flex h-(--app-header-height) w-full shrink-0 items-center justify-center text-(--text-strong) transition hover:opacity-80 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#fe2c55]'
+        >
+          <DouyinFavicon className='text-[18px] filter-[drop-shadow(-1px_-1px_0_#25f4ee)_drop-shadow(1px_1px_0_#fe2c55)]' />
+        </Link>
         <div className='max-lg:hidden flex justify-center'><img src="/get_app_hover.png" alt="Get App" width={128} /></div>
         <Link
           href="/"
           aria-label="Get the app"
           title="Get APP"
-          className='lg:hidden mx-auto mt-1.5 flex h-8 w-9 shrink-0 flex-col items-center justify-center gap-px rounded-lg bg-[#fe2c55] text-[7px] font-semibold leading-none text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fe2c55]'
+          className='lg:hidden mx-auto mt-0.5 flex h-8 w-9 shrink-0 flex-col items-center justify-center gap-px rounded-lg bg-[#fe2c55] text-[7px] font-semibold leading-none text-white transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#fe2c55]'
         >
           <DouyinFavicon className='text-[13px]' />
           <span>Get APP</span>

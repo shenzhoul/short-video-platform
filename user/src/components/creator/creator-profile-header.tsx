@@ -42,7 +42,7 @@ interface ShareFriend {
 
 function SaveLoginHelpPanel() {
   return (
-    <div className="whitespace-nowrap rounded-xl bg-(--surface-raised) px-4 py-3 text-[13px] leading-5 text-(--text-strong) shadow-(--shadow-popover)">
+    <div className="whitespace-nowrap max-lg:whitespace-normal max-lg:w-48 rounded-xl max-lg:rounded-lg bg-(--surface-raised) px-4 max-lg:px-2.5 py-3 max-lg:py-2 text-[13px] max-lg:text-[10px] leading-5 max-lg:leading-4 text-(--text-strong) shadow-(--shadow-popover)">
       Save login information; next login requires no verification
     </div>
   );
@@ -69,7 +69,7 @@ function ShareHomepagePanel({
   onCopyLink: () => void;
 }) {
   return (
-    <div className="w-75 overflow-hidden rounded-xl bg-(--surface-raised) text-(--text-strong) shadow-(--shadow-popover)">
+    <div className="w-75 max-lg:w-[min(18.75rem,calc(100vw-var(--app-shell-nav-width)-1.25rem))] overflow-hidden rounded-xl bg-(--surface-raised) text-(--text-strong) shadow-(--shadow-popover)">
       <div className="border-b border-(--border-soft) px-3 py-3">
         <SearchInput variant="share-popover" placeholder="Search" />
       </div>
@@ -183,11 +183,28 @@ export default function CreatorProfileHeader({
   };
 
   return (
-    <>
+    /*
+      The cover band.
+
+      Desktop: the cover is a 251px block and the hero is pulled up into it with
+      a negative margin, exactly as before — this wrapper has no box of its own
+      there, so the cover's own negative margin still collapses through it.
+
+      Compact: the cover was a fixed 104px block (72px of it visible under the
+      header) with the ~100px hero pulled up 36px, so most of the avatar, the
+      counters, the bio and the buttons hung below the cover onto the page
+      background. The reference draws the whole identity block on the cover
+      with the tabs starting at its edge. So below `lg` the cover is the band's
+      absolutely positioned background and the hero sets the band's height:
+      whatever the bio or the metadata wraps to, the cover ends just under the
+      buttons.
+    */
+    <div data-profile-cover-band className='relative max-lg:-mt-8'>
       <CoverUpload
         previewUrl={previewCover}
         coverBgColor={previewCoverBgColor}
         editable={canEditProfile}
+        className='max-lg:!absolute max-lg:!inset-0 max-lg:!mt-0 max-lg:!h-auto'
         onUploaded={(data) => {
           if (data.fileInfo?.url) {
             onPreviewCoverChange(data.fileInfo.url);
@@ -208,24 +225,32 @@ export default function CreatorProfileHeader({
       */}
       <div className='w-[calc(100%-var(--message-workspace-width,0px))] transition-[width] duration-200 ease-out motion-reduce:transition-none'>
         {/*
-          Avatar and identity sit side by side at every width.
+          Desktop: avatar, identity and the absolutely placed actions column.
 
-          This was `max-lg:flex-col`, which stacked them — so the creator name,
-          the counters and the metadata each became a full-width row *below* the
-          avatar and the hero grew far taller than the reference. `flex-wrap` is
-          what keeps the restructure to one line of CSS: the avatar and the
-          identity block are auto-width and share row one, while the actions
-          column below is `w-full` at this breakpoint and therefore wraps onto
-          its own line by itself.
+          Compact: one grid, three columns — avatar, identity, actions — which is
+          the reference's arrangement. It used to be `max-lg:flex-wrap`, and a
+          flex line breaks on the identity block's max-content width, so a long
+          bio pushed the actions onto two rows of their own below it: "Share
+          homepage" on one, full-size Follow and Message on the next, and at
+          390px Message ran past the right edge.
+
+          The identity block and the actions column are `display: contents` at
+          this breakpoint, so their children are placed straight onto the grid
+          without changing the markup the desktop layout uses:
+
+            avatar | name               | Share · More   (or Save login)
+            avatar | counters ─────────────────────────
+            avatar | metadata ─────────────────────────
+                   | bio (2 lines)      | Follow Message
         */}
         <div
           data-profile-hero
-          className='pointer-events-none relative z-60 -mt-40 max-lg:-mt-9 max-w-380 w-full flex max-lg:flex-wrap max-lg:items-start mx-auto mb-5.25 max-lg:mb-1.5 max-lg:px-2.5'
+          className='pointer-events-none relative z-60 -mt-40 max-lg:mt-0 max-w-380 w-full flex max-lg:grid max-lg:grid-cols-[2.875rem_minmax(0,1fr)_auto] max-lg:gap-x-2 max-lg:gap-y-1 max-lg:items-start mx-auto mb-5.25 max-lg:mb-0 max-lg:px-2.5 max-lg:pt-[calc(var(--app-header-height)+0.625rem)] max-lg:pb-2.5'
         >
-          <div className='w-28 max-lg:w-14 flex-none'>
+          <div className='w-28 max-lg:w-11.5 flex-none max-lg:col-start-1 max-lg:row-start-1 max-lg:row-span-3'>
             <button
               type="button"
-              className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 max-lg:w-14 max-lg:h-14 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
+              className='pointer-events-auto bg-transparent cursor-pointer relative w-28 h-28 max-lg:w-11 max-lg:h-11 box-content rounded-full overflow-hidden block border border-solid border-(--text-muted) text-(--text-strong) whitespace-nowrap text-center align-middle items-center justify-center'
               onClick={onOpenAvatarPreview}
               aria-label="Preview avatar"
             >
@@ -234,9 +259,9 @@ export default function CreatorProfileHeader({
           </div>
           <div
             data-profile-identity
-            className='min-h-30 max-lg:min-h-0 w-full max-lg:w-auto min-w-0 flex-1 flex-wrap flex items-center max-lg:items-start content-center max-lg:content-start ml-8 max-lg:ml-2.5 max-lg:mt-0'
+            className='min-h-30 w-full min-w-0 flex-1 flex-wrap flex items-center content-center ml-8 max-lg:contents'
           >
-            <div data-profile-name className='flex relative w-full min-w-0 items-center'>
+            <div data-profile-name className='flex relative w-full min-w-0 items-center max-lg:col-start-2 max-lg:row-start-1 max-lg:self-center'>
               <h1 className='m-0 min-w-0 text-xl max-lg:text-[13px] leading-7 max-lg:leading-[18px] pointer-events-auto'>
                 <span className='block max-w-75 max-lg:max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-(--text) text-xl max-lg:text-[13px] font-medium leading-7 max-lg:leading-[18px]'>
                   {previewName}
@@ -250,7 +275,7 @@ export default function CreatorProfileHeader({
             </div>
             <div
               data-profile-counters
-              className='w-full mt-1 max-lg:mt-0.5 flex flex-wrap max-lg:flex-nowrap max-lg:items-center gap-y-1 max-lg:gap-y-0 max-lg:whitespace-nowrap'
+              className='w-full mt-1 max-lg:mt-0 flex flex-wrap max-lg:flex-nowrap max-lg:items-center gap-y-1 max-lg:gap-y-0 max-lg:whitespace-nowrap max-lg:overflow-hidden max-lg:col-start-2 max-lg:col-span-2 max-lg:row-start-2'
             >
               <button
                 type="button"
@@ -287,22 +312,32 @@ export default function CreatorProfileHeader({
             </div>
             <p
               data-profile-metadata
-              className='pointer-events-auto w-full min-w-0 h-5 max-lg:h-auto flex max-lg:flex-wrap max-lg:gap-x-1.5 max-lg:gap-y-0.5 items-center mt-3 max-lg:mt-1'
+              // Compact: exactly one line, as in the reference. The age and
+              // region chips never shrink; when English labels do not fit, the
+              // ID and the IP location give up width and ellipsize, keeping
+              // their full text in `title`.
+              className='pointer-events-auto w-full min-w-0 h-5 max-lg:h-3.5 max-lg:overflow-hidden flex max-lg:flex-nowrap max-lg:gap-x-1 items-center mt-3 max-lg:mt-0 max-lg:col-start-2 max-lg:col-span-2 max-lg:row-start-3'
             >
-              <span className='mr-5 max-lg:mr-0 text-[12px] max-lg:text-[9px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
+              <span
+                title={`Douyin ID: ${creator.username}`}
+                className='mr-5 max-lg:mr-0 max-lg:min-w-0 max-lg:truncate text-[12px] max-lg:text-[8px] leading-5 max-lg:leading-3.5 text-(--text-muted)'
+              >
                 Douyin ID: {creator.username}
               </span>
-              <span className='mr-5 max-lg:mr-0 text-[12px] max-lg:text-[9px] leading-5 max-lg:leading-3.5 text-(--text-muted)'>
+              <span
+                title='IP location: Guangdong'
+                className='mr-5 max-lg:mr-0 max-lg:min-w-0 max-lg:truncate text-[12px] max-lg:text-[8px] leading-5 max-lg:leading-3.5 text-(--text-muted)'
+              >
                 IP location: Guangdong
               </span>
-              <span className='h-5 max-lg:h-3.5 shrink-0 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[9px] leading-5 max-lg:leading-3.5'>
-                <MaleIcon className='text-xs mr-1' /> 28 years old
+              <span className='h-5 max-lg:h-3 shrink-0 whitespace-nowrap text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-0.5 py-0 flex text-[12px] max-lg:text-[8px] leading-5 max-lg:leading-3'>
+                <MaleIcon className='text-xs max-lg:text-[8px] mr-1 max-lg:mr-0.5' /> 28 years old
               </span>
-              <span className='h-5 max-lg:h-3.5 shrink-0 text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-1 py-0 flex text-[12px] max-lg:text-[9px] leading-5 max-lg:leading-3.5'>
+              <span className='h-5 max-lg:h-3 shrink-0 whitespace-nowrap text-(--text-soft) bg-(--surface-muted) rounded-sm items-center mr-1 max-lg:mr-0 px-2 max-lg:px-0.5 py-0 flex text-[12px] max-lg:text-[8px] leading-5 max-lg:leading-3'>
                 Guangdong · Shenzhen
               </span>
             </p>
-            <CreatorProfileBio bio={previewBio} />
+            <CreatorProfileBio bio={previewBio} className='max-lg:col-start-2 max-lg:row-start-4 max-lg:self-center' />
           </div>
           {/*
           Capped to its own content rather than a fixed 470px.
@@ -314,24 +349,31 @@ export default function CreatorProfileHeader({
           that space the Download action sat underneath it. `max-content` keeps
           the column bounded without re-breaking if a label changes length.
         */}
-          <div className='pointer-events-auto max-w-max max-lg:max-w-none max-lg:shrink-0 max-lg:self-start flex-wrap content-between h-28 max-lg:h-auto max-lg:gap-x-2 max-lg:gap-y-1 items-center max-lg:items-start justify-end flex absolute max-lg:static right-0 bottom-2 max-lg:mt-0 max-lg:ml-auto max-lg:w-auto'>
+          <div className='pointer-events-auto max-w-max flex-wrap content-between h-28 items-center justify-end flex absolute right-0 bottom-2 max-lg:contents'>
             {(!currentUser || currentUser._id !== creator._id) && (
-            <div className='w-full flex-row-reverse flex relative'>
+            <div className='w-full flex-row-reverse flex relative max-lg:w-auto max-lg:col-start-3 max-lg:row-start-1 max-lg:self-center max-lg:justify-self-end'>
               <HoverRevealPanel
                 panel={<MoreActionsPanel />}
                 className="flex items-center"
-                panelPositionClassName="right-[-10px] top-full pt-2"
+                // Compact: every hover panel here is anchored inside the column.
+                // Hidden panels are still laid out, so one hanging past the
+                // right edge makes the profile scroll sideways.
+                panelPositionClassName="right-[-10px] max-lg:right-0 top-full pt-2"
+                // `right-[-10px]` is the preferred placement; where the trigger is
+                // flush with the edge (1440px: trigger 1404-1440, panel to 1450) it
+                // is pulled back just far enough to stay inside the profile.
+                fitWithinScrollport
               >
-                <button type="button" className='h-6.5 w-9 m-0 p-0 cursor-pointer flex items-center justify-center'>
-                  <MoreIcon className='text-2xl' />
+                <button type="button" aria-label="More actions" className='h-6.5 w-9 max-lg:h-4 max-lg:w-4 m-0 p-0 cursor-pointer flex items-center justify-center'>
+                  <MoreIcon className='text-2xl max-lg:text-sm' />
                 </button>
               </HoverRevealPanel>
               <HoverRevealPanel
                 panel={<ShareHomepagePanel friends={shareFriends} onCopyLink={copyProfileLink} />}
                 className="flex items-center"
-                panelPositionClassName="right-[-28px] top-full pt-3"
+                panelPositionClassName="right-[-28px] max-lg:right-0 top-full pt-3"
               >
-                <button type="button" className='h-6.5 w-auto m-0 ml-2 p-0 text-(--text-strong) cursor-pointer'>
+                <button type="button" className='h-6.5 max-lg:h-4 w-auto m-0 ml-2 max-lg:ml-0 max-lg:mr-1 p-0 text-(--text-strong) cursor-pointer max-lg:text-[10px] max-lg:leading-4 whitespace-nowrap'>
                   <span className='relative flex items-center text-(--text) hover:text-(--text-strong)'>
                     Share homepage
                   </span>
@@ -340,14 +382,18 @@ export default function CreatorProfileHeader({
             </div>
           )}
             {canEditProfile ? (
-              <div className='w-full max-lg:w-auto flex-row-reverse max-lg:flex-row flex relative max-lg:ml-auto'>
+              <div className='w-full max-lg:w-auto flex-row-reverse max-lg:flex-row flex relative max-lg:col-start-3 max-lg:row-start-1 max-lg:self-center max-lg:justify-self-end'>
                 <div
                   data-profile-save-login
                   className='ml-auto max-lg:ml-0 z-1 h-full inline-flex items-center justify-center'
                 >
                   <HoverRevealPanel
                     panel={<SaveLoginHelpPanel />}
-                    panelPositionClassName="right-[-180px] top-full pt-2"
+                    panelPositionClassName="right-[-180px] max-lg:right-0 top-full pt-2"
+                    // Preferred placement, kept wherever it fits; at 1440px it
+                    // reached 52px past the profile (icon right 1312, panel to 1492)
+                    // and is moved back only by that much.
+                    fitWithinScrollport
                   >
                     <div className='cursor-pointer w-4 h-4 max-lg:w-3 max-lg:h-3'>
                       <HelpCircleIcon className='text-[16px] max-lg:text-[12px]' />
@@ -358,9 +404,9 @@ export default function CreatorProfileHeader({
                 </div>
               </div>
           ) : null}
-            <div className='flex ml-auto max-lg:ml-0 max-lg:empty:hidden'>
+            <div className='flex ml-auto max-lg:ml-0 max-lg:empty:hidden max-lg:col-start-3 max-lg:row-start-4 max-lg:self-center max-lg:justify-self-end'>
               {(!currentUser || currentUser._id !== creator._id) && (
-              <div className='flex'>
+              <div className='flex max-lg:gap-1'>
                 <button
                   type="button"
                   onClick={async () => {
@@ -378,7 +424,9 @@ export default function CreatorProfileHeader({
                     }
                   }}
                   disabled={followState.following}
-                  className={`rounded-xl min-w-22 h-8.25 m-o mr-2 text-[14px] font-medium leading-5.5 cursor-pointer inline-flex py-1.5 px-4 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
+                  // Compact: a fixed width, so "Follow" becoming "Following"
+                  // never resizes the button or moves Message beside it.
+                  className={`rounded-xl max-lg:rounded-md min-w-22 max-lg:min-w-0 max-lg:w-14 h-8.25 max-lg:h-6.5 m-o mr-2 max-lg:mr-0 text-[14px] max-lg:text-[10px] font-medium leading-5.5 max-lg:leading-none cursor-pointer inline-flex py-1.5 max-lg:py-0 px-4 max-lg:px-0 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap disabled:cursor-wait disabled:opacity-60 ${followState.isFollowed
                     ? 'bg-(--field-bg) text-(--text-soft) hover:bg-[rgba(242,242,244,.12)]'
                     : 'bg-[rgba(254,44,85,1)] text-white hover:bg-[rgba(210,27,70,1)]'}`}
                 >
@@ -388,7 +436,7 @@ export default function CreatorProfileHeader({
                 </button>
                 <ProfileMessageButton
                   creatorId={creator._id?.toString()}
-                  className='rounded-xl min-w-22 h-8.25 m-o mr-2 bg-(--field-bg) text-(--text-soft) text-[14px] font-medium leading-5.5 cursor-pointer inline-flex py-1.5 px-4 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap hover:bg-[rgba(242,242,244,.12)] disabled:cursor-wait disabled:opacity-60'
+                  className='rounded-xl max-lg:rounded-md min-w-22 max-lg:min-w-0 max-lg:w-14 h-8.25 max-lg:h-6.5 m-o mr-2 max-lg:mr-0 bg-(--field-bg) text-(--text-soft) text-[14px] max-lg:text-[10px] font-medium leading-5.5 max-lg:leading-none cursor-pointer inline-flex py-1.5 max-lg:py-0 px-4 max-lg:px-0 items-center justify-center border-0 border-solid border-transparent whitespace-nowrap hover:bg-[rgba(242,242,244,.12)] disabled:cursor-wait disabled:opacity-60'
                 />
               </div>
             )}
@@ -409,6 +457,6 @@ export default function CreatorProfileHeader({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
