@@ -233,3 +233,66 @@ describe('useCreatorPostSearch — owner management screen', () => {
     expect(myPosts.mock.calls[0][0]).not.toHaveProperty('userId');
   });
 });
+
+/**
+ * The account menu's "My work" preview uses this same hook with a page of three
+ * and `creatorOrder: 'latest'`. The profile grid must keep sending exactly what
+ * it sent before, which is what keeps its pinned-first order.
+ */
+describe('useCreatorPostSearch — order and menu options', () => {
+  const { toast } = jest.requireMock('@douyin-clone/shared-toast');
+
+  beforeEach(() => {
+    getCreatorPosts.mockReset();
+    myPosts.mockReset();
+    toast.error.mockClear();
+  });
+
+  it('keeps the profile grid on the pinned-first order by sending no creatorOrder', async () => {
+    getCreatorPosts.mockResolvedValue(page([make('b1', B, { isPinned: true })], false));
+    const { result } = render({ creatorId: B, limit: 20 });
+
+    act(() => result.current.handleFilter({}));
+    await waitFor(() => expect(getCreatorPosts).toHaveBeenCalled());
+
+    expect(getCreatorPosts.mock.calls[0][1]).toEqual({ limit: 20 });
+  });
+
+  it('asks the same route for newest-first when creatorOrder is latest', async () => {
+    getCreatorPosts.mockResolvedValue({
+      data: {
+        data: [make('b1', B), make('b2', B), make('b3', B)], total: 12, hasMore: true, nextCursor: null
+      }
+    });
+    const { result } = render({
+      creatorId: B, limit: 3, creatorOrder: 'latest', notifyOnError: false
+    });
+    expect(result.current.hasLoaded).toBe(false);
+
+    act(() => result.current.handleFilter({}));
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+
+    expect(getCreatorPosts).toHaveBeenCalledWith(B, { limit: 3, creatorOrder: 'latest' });
+    expect(result.current.posts).toHaveLength(3);
+    expect(result.current.total).toBe(12);
+  });
+
+  it('treats a server-rendered first page as already loaded', () => {
+    const { result } = render({
+      creatorId: B, initialPosts: [make('b1', B)], initialTotal: 1, initialHasMore: false
+    });
+
+    expect(result.current.hasLoaded).toBe(true);
+  });
+
+  it('reports a failure through `error` without a toast when asked to', async () => {
+    getCreatorPosts.mockRejectedValue(new Error('offline'));
+    const { result } = render({ creatorId: B, limit: 3, notifyOnError: false });
+
+    act(() => result.current.handleFilter({}));
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+
+    expect(result.current.error).toBe(true);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+});

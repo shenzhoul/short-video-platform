@@ -33,6 +33,18 @@ interface UseCreatorPostSearchProps {
   initialHasMore?: boolean;
   initialNextCursor?: CursorInfo | null;
   limit?: number;
+  /**
+   * Order of a profile listing. Omitted (the profile grid) keeps the creator's
+   * own pinned-first order and sends nothing extra. `latest` asks the same route
+   * for plain newest-first — the account menu's "My work" preview, where an old
+   * pinned post must not displace the newest ones. Ignored without `creatorId`.
+   */
+  creatorOrder?: 'pinned' | 'latest';
+  /**
+   * Show a toast when a request fails. The account menu turns it off and draws
+   * its own inline retry instead.
+   */
+  notifyOnError?: boolean;
 }
 
 export const useCreatorPostSearch = ({
@@ -41,11 +53,20 @@ export const useCreatorPostSearch = ({
   initialTotal = initialPosts.length,
   initialHasMore,
   initialNextCursor = null,
-  limit = 12
+  limit = 12,
+  creatorOrder,
+  notifyOnError = true
 }: UseCreatorPostSearchProps) => {
   const [posts, setPosts] = useState<IPost[]>(initialPosts);
   const [total, setTotal] = useState(initialTotal);
   const [loading, setLoading] = useState(false);
+  /**
+   * The list reflects a response — the server-rendered page counts. False only
+   * for a caller that starts empty and has not asked yet, which is how a
+   * consumer tells "not loaded" from "no posts".
+   */
+  const [hasLoaded, setHasLoaded] = useState(initialPosts.length > 0 || typeof initialHasMore === 'boolean');
+  const [error, setError] = useState(false);
   const [filter, setFilter] = useState<any>({});
   const [nextCursor, setNextCursor] = useState<CursorInfo | null>(initialNextCursor);
   const defaultHasMore = typeof initialHasMore === 'boolean' ? initialHasMore : initialPosts.length < initialTotal;
@@ -72,7 +93,9 @@ export const useCreatorPostSearch = ({
 
       const queryParams: any = {
         ...newFilter,
-        limit
+        limit,
+        // Only sent when asked for, so the profile grid's requests are unchanged.
+        ...(requestedCreatorId && creatorOrder === 'latest' ? { creatorOrder } : {})
       };
 
       // Add cursor parameters for pagination (except on new search)
@@ -113,13 +136,20 @@ export const useCreatorPostSearch = ({
 
       setHasMore(responseHasMore);
       setTotal(responseTotal);
+      setError(false);
     } catch {
-      if (activeCreatorIdRef.current === requestedCreatorId) toast.error('Failed to load posts');
+      if (activeCreatorIdRef.current === requestedCreatorId) {
+        setError(true);
+        if (notifyOnError) toast.error('Failed to load posts');
+      }
     } finally {
       loadingRef.current = false;
-      if (activeCreatorIdRef.current === requestedCreatorId) setLoading(false);
+      if (activeCreatorIdRef.current === requestedCreatorId) {
+        setLoading(false);
+        setHasLoaded(true);
+      }
     }
-  }, [creatorId, limit, nextCursor]);
+  }, [creatorId, creatorOrder, limit, nextCursor, notifyOnError]);
 
   // A different profile is a different list. Reset rather than append, so a
   // client-side navigation between two creators cannot leave the previous
@@ -237,6 +267,8 @@ export const useCreatorPostSearch = ({
     posts,
     total,
     loading,
+    hasLoaded,
+    error,
     hasMore,
     nextCursor,
     handleFilter,

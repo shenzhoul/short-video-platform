@@ -4,7 +4,7 @@ description: Public username profiles and authenticated profile/media editing.
 audience: [guest, user, creator, developer-agent]
 domain: identity
 status: active
-updated: 2026-09-06
+updated: 2026-09-10
 tags: [creator, profile, avatar, cover]
 ---
 
@@ -88,7 +88,72 @@ scrolls.
   unconditionally on `I like it`, under a grid that had only ever asked for its
   first page — so an account with 67 likes saw 20 posts and an end-of-list
   message underneath them.
-- The count in the header account menu comes from the same endpoint's `total`
-  (a `limit=1` request read purely for the count), so the number in the menu and
-  the set of posts the grid can reach come from one query with one set of
-  filters.
+- The count in the header account menu comes from the same endpoint's `total`,
+  so the number in the menu and the set of posts the grid can reach come from one
+  query with one set of filters. Since 2026-09-10 that is the menu's `limit=3`
+  preview request rather than a separate `limit=1` count request.
+
+#### Posts the viewer can no longer open (2026-09-10)
+
+`GET /posts/liked` skips liked posts the viewer could not open in post detail —
+a post its creator deleted (soft-deleted, awaiting cleanup) or one that was
+deactivated. It uses the exact rule post detail applies
+(`canViewerOpenPost` in `api/src/services/content/content.service.ts`): admins
+and the post's owner see everything, anyone else needs an active post or one
+whose creator account was deleted. Before this, such a post appeared as a tile
+that answered "This post is no longer available." when opened.
+
+Skipping would shorten a page, so the endpoint reads further reaction pages — at
+most three extra — until it has `limit` openable posts. The cursor it returns is
+always the last **reaction consumed**, so continuing never skips a like. Order is
+unchanged: the reaction's `createdAt`, then its `_id`, newest first. `total` is
+still the reaction count, so it can include a post the list no longer shows.
+
+## Account menu previews (2026-09-10)
+
+Signed-in users see small post previews inside the header account menu (hover
+the avatar in the top-right corner).
+
+| Row | Preview | Order | Source |
+|---|---|---|---|
+| `I like it` | up to 3 posts | most recently **liked** first | `GET /posts/liked?limit=3` |
+| `My work` | up to 3 posts | most recently **published** first; a pinned post does not jump ahead | `GET /posts/creator-posts?userId=<me>&limit=3&creatorOrder=latest` |
+
+How it behaves:
+
+- Every time the menu opens it starts on `I like it`, with its preview open.
+- Hovering `My work` (or focusing it with the keyboard) closes the liked preview
+  and slides the works preview up from below. Hovering `I like it` again slides
+  the liked preview down from above. Only one preview is ever open; the rows in
+  between do not switch anything, and moving the pointer onto the tiles keeps
+  the section open.
+- A tile shows the post's cover (3:4 cover, then thumbnail, then first photo) and
+  a one-line caption. Videos never play in the menu. A post with no usable image
+  gets a neutral tile.
+- Clicking a tile closes the menu and opens that post in the normal post detail
+  modal, at `/?modal_id=<postId>` — the same address a notification uses.
+- Clicking the row itself still goes to the matching profile tab. On a touch
+  screen a tap on a row always navigates: taps never switch the preview, because
+  switching would move the row out from under the finger before the tap's click
+  arrives. Keyboard focus (Tab) switches it like hovering does.
+- The counts next to the rows are the collections' real sizes, never the three
+  previewed.
+- Loading shows three placeholder tiles; an empty collection shows `No liked
+  posts yet` / `No works yet`; a failed request shows `Try again` inside the
+  section without affecting the rest of the menu.
+- With reduced motion enabled, sections appear without sliding and tiles do not
+  scale.
+- Guests see the rows without previews, and nothing is requested for them.
+
+Freshness: both previews are requested together when the menu opens, never while
+moving between sections. The liked preview re-checks on every opening and drops a
+post as soon as it is unliked anywhere in the app. The works preview is re-fetched
+after the viewer creates, edits or deletes a post (the post service marks it
+changed), and otherwise trusted for a minute. Previews are cached per account and
+discarded when a different account signs in.
+
+Implementation: `user/src/components/layout/navigation/user-account-dropdown.tsx`,
+`account-menu-post-preview.tsx`, `user/src/hooks/use-account-menu-previews.ts`,
+`user/src/lib/account-works-revision.ts`. Covered by
+`user-account-dropdown-preview.spec.tsx`, the API specs for liked posts and creator
+order, and `user/browser-verify/46-account-menu-previews.js`.

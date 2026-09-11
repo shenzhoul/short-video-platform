@@ -11,6 +11,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 interface UseLikedPostsOptions {
   enabled: boolean;
   limit?: number;
+  /**
+   * Show a toast when a page fails to load. On by default for the profile tab;
+   * the account menu turns it off and draws its own inline retry, because a
+   * menu opened by hovering should not raise a toast.
+   */
+  notifyOnError?: boolean;
 }
 
 function appendUniquePosts(current: IPost[], incoming: IPost[]) {
@@ -19,13 +25,16 @@ function appendUniquePosts(current: IPost[], incoming: IPost[]) {
   return [...posts.values()];
 }
 
-export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPostsOptions) {
+export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT, notifyOnError = true }: UseLikedPostsOptions) {
   const [posts, setPosts] = useState<IPost[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<CursorInfo | null>(null);
   const [isUnliking, setIsUnliking] = useState(false);
+  /** A first page has come back, successfully or not: "nothing yet" versus "nothing". */
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [error, setError] = useState(false);
   const loadingRef = useRef(false);
   const previousEnabledRef = useRef(false);
   const likedPostIdsRef = useRef<Set<string>>(new Set());
@@ -37,7 +46,7 @@ export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPost
    */
   const startedRef = useRef(false);
 
-  const loadPage = useCallback(async (cursor: CursorInfo | null = null) => {
+  const loadPage = useCallback(async (cursor: CursorInfo | null = null, mode: 'append' | 'replace' = 'append') => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -53,19 +62,22 @@ export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPost
       const page = response.data;
       const incoming = page?.data || [];
 
-      setPosts((current) => appendUniquePosts(current, incoming));
+      setPosts((current) => (mode === 'replace' ? incoming : appendUniquePosts(current, incoming)));
       setTotal((current) => typeof page?.total === 'number'
         ? page.total
         : cursor ? current : incoming.length);
       setNextCursor(page?.nextCursor || null);
       setHasMore(Boolean(page?.hasMore));
+      setError(false);
     } catch {
-      toast.error('Failed to load liked posts');
+      setError(true);
+      if (notifyOnError) toast.error('Failed to load liked posts');
     } finally {
       loadingRef.current = false;
       setLoading(false);
+      setHasLoaded(true);
     }
-  }, [limit]);
+  }, [limit, notifyOnError]);
 
   /**
    * Load the first page the first time the tab is opened, and only then.
@@ -93,6 +105,20 @@ export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPost
     if (!enabled || loadingRef.current || !hasMore || !nextCursor) return;
     void loadPage(nextCursor);
   }, [enabled, hasMore, loadPage, nextCursor]);
+
+  /**
+   * Read the first page again and replace what is held.
+   *
+   * For a short list that must be current each time it is shown — the account
+   * menu's three most recent likes, re-read on every opening so a like or unlike
+   * made anywhere since is reflected. The paginated profile tab never calls it:
+   * replacing would drop the pages already loaded and rewind the cursor (see
+   * the load-once effect above). An in-flight request is not duplicated.
+   */
+  const refresh = useCallback(() => {
+    startedRef.current = true;
+    void loadPage(null, 'replace');
+  }, [loadPage]);
 
   const unlikePosts = useCallback(async (ids: string[]) => {
     const uniqueIds = [...new Set(ids)].filter(Boolean);
@@ -148,8 +174,11 @@ export function useLikedPosts({ enabled, limit = POST_PAGE_LIMIT }: UseLikedPost
     posts,
     total,
     loading,
+    hasLoaded,
+    error,
     hasMore,
     loadMore,
+    refresh,
     unlikePosts,
     isUnliking,
     updatePostInteraction,

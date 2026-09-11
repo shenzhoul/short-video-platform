@@ -154,7 +154,10 @@ source bucket and score components; production responses never include it.
   `videoOnly=true`, used by the picture-in-picture window, which can only draw a post that carries a
   video.
 - `GET /posts/creator-posts` — **one creator's posts**, pinned first, in the creator's own order.
-  Requires `userId`; a request without one is refused rather than answered with a feed. Used by the
+  Requires `userId`; a request without one is refused rather than answered with a feed.
+  `creatorOrder=latest` (2026-09-10) returns the same posts plain newest-first (`createdAt`, then
+  `_id`) with the plain cursor; the header account menu's "My work" preview uses it so an old pinned
+  post cannot displace the newest ones. Absent or `pinned` keeps the pinned-first order. Used by the
   creator profile grid (its server-rendered first page *and* every page after it) and the Post Detail
   **Videos** tab. The profile grid pages this route as the viewer reaches the end; it previously could
   not page at all, and the hook behind it was wired to the signed-in caller's own listing. This route exists because `/posts/home-posts`

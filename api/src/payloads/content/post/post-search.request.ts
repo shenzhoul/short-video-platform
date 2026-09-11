@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsMongoId,
   IsOptional,
   IsString,
@@ -30,6 +31,22 @@ export class PostSearchRequest extends SearchRequest {
   @IsString()
   @IsOptional()
   type: string;
+
+  /**
+   * How a single-creator listing (`userId` set) is ordered.
+   *
+   * `pinned` (the default, and what an absent value means) is the creator's own
+   * order: pinned posts first, then newest. `latest` is plain newest-first, used
+   * by the account menu's "My work" preview, where an old pinned post must not
+   * displace the creator's most recent posts.
+   *
+   * A string enum rather than a boolean on purpose: the global pipe runs with
+   * implicit conversion, which turns the query string `'false'` into `true`
+   * before a transform ever sees it (see `lastIsPinned` below).
+   */
+  @IsOptional()
+  @IsIn(['pinned', 'latest'])
+  creatorOrder?: 'pinned' | 'latest';
 
   /**
    * Exact hashtag to match against Post.tags.

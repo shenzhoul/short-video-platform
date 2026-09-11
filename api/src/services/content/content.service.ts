@@ -22,6 +22,32 @@ import { RecommendationFeedService, RecommendationEventService } from 'src/servi
 type LeanPostDocument = FlattenMaps<PostDocument> & Required<{ _id: ObjectId }>;
 
 /**
+ * Extra reaction pages `getLikedPosts` may read to fill one page after dropping
+ * posts the viewer can no longer open. Bounded so an account whose likes are
+ * mostly deleted posts costs a fixed number of queries per request; a short page
+ * still carries `hasMore` and a cursor, so the client simply asks again.
+ */
+const LIKED_POSTS_MAX_BACKFILL_ROUNDS = 3;
+
+/**
+ * Whether this viewer may open this post in post detail.
+ *
+ * The one definition shared by `findPostDetails` and the liked collection, so a
+ * liked tile never leads to "This post is no longer available." Admins and the
+ * owner see everything; anyone else needs an active post, or one whose creator
+ * was deleted (kept viewable for purchased content).
+ */
+function canViewerOpenPost(
+  post: Pick<PostDto, 'status' | 'isCreatorDeleted' | 'userId'> | null | undefined,
+  user?: UserDto | AuthUserDto
+): boolean {
+  if (!post) return false;
+  if (user?.isAdmin) return true;
+  if (user?._id && post.userId?.toString() === user._id.toString()) return true;
+  return post.status === 'active' || Boolean(post.isCreatorDeleted);
+}
+
+/**
  * Content Service
  *
  * This service acts as an orchestrator for content-related operations, similar to CommunicationService.
@@ -99,10 +125,8 @@ export class ContentService {
 
     // Check if post status is active (unless admin, creator owner, or creator deleted)
     // Posts from deleted creators are still accessible so users can view purchased content
-    if (!user?.isAdmin && post?.userId?.toString() !== user?._id?.toString()) {
-      if (post.status !== 'active' && !post.isCreatorDeleted) {
-        throw new Error(__t('errors.post_not_available'));
-      }
+    if (!canViewerOpenPost(post, user)) {
+      throw new Error(__t('errors.post_not_available'));
     }
 
     // Get creator info to check if creator is deleted
@@ -379,24 +403,98 @@ export class ContentService {
     return this.userSearchPosts(req, user);
   }
 
-  /** Return posts liked by the authenticated user in reaction order. */
+  /**
+   * Posts liked by the authenticated user, most recently liked first.
+   *
+   * The order is the **reaction's** `createdAt` (then its `_id`), never the
+   * post's: an old post liked today comes before a new post liked last week.
+   * `ReactionService.search` owns that sort; this method only maps reactions to
+   * posts without reordering them.
+   *
+   * Posts the viewer can no longer open (soft-deleted, deactivated) are skipped
+   * with the same rule post detail applies. Skipping alone would shorten the page
+   * — and a page of three for the account menu preview could come back with one —
+   * so reaction pages are read forward, a bounded number of times, until `limit`
+   * visible posts are collected.
+   *
+   * The cursor is always the **last reaction consumed**, not the last one the
+   * reaction page happened to return. Stopping part-way through a page and
+   * handing out that page's own cursor would silently skip the reactions after
+   * the stopping point. `total` stays the reaction count of the first page.
+   */
   async getLikedPosts(req: ReactionSearchRequestPayload, user: UserDto | AuthUserDto) {
     req.createdBy = user._id;
     req.action = 'like';
     req.objectType = 'post';
 
-    const reactionResult = await this.reactionService.search(req);
-    if (!reactionResult.data.length) return { ...reactionResult, data: [] };
+    const limit = Number(req.limit) || PAGINATION_DEFAULTS.DEFAULT_LIMIT;
+    const firstPage = await this.reactionService.search(req);
+    if (!firstPage.data.length) return { ...firstPage, data: [] };
 
-    const postIds = uniq(reactionResult.data.map((reaction) => reaction.objectId));
-    const posts = await this.postService.findByIds(postIds);
-    const populatedPosts = await this.populatePostData(posts, { user });
-    const postMap = new Map(populatedPosts.map((post) => [post._id.toString(), post]));
-    const data = reactionResult.data
-      .map((reaction) => postMap.get(reaction.objectId.toString()))
+    const visiblePosts: PostDto[] = [];
+    const collectedIds = new Set<string>();
+    let page = firstPage;
+    let lastConsumed = null as (typeof firstPage.data)[number] | null;
+    let hasMore = false;
+
+    for (let round = 0; ; round += 1) {
+      const postIds = uniq(page.data.map((reaction) => reaction.objectId.toString()));
+      const posts = postIds.length ? await this.postService.findByIds(postIds) : [];
+      const openable = new Map(posts
+        .filter((post) => canViewerOpenPost(post, user))
+        .map((post) => [post._id.toString(), post]));
+
+      let filled = false;
+      for (let index = 0; index < page.data.length; index += 1) {
+        const reaction = page.data[index];
+        lastConsumed = reaction;
+        const postId = reaction.objectId.toString();
+        const post = openable.get(postId);
+        if (post && !collectedIds.has(postId)) {
+          collectedIds.add(postId);
+          visiblePosts.push(post);
+        }
+        if (visiblePosts.length >= limit) {
+          filled = true;
+          hasMore = index < page.data.length - 1 || page.hasMore;
+          break;
+        }
+      }
+
+      if (filled) break;
+      if (!page.hasMore || !page.nextCursor || round >= LIKED_POSTS_MAX_BACKFILL_ROUNDS) {
+        hasMore = Boolean(page.hasMore);
+        break;
+      }
+
+      page = await this.reactionService.search(Object.assign(new ReactionSearchRequestPayload(), req, {
+        offset: 0,
+        cursor: page.nextCursor.id,
+        lastCreatedAt: String(page.nextCursor.createdAt)
+      }));
+      if (!page.data.length) {
+        hasMore = false;
+        break;
+      }
+    }
+
+    const populatedPosts = visiblePosts.length
+      ? await this.populatePostData(visiblePosts, { user })
+      : [];
+    const populatedById = new Map(populatedPosts.map((post) => [post._id.toString(), post]));
+    const data = visiblePosts
+      .map((post) => populatedById.get(post._id.toString()))
       .filter(Boolean);
 
-    return { ...reactionResult, data };
+    return {
+      ...firstPage,
+      data,
+      hasMore,
+      nextCursor: hasMore && lastConsumed ? {
+        id: lastConsumed._id.toString(),
+        createdAt: new Date(lastConsumed.createdAt).getTime()
+      } : null
+    };
   }
 
   /** Remove the current user's likes without toggle semantics. */

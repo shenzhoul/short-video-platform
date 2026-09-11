@@ -167,10 +167,14 @@ export class PostSearchService {
       }
     }
 
+    // A creator listing is pinned-first unless the caller asked for plain
+    // newest-first; the sort and the cursor must agree on which one it is.
+    const pinnedFirst = Boolean(req.userId) && req.creatorOrder !== 'latest';
+
     // ADVANCED CURSOR-BASED PAGINATION
     // Implement compound cursor logic to prevent data loss with identical timestamps
     if (req.cursor && req.lastCreatedAt) {
-      query = req.userId
+      query = pinnedFirst
         ? applyCreatorPinnedCursor(query, req)
         : applyCursorPagination(query, req.cursor, req.lastCreatedAt, req.sortBy || 'createdAt');
     }
@@ -194,7 +198,7 @@ export class PostSearchService {
     const [data, total] = await Promise.all([
       this.PostModel
         .find(query)
-        .sort(req.userId ? creatorPinnedSort(sort) : sort)
+        .sort(pinnedFirst ? creatorPinnedSort(sort) : sort)
         .limit(limit + 1) // Fetch one extra to determine hasMore efficiently
         .skip(useCursorPagination ? 0 : offset),
       useCursorPagination ? Promise.resolve(undefined) : this.PostModel.countDocuments(query)

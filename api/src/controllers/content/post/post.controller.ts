@@ -273,7 +273,7 @@ export class UserPostController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   @ApiOperation({
     summary: "Get one creator's posts",
-    description: "Posts belonging to a single creator, pinned first, in the creator's own ordering. Requires `userId`."
+    description: "Posts belonging to a single creator, pinned first, in the creator's own ordering. Requires `userId`. Pass `creatorOrder=latest` for plain newest-first (the account menu preview)."
   })
   @ApiQuery({ type: PostSearchRequest, description: 'Creator id plus pagination/cursor parameters' })
   @ApiResponse({ status: HttpStatus.OK, description: "The creator's posts" })

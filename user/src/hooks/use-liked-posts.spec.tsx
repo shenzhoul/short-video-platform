@@ -216,3 +216,61 @@ describe('useLikedPosts pagination', () => {
     expect(result.current.total).toBe(TOTAL);
   });
 });
+
+/**
+ * The account menu uses this same hook for its three most recent likes, with a
+ * page of three, no toast, and `refresh()` on every opening. None of that may
+ * change the profile tab above, whose tests run with the defaults.
+ */
+describe('useLikedPosts as the account menu preview', () => {
+  const { toast } = jest.requireMock('@douyin-clone/shared-toast');
+
+  beforeEach(() => {
+    likedPosts.mockReset();
+    unlikePosts.mockReset();
+    toast.error.mockClear();
+  });
+
+  it('re-reads the first page on refresh and replaces what it holds, at the requested size', async () => {
+    serveCatalogue(CATALOGUE, 3);
+    const { result } = renderHook(() => useLikedPosts({ enabled: true, limit: 3, notifyOnError: false }));
+    await waitFor(() => expect(result.current.posts).toHaveLength(3));
+    expect(likedPosts.mock.calls[0][0]).toEqual({ limit: 3 });
+
+    // Two of the most recent likes were removed somewhere else.
+    serveCatalogue(CATALOGUE.slice(2), 3);
+    await act(async () => { result.current.refresh(); });
+
+    await waitFor(() => expect(result.current.posts.map((post) => post._id)).toEqual(['post-2', 'post-3', 'post-4']));
+    expect(result.current.total).toBe(TOTAL - 2);
+    expect(likedPosts).toHaveBeenCalledTimes(2);
+    expect(likedPosts.mock.calls[1][0]).toEqual({ limit: 3 });
+  });
+
+  it('does not send a second request when a refresh lands on top of the first load', async () => {
+    serveCatalogue(CATALOGUE, 3);
+    const { result } = renderHook(() => useLikedPosts({ enabled: true, limit: 3 }));
+
+    act(() => { result.current.refresh(); });
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+
+    expect(likedPosts).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a failure through `error` without a toast when asked to', async () => {
+    likedPosts.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useLikedPosts({ enabled: true, limit: 3, notifyOnError: false }));
+
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+    expect(result.current.error).toBe(true);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('still raises the toast on the profile tab, which keeps the default', async () => {
+    likedPosts.mockRejectedValue(new Error('offline'));
+    const { result } = renderHook(() => useLikedPosts({ enabled: true }));
+
+    await waitFor(() => expect(result.current.hasLoaded).toBe(true));
+    expect(toast.error).toHaveBeenCalledWith('Failed to load liked posts');
+  });
+});

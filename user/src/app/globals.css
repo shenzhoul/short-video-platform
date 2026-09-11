@@ -218,6 +218,80 @@ body {
   }
 }
 
+/*
+  Account menu sections. Only one preview is mounted at a time, and each replays
+  its entrance on mount: the "I like it" strip opens downward from its row and
+  drops in from above; the "My work" strip rises from below. The rows around them
+  glide into place at the same pace (`layout-glide.ts`, 260ms ease-out), so the
+  reflow never jumps ahead of the strip.
+
+  The strip travels 22px from 35% opacity. The first version moved 10px from 0%
+  over 200ms while the rows below jumped 152px in one frame; measured on the
+  production build, the result read as the list appearing instantly.
+
+  `transform`, never `translate`, for the same reason as the dropdown keyframes.
+*/
+.account-menu-strip {
+  animation-duration: 260ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+.account-menu-strip--from-above {
+  animation-name: account-menu-strip-from-above;
+}
+
+.account-menu-strip--from-below {
+  animation-name: account-menu-strip-from-below;
+}
+
+/* The liked strip is uncovered top to bottom while the rows below it glide down. */
+.account-menu-reveal {
+  animation: account-menu-reveal-down 260ms ease-out both;
+}
+
+@keyframes account-menu-strip-from-above {
+  0% {
+    opacity: 0.35;
+    transform: translateY(-22px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes account-menu-strip-from-below {
+  0% {
+    opacity: 0.35;
+    transform: translateY(22px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes account-menu-reveal-down {
+  0% {
+    clip-path: inset(0 0 100% 0);
+  }
+
+  100% {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-menu-strip,
+  .account-menu-reveal {
+    animation: none;
+  }
+}
+
 .currently-playing-bars i {
   animation: currently-playing-bar 0.82s ease-in-out infinite;
   transform-origin: bottom center;

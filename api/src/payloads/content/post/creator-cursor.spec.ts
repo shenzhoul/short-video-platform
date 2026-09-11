@@ -60,6 +60,28 @@ describe('creator list cursor payload', () => {
   });
 });
 
+describe('creator list order payload', () => {
+  /* eslint-disable @typescript-eslint/no-var-requires, global-require */
+  const { validateSync } = require('class-validator');
+
+  const orderErrors = (query: Record<string, unknown>) => validateSync(fromQuery(query))
+    .filter((error: any) => error.property === 'creatorOrder');
+
+  it('keeps creatorOrder=latest as the string it was sent as', () => {
+    expect(fromQuery({ creatorOrder: 'latest' }).creatorOrder).toBe('latest');
+    expect(orderErrors({ creatorOrder: 'latest' })).toHaveLength(0);
+  });
+
+  it('leaves the order absent by default, which means pinned first', () => {
+    expect(fromQuery({ userId: new ObjectId().toString() }).creatorOrder).toBeUndefined();
+    expect(orderErrors({})).toHaveLength(0);
+  });
+
+  it('refuses an order it does not know rather than guessing', () => {
+    expect(orderErrors({ creatorOrder: 'newest' })).toHaveLength(1);
+  });
+});
+
 describe('creator list cursor date parsing', () => {
   /* eslint-disable @typescript-eslint/no-var-requires, global-require */
   const { parseDateFromCursor } = require('src/common/utils/pagination.util');

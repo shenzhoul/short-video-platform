@@ -565,6 +565,37 @@ them. The API was never at fault — `/posts/liked` answers
   asserts `[20, 40, 60, 67]`, distinct ids, no request while one is in flight,
   and that a tab switch keeps both the pages and the cursor.
 
+## A Hover That Changes Layout Must Ignore Taps
+
+A tap fires compatibility events before its click: `pointerenter`/`mouseenter`,
+then `pointerdown`, `focus`, and only then `click`. If hover or focus reflows the
+thing being tapped, the click lands on whatever moved into its place.
+
+That shipped in the account menu previews (2026-09-10): hovering "My work" closes
+the "I like it" preview above it, so a tap on "My work" at 390x844 collapsed that
+preview, the row jumped up, and the click never reached it — the Works tab did not
+open. Nothing errored.
+
+- **Gate hover on the pointer type.** Use `onPointerEnter` and skip
+  `pointerType === 'touch'`; `onMouseEnter` cannot tell a finger from a mouse.
+- **Gate focus on how it arrived, not on `:focus-visible`.** Engines disagree about
+  when that matches after a pointer press, and jsdom treats every focus as visible.
+  Set a flag in `onPointerDown`, skip the next `onFocus` when it is set, clear it on
+  `onBlur`. A keyboard Tab never produces a pointerdown.
+- **Verify with a real touch context**, not only a unit test: Playwright
+  `hasTouch: true` + `tap()` reproduces the reflow; jsdom has no layout, so the unit
+  test can only prove the section did not switch.
+- Cover: `user-account-dropdown-preview.spec.tsx` (touch tap) and
+  `browser-verify/46-account-menu-previews.js` (390x844 tap).
+
+## Tailwind 4 `scale-*` Is Not A `transform`
+
+Tailwind 4 scale utilities set the CSS `scale` property. `getComputedStyle(el).transform`
+stays `none` while the element is visibly scaled, so a browser check reading the
+transform matrix reports 1.0. Measure the painted box instead
+(`getBoundingClientRect().width` against the unscaled parent), or read
+`getComputedStyle(el).scale`.
+
 ## A Label In A String Literal Is Not Markup
 
 `'We&apos;ll look at it later'` inside a JSX **expression** renders the

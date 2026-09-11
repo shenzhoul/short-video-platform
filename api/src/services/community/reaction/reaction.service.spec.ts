@@ -78,6 +78,42 @@ describe('ReactionService liked post collection', () => {
     expect(findQuery.limit).toHaveBeenCalledWith(13);
   });
 
+  it('hands back the last returned reaction as the cursor when a three-row page has more', async () => {
+    // The account menu preview asks for three likes; the cursor must name the
+    // third reaction, not the extra row fetched only to decide `hasMore`.
+    const createdAt = new Date('2026-09-10T08:00:00.000Z');
+    const records = [0, 1, 2, 3].map(() => ({
+      _id: new ObjectId(),
+      objectId: new ObjectId(),
+      objectType: 'post',
+      action: 'like',
+      createdBy: new ObjectId(),
+      createdAt,
+      updatedAt: createdAt
+    }));
+    const findQuery = {
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockResolvedValue(records)
+    };
+    const reactionModel = {
+      find: jest.fn().mockReturnValue(findQuery),
+      countDocuments: jest.fn().mockResolvedValue(9)
+    };
+    const service = new ReactionService(reactionModel as any, {} as any);
+
+    const result = await service.search({ limit: 3 } as any);
+
+    expect(findQuery.limit).toHaveBeenCalledWith(4);
+    expect(result.data).toHaveLength(3);
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toEqual({
+      id: records[2]._id.toString(),
+      createdAt: createdAt.getTime()
+    });
+  });
+
   it('bulk unlikes idempotently and publishes events only for existing reactions', async () => {
     const userId = new ObjectId();
     const postIds = [new ObjectId(), new ObjectId()];
